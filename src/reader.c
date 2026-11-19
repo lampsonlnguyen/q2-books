@@ -39,7 +39,7 @@ int reader_input(Reader *r,const char *msg) {
     int old=r->wheel_acc;
     int next=old-v;
     if((old<0&&-v>0)||(old>0&&-v<0))next=-v;
-    r->wheel_acc=(unsigned)next;
+    r->wheel_acc=next;
     if(next>=35){page_move(r,1);r->wheel_acc=0;return 1;}
     if(next<=-35){page_move(r,-1);r->wheel_acc=0;return 1;}
     return 0;

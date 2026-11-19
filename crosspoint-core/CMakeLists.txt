@@ -218,3 +218,37 @@ add_executable(crosspoint_bidi_tests tests/bidi_test.cpp)
 target_link_libraries(crosspoint_bidi_tests PRIVATE crosspoint_bidi)
 target_compile_options(crosspoint_bidi_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_unicode_bidi_arabic COMMAND crosspoint_bidi_tests)
+
+# Original CrossPoint ParsedText line composition/pagination engine and Page
+# model. Compile-check only until the complete GfxRenderer and HTML chapter
+# parser are connected. Do NOT present these object files as a working reader.
+add_library(crosspoint_pagination_objects OBJECT
+    lib/Epub/ParsedText.cpp
+    lib/Epub/Page.cpp
+)
+# Recent upstream CrossPoint Memory.h uses C++20 constrained templates.
+set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD 20)
+set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD_REQUIRED ON)
+target_include_directories(crosspoint_pagination_objects PRIVATE
+    lib
+    lib/Epub
+    lib/Epub/css
+    lib/EpdFont
+    lib/GfxRenderer
+    lib/Utf8
+    lib/MiniBidi
+    lib/Serialization
+    lib/XmlParserUtils
+    platform/posix
+)
+
+# Q2-backed CrossPoint HalDisplay implementation. Upstream uses 1=white,
+# 0=black in its byte buffer; the conversion to Q2 LCD color is explicit.
+add_library(crosspoint_q2_hal_display STATIC platform/posix/HalDisplay.cpp)
+target_include_directories(crosspoint_q2_hal_display PUBLIC
+    platform/posix platform/q2)
+target_link_libraries(crosspoint_q2_hal_display PUBLIC crosspod_q2_framebuffer)
+add_executable(crosspoint_q2_hal_display_tests tests/q2_hal_display_test.cpp)
+target_link_libraries(crosspoint_q2_hal_display_tests PRIVATE crosspoint_q2_hal_display)
+target_compile_options(crosspoint_q2_hal_display_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tests)

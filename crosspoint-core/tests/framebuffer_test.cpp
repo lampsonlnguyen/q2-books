@@ -1,4 +1,5 @@
 #include <Q2Framebuffer.hpp>
+#include <Q2PagePresenter.hpp>
 #include <cassert>
 #include <cstdint>
 #include <vector>
@@ -34,5 +35,9 @@ int main() {
   Q2Framebuffer framebuffer;
   assert(!framebuffer.isOpen());
   assert(!framebuffer.open("/dev/crosspod-does-not-exist"));
+  crosspod::Q2PagePresenter presenter;
+  assert(!presenter.presentARGB(logical.data(), logical.size()));
+  assert(!presenter.open("/dev/crosspod-does-not-exist"));
+  assert(!presenter.presentBW(nullptr, 0));
   return 0;
 }

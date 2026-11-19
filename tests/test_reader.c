@@ -18,6 +18,18 @@ int main(int argc,char **argv){
   ensure(argc==2,"fixture path");
   reader_init(&reader);
   ensure(reader.warmth==35 && reader.night==0,"default reading tone");
+  ensure(reader_catalog_add(&reader,"A Book.TXT"),"catalog TXT");
+  ensure(reader_catalog_add(&reader,"Fantasy/Another.EPUB"),"catalog EPUB nested");
+  ensure(reader_catalog_add(&reader,"z-last.txt"),"catalog third");
+  ensure(!reader_catalog_add(&reader,"../escape.epub"),"reject traversal");
+  ensure(!reader_catalog_add(&reader,"a.jpg"),"reject other formats");
+  ensure(!reader_catalog_add(&reader,"A Book.TXT"),"deduplicate");
+  reader_catalog_sort(&reader);
+  ensure(reader.book_count==3 && strcmp(reader.paths[0],"A Book.TXT")==0,"sorted catalogue");
+  ensure(reader_input(&reader,"k d 218")==1 && reader.open_request==1,"open first book");
+  ensure(reader_input(&reader,"k u 218")==0,"release centre");
+  reader_open_result(&reader,1);
+  ensure(reader.reading && reader.loaded,"enter book reader");
   ensure(reader_input(&reader,"t d 260 12")==1 && reader.tone_open,"open tone menu");
   ensure(reader_input(&reader,"t u 260 12")==0,"touch release");
   ensure(reader_input(&reader,"t d 329 150")==1 && reader.warmth==100,"warm preset by touch");
@@ -26,7 +38,8 @@ int main(int argc,char **argv){
   ensure(reader_input(&reader,"k d 218")==1 && reader.night,"toggle night");
   ensure(reader_input(&reader,"k u 218")==0,"release centre");
   ensure(reader_input(&reader,"k u 170")==1 && !reader.tone_open && !reader.quit,"back closes settings");
-  ensure(reader_input(&reader,"k u 170")==1 && reader.quit,"back exits reader");
+  ensure(reader_input(&reader,"k u 170")==1 && !reader.reading && !reader.quit,"back returns to book list");
+  ensure(reader_input(&reader,"k u 170")==1 && reader.quit,"back exits from book list");
   reader_init(&reader);
   memcpy(reader.book,"test line\nsecond line",21);
   reader.book_len=21;

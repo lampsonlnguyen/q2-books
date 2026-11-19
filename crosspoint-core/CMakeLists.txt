@@ -55,3 +55,31 @@ foreach(t crosspoint_core_tests crosspoint_controls_tests crosspoint_display_tes
           crosspoint_txt_tests crosspoint_epub_container_tests crosspoint_books_handoff_tests)
     target_compile_options(${t} PRIVATE -UNDEBUG)
 endforeach()
+
+# CrossPoint ZIP reader: original upstream ZipFile source, Linux storage adapter
+# and a bounded zlib streaming replacement for the ESP32 miniz implementation.
+find_package(ZLIB REQUIRED)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_library(crosspoint_zip STATIC
+    lib/ZipFile/ZipFile.cpp
+    platform/posix/InflateStream.cpp
+)
+target_include_directories(crosspoint_zip PUBLIC
+    lib/ZipFile
+    platform/posix
+)
+target_link_libraries(crosspoint_zip PUBLIC ZLIB::ZLIB)
+
+set(EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/multilingual.epub")
+add_custom_command(OUTPUT "${EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_epub_fixture.py" "${EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_epub_fixture.py"
+    VERBATIM
+)
+add_custom_target(epub_fixture ALL DEPENDS "${EPUB_FIXTURE}")
+add_executable(crosspoint_epub_zip_tests tests/epub_zip_test.cpp)
+target_link_libraries(crosspoint_epub_zip_tests PRIVATE crosspoint_zip crosspoint_epub_container)
+add_dependencies(crosspoint_epub_zip_tests epub_fixture)
+target_compile_options(crosspoint_epub_zip_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_multilingual_epub_zip
+    COMMAND crosspoint_epub_zip_tests "${EPUB_FIXTURE}")

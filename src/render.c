@@ -1,30 +1,48 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "crosspod.h"
-#include "font.h"
+#include "font_vn.h"
+#include "utf8.h"
 static void rect(u32 *d,unsigned s,int x,int y,int w,int h,u32 color) {
   int x0=x<0?0:x,y0=y<0?0:y,x1=x+w>SCREEN_W?SCREEN_W:x+w,y1=y+h>SCREEN_H?SCREEN_H:y+h;
   if(x1<=x0||y1<=y0)return;
   for(int px=x0;px<x1;px++)for(int py=y0;py<y1;py++)d[px*s+SCREEN_H-1-py]=0xff000000u|color;
 }
-static int text(u32 *d,unsigned s,int x,int y,const char *str,int count,u32 color) {
-  for(int i=0;i<count&&str[i];i++) {
-    unsigned ch=(unsigned char)str[i];
-    if(ch=='\n')break;
-    if(ch=='\r')continue;
-    if(ch>='a'&&ch<='z')ch-=32;
-    if(ch<32||ch>90)ch='?';
-    unsigned index=ch-32, width=f12_adv[index];
-    for(int py=0;py<12;py++)for(unsigned px=0;px<width;px++){
-      unsigned alpha=f12_px[f12_off[index]+py*width+px];
-      int dx=x+(int)px,dy=y+py;
+static const CPGlyph *glyph(unsigned cp){
+  unsigned lo=0,hi=(unsigned)(sizeof cp_glyphs/sizeof cp_glyphs[0]);
+  while(lo<hi){
+    unsigned m=lo+(hi-lo)/2;
+    if(cp_glyphs[m].codepoint<cp)lo=m+1;
+    else hi=m;
+  }
+  if(lo<sizeof cp_glyphs/sizeof cp_glyphs[0]&&cp_glyphs[lo].codepoint==cp)
+    return &cp_glyphs[lo];
+  if(cp!='?')return glyph('?');
+  return &cp_glyphs[0];
+}
+static int text(u32 *d,unsigned s,int x,int y,const char *str,int count,u32 color){
+  unsigned at=0;
+  int prev_x=x;
+  while(at<(unsigned)count && str[at]){
+    unsigned len=0;
+    unsigned cp=cp_utf8_next(str+at,(unsigned)count-at,&len);
+    if(!len)break;
+    at+=len;
+    if(cp=='\n')break;
+    if(cp=='\r')continue;
+    const CPGlyph *g=glyph(cp);
+    int combining=cp>=0x300&&cp<=0x36f;
+    int origin=combining?prev_x:x;
+    for(int py=0;py<20;py++)for(unsigned px=0;px<g->width;px++){
+      unsigned alpha=cp_bitmap[g->offset+(unsigned)py*g->width+px];
+      int dx=origin+(int)px,dy=y+py;
       if(!alpha||dx<0||dx>=SCREEN_W||dy<0||dy>=SCREEN_H)continue;
-      u32 *out=&d[dx*s+SCREEN_H-1-dy],old=*out;
+      u32 *out=&d[(unsigned)dx*s+SCREEN_H-1-(unsigned)dy],old=*out;
       unsigned red=(((old>>16)&255u)*(255u-alpha)+((color>>16)&255u)*alpha)/255u;
       unsigned green=(((old>>8)&255u)*(255u-alpha)+((color>>8)&255u)*alpha)/255u;
       unsigned blue=((old&255u)*(255u-alpha)+(color&255u)*alpha)/255u;
       *out=0xff000000u|(red<<16)|(green<<8)|blue;
     }
-    x+=(int)width;
+    if(!combining){prev_x=x;x+=g->advance;}
     if(x>SCREEN_W-12)break;
   }
   return x;
@@ -96,8 +114,8 @@ void reader_render(const Reader *r,u32 *d,unsigned s){
     for(unsigned row=0;row<PAGE_LINES && begin+row<r->line_count;row++){
       unsigned from=r->starts[begin+row];
       unsigned to=(begin+row+1<r->line_count)?r->starts[begin+row+1]:r->book_len;
-      if(to>from+COLS)to=from+COLS;
-      text(d,s,17,41+(int)row*16,r->book+from,(int)(to-from),ink);
+      /* The index uses UTF-8 byte offsets; never truncate a codepoint. */
+      text(d,s,17,38+(int)row*20,r->book+from,(int)(to-from),ink);
     }
   }
   rect(d,s,0,302,SCREEN_W,18,ink);

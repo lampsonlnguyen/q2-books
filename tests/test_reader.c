@@ -17,6 +17,17 @@ static void ensure(int yes,const char *what){
 int main(int argc,char **argv){
   ensure(argc==2,"fixture path");
   reader_init(&reader);
+  ensure(reader.warmth==35 && reader.night==0,"default reading tone");
+  ensure(reader_input(&reader,"t d 260 12")==1 && reader.tone_open,"open tone menu");
+  ensure(reader_input(&reader,"t u 260 12")==0,"touch release");
+  ensure(reader_input(&reader,"t d 329 150")==1 && reader.warmth==100,"warm preset by touch");
+  ensure(reader_input(&reader,"t u 329 150")==0,"touch release 2");
+  ensure(reader_input(&reader,"t d 45 150")==1 && reader.warmth==0,"cool preset by touch");
+  ensure(reader_input(&reader,"k d 218")==1 && reader.night,"toggle night");
+  ensure(reader_input(&reader,"k u 218")==0,"release centre");
+  ensure(reader_input(&reader,"k u 170")==1 && !reader.tone_open && !reader.quit,"back closes settings");
+  ensure(reader_input(&reader,"k u 170")==1 && reader.quit,"back exits reader");
+  reader_init(&reader);
   memcpy(reader.book,"test line\nsecond line",21);
   reader.book_len=21;
   reader_index(&reader);

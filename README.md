@@ -15,6 +15,7 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CrossPoint `ContentOpfParser` for EPUB metadata, manifest and spine order
 - Original EPUB `CssParser` and disk-efficient `WordStore` (styling and bounded page-layout word storage)
 - Original `EpdFont`/`EpdFontFamily` Unicode coverage and glyph metrics, with original borrowed-code license notices
+- Original CJK punctuation line-breaking, Hangul boundary rules, Unicode hyphenation helpers and token-break primitives
 - Q2 Linux socket input, native double-buffered framebuffer and page-presentation adapter; these are individually tested, not wired to a complete reader
 - Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
 - A Linux `crosspod-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
@@ -66,4 +67,4 @@ The code copied unmodified from CrossPoint is governed by CrossPoint's original 
 
 ### Q2 MIPS / hardware diagnostic
 
-The `crosspod-hwcheck` program and cross-compiler workflow are in [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7), pending validation. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.
+The `crosspod-hwcheck` diagnostic was merged from [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7). Its MIPS cross-build, ELF check and QEMU command-line smoke test passed, but it has **not been tested on the actual Q2 device**. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.

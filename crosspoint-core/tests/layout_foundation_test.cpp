@@ -1,6 +1,7 @@
 #include <WordStore.h>
 #include <CssParser.h>
 #include <cassert>
+#include <cstdio>
 #include <cstring>
 #include <string>
 int main() {
@@ -27,5 +28,17 @@ int main() {
   assert(inlineStyle.textAlign == CssTextAlign::Center);
   assert(inlineStyle.fontStyle == CssFontStyle::Italic);
   assert(inlineStyle.fontWeight == CssFontWeight::Bold);
+  HalFile stylesheet(std::tmpfile());
+  assert(stylesheet.isOpen());
+  const char* rules =
+      "p { text-align: left; } p.highlight { text-align: center; font-style: italic; }";
+  assert(stylesheet.write(reinterpret_cast<const uint8_t*>(rules),
+                          std::strlen(rules)) == std::strlen(rules));
+  assert(stylesheet.seek(0));
+  assert(parser.loadFromStream(stylesheet) == CssParser::ParseResult::Complete);
+  assert(parser.ruleCount() >= 2);
+  const auto selected = parser.resolveStyle("p", "highlight");
+  assert(selected.textAlign == CssTextAlign::Center);
+  assert(selected.fontStyle == CssFontStyle::Italic);
   return 0;
 }

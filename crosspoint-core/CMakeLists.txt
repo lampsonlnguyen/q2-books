@@ -226,6 +226,9 @@ add_library(crosspoint_pagination_objects OBJECT
     lib/Epub/ParsedText.cpp
     lib/Epub/Page.cpp
 )
+# Recent upstream CrossPoint Memory.h uses C++20 constrained templates.
+set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD 20)
+set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_pagination_objects PRIVATE
     lib
     lib/Epub

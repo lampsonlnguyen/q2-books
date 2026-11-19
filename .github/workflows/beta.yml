@@ -93,7 +93,7 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
+            --target "$GITHUB_SHA" \
             --prerelease \
             --title "CrossPod $RELEASE_TAG (CrossPoint Core Dev Build)" \
             --notes-file dist/RELEASE_NOTES.md

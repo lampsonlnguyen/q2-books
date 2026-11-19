@@ -191,3 +191,12 @@ add_executable(crosspoint_linebreak_tests tests/cjk_breaks_test.cpp)
 target_link_libraries(crosspoint_linebreak_tests PRIVATE crosspoint_linebreak)
 target_compile_options(crosspoint_linebreak_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_cjk_linebreak COMMAND crosspoint_linebreak_tests)
+
+# End-to-end EPUB ZIP stylesheet stream into CrossPoint's original CSS cascade.
+add_executable(crosspoint_epub_css_pipeline_tests tests/epub_css_pipeline_test.cpp)
+target_link_libraries(crosspoint_epub_css_pipeline_tests PRIVATE
+    crosspoint_zip crosspoint_layout_foundation)
+add_dependencies(crosspoint_epub_css_pipeline_tests epub_fixture)
+target_compile_options(crosspoint_epub_css_pipeline_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_epub_css_pipeline
+    COMMAND crosspoint_epub_css_pipeline_tests "${EPUB_FIXTURE}")

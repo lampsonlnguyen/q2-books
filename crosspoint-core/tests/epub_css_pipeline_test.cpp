@@ -19,7 +19,8 @@ class HalFileSink final : public Print {
 
 int main(int argc, char** argv) {
   assert(argc == 2);
-  ZipFile book(std::string(argv[1]));
+  const std::string path(argv[1]);
+  ZipFile book(path);
   // Streaming extraction does not inflate the whole CSS entry into memory.
   HalFile cssFile(std::tmpfile());
   assert(cssFile.isOpen());

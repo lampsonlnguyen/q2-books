@@ -45,6 +45,15 @@ int main(int argc,char **argv){
   reader.book_len=21;
   reader_index(&reader);
   ensure(reader.line_count==2,"TXT indexing");
+  reader_init(&reader);
+  /* 38 Vietnamese glyphs per line; the page boundary must never split UTF-8. */
+  const char *vn="Tiếng Việt có dấu: Đà Lạt, Nguyễn, Trường, ươn ă â ê ô ơ ư.";
+  memcpy(reader.book,vn,strlen(vn)+1);
+  reader.book_len=(unsigned)strlen(vn);
+  reader_index(&reader);
+  ensure(reader.line_count>=2,"Vietnamese UTF-8 codepoint wrapping");
+  for(unsigned i=0;i<reader.line_count;i++)
+    ensure((((unsigned char)reader.book[reader.starts[i]])&0xc0)!=0x80,"no UTF-8 continuation at line start");
   zipfile=fopen(argv[1],"rb");
   ensure(zipfile!=NULL,"open EPUB fixture");
   ensure(fseek(zipfile,0,SEEK_END)==0,"seek EPUB");

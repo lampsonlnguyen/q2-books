@@ -34,11 +34,30 @@ static void number(u32 *d,unsigned s,int x,int y,unsigned n,u32 color){
   do { digits[--pos]=(char)('0'+n%10u);n/=10u; }while(n&&pos);
   text(d,s,x,y,digits,15-pos,color);
 }
+static u32 blend(u32 cool,u32 warm,int amount){
+  unsigned a=(unsigned)(amount<0?0:amount>100?100:amount);
+  unsigned ia=100-a;
+  unsigned red=(((cool>>16)&255u)*ia+((warm>>16)&255u)*a)/100;
+  unsigned green=(((cool>>8)&255u)*ia+((warm>>8)&255u)*a)/100;
+  unsigned blue=((cool&255u)*ia+(warm&255u)*a)/100;
+  return red<<16|green<<8|blue;
+}
 void reader_render(const Reader *r,u32 *d,unsigned s){
-  const u32 paper=0xf4f0e5, ink=0x192b37, muted=0x62737b, accent=0x376c77;
+  u32 paper=blend(0xe5f2ff,0xffd7a4,r->warmth);
+  u32 ink=blend(0x203547,0x483526,r->warmth);
+  u32 muted=blend(0x587381,0x896748,r->warmth);
+  u32 accent=blend(0x377693,0xa86b34,r->warmth);
+  if(r->night){
+    paper=blend(0x101c28,0x261b16,r->warmth);
+    ink=blend(0xb7cfe1,0xffd5a6,r->warmth);
+    muted=blend(0x8cabc4,0xc09a71,r->warmth);
+    accent=blend(0x628eac,0xbd8b56,r->warmth);
+  }
   rect(d,s,0,0,SCREEN_W,SCREEN_H,paper);
   rect(d,s,0,0,SCREEN_W,32,ink);
   text(d,s,15,10,"CROSSPOD",8,0xffffff);
+  text(d,s,256,10,"TONE",4,0xffffff);
+  text(d,s,307,10,r->night?"NIGHT":"WARM",r->night?5:4,0xffffff);
   if(!r->loaded){
     text(d,s,20,70,"BOOK NOT FOUND",14,ink);
     text(d,s,20,101,"/.CROSSPOD/BOOK.TXT",20,muted);
@@ -62,5 +81,24 @@ void reader_render(const Reader *r,u32 *d,unsigned s){
     number(d,s,334,305,(r->line_count+PAGE_LINES-1)/PAGE_LINES,0xffffff);
     rect(d,s,0,297,SCREEN_W,3,0xd1d6cf);
     rect(d,s,0,297,(int)((r->page+1)*SCREEN_W/((r->line_count+PAGE_LINES-1)/PAGE_LINES)),3,accent);
+  }
+  if(r->tone_open){
+    const u32 panel=r->night?0x2d2927:0xf4f1e9;
+    const u32 panel_ink=r->night?0xf0d7b8:0x272e35;
+    rect(d,s,18,58,339,222,r->night?0x0d1116:0x73858b);
+    rect(d,s,22,62,331,214,panel);
+    text(d,s,40,79,"READING TONE",12,panel_ink);
+    text(d,s,40,114,"COOL",4,panel_ink);
+    text(d,s,292,114,"WARM",4,panel_ink);
+    for(int x=46;x<=329;x++){
+      u32 sample=blend(0xbadfff,0xffba71,(x-46)*100/283);
+      rect(d,s,x,145,1,32,sample);
+    }
+    int marker=46+r->warmth*283/100;
+    rect(d,s,marker-3,139,7,45,r->night?0xffffff:0x202833);
+    text(d,s,48,189,"WHEEL TO ADJUST",15,panel_ink);
+    rect(d,s,45,221,286,37,r->night?0x544030:0xe0e5e5);
+    text(d,s,65,233,r->night?"NIGHT: ON":"NIGHT: OFF",r->night?9:10,panel_ink);
+    text(d,s,38,263,"BACK TO CLOSE",13,panel_ink);
   }
 }

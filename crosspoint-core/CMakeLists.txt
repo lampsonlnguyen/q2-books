@@ -241,3 +241,14 @@ target_include_directories(crosspoint_pagination_objects PRIVATE
     lib/XmlParserUtils
     platform/posix
 )
+
+# Q2-backed CrossPoint HalDisplay implementation. Upstream uses 1=white,
+# 0=black in its byte buffer; the conversion to Q2 LCD color is explicit.
+add_library(crosspoint_q2_hal_display STATIC platform/posix/HalDisplay.cpp)
+target_include_directories(crosspoint_q2_hal_display PUBLIC
+    platform/posix platform/q2)
+target_link_libraries(crosspoint_q2_hal_display PUBLIC crosspod_q2_framebuffer)
+add_executable(crosspoint_q2_hal_display_tests tests/q2_hal_display_test.cpp)
+target_link_libraries(crosspoint_q2_hal_display_tests PRIVATE crosspoint_q2_hal_display)
+target_compile_options(crosspoint_q2_hal_display_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tests)

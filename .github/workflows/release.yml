@@ -54,6 +54,7 @@ jobs:
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
           cp crosspoint-core/LICENSE-CROSSPOINT "dist/$folder/"
+          cp build/crosspoint-core/crosspod-epub-check "dist/$folder/"
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
           CrossPod — CrossPoint Core development release
           Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.

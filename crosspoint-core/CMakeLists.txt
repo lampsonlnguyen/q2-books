@@ -49,3 +49,9 @@ add_test(NAME crosspoint_epub_container COMMAND crosspoint_epub_container_tests)
 # CrossPoint uses this standalone contract rather than the game's app runtime.
 add_executable(crosspoint_books_handoff_tests tests/book_handoff_test.cpp)
 add_test(NAME q2_books_handoff COMMAND crosspoint_books_handoff_tests)
+
+# Assertions must remain active in Release (-DNDEBUG would otherwise disable all tests).
+foreach(t crosspoint_core_tests crosspoint_controls_tests crosspoint_display_tests
+          crosspoint_txt_tests crosspoint_epub_container_tests crosspoint_books_handoff_tests)
+    target_compile_options(${t} PRIVATE -UNDEBUG)
+endforeach()

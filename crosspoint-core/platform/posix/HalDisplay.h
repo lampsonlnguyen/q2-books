@@ -53,6 +53,7 @@ class HalDisplay {
   uint32_t getBufferSize() const {return BUFFER_SIZE;}
  private:
   mutable std::unique_ptr<uint8_t[]> raster_;
+  std::unique_ptr<uint8_t[]> inkRaster_;
   bool inverted_=false;
   bool loaned_=false;
 };

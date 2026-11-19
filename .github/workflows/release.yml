@@ -31,7 +31,7 @@ jobs:
           }
 
       - name: Install host XML dependency
-        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev
+        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev zlib1g-dev
 
       - name: Configure
         run: cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
           folder="crosspod-${RELEASE_TAG}-core-devkit"
           mkdir -p "dist/$folder/lib" "dist/$folder/platform"
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a "dist/$folder/lib/"
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a "dist/$folder/lib/"
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp "dist/$folder/platform/"
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"

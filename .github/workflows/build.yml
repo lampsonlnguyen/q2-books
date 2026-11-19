@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang lld make zip
+        run: sudo apt-get update && sudo apt-get install -y clang lld make zip python3-pil fonts-dejavu-core
       - name: TXT/EPUB host smoke tests
         run: |
           mkdir -p build

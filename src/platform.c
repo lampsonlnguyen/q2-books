@@ -188,7 +188,8 @@ int q2_main(void) {
         if(n>0) {
             message[n]=0;
             if(reader_input(&app,message)){
-                if(app.tone_dirty)tone_save(&app);
+                /* Avoid SD writes on every wheel tick: save when the tone panel closes. */
+                if(app.tone_dirty && !app.tone_open)tone_save(&app);
                 reader_render(&app,frame,SCREEN_H);
                 present_frame(pixels+visible*stride,stride);
             }

@@ -10,6 +10,7 @@ typedef struct {
   unsigned line_count, book_len, page;
   int wheel_acc;
   int quit, loaded, touch_down, center_down;
+  int warmth, night, tone_open, tone_dirty; /* warmth: 0 cool to 100 warm */
 } Reader;
 void reader_init(Reader *r);
 void reader_index(Reader *r);

@@ -1,0 +1,93 @@
+name: Release CrossPoint Core Development Build
+
+on:
+  push:
+    tags:
+      - "core-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: crosspoint-core-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Test, package and publish core development release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag belongs to CrossPoint port branch
+        run: |
+          set -euo pipefail
+          git fetch origin crosspoint-core-port
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/crosspoint-core-port || {
+            echo "Refusing to publish: tag must point to a commit on crosspoint-core-port" >&2
+            exit 1
+          }
+
+      - name: Configure
+        run: cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+
+      - name: Build
+        run: cmake --build build/crosspoint-core --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build/crosspoint-core --output-on-failure
+
+      - name: Package tagged source and tested host components
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          folder="crosspod-${RELEASE_TAG}-core-devkit"
+          mkdir -p "dist/$folder/lib" "dist/$folder/platform"
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a "dist/$folder/lib/"
+          cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp "dist/$folder/platform/"
+          cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
+          cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
+          cp crosspoint-core/LICENSE-CROSSPOINT "dist/$folder/"
+          cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
+          CrossPod — CrossPoint Core development release
+          Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
+          This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
+          The upstream EPUB rendering and Linux HAL integration remain under development.\n          No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
+          NOTICE
+          (
+            cd dist
+            zip -qr "$folder.zip" "$folder"
+            sha256sum "$folder.zip" > "$folder.zip.sha256"
+          )
+          cat > dist/RELEASE_NOTES.md <<'NOTES'
+          CrossPod CrossPoint core development release.
+
+          **Not installable on the Shanling Q2.** This prerelease provides tested
+          upstream CrossPoint Unicode/NFC and TXT conversion components,
+          Q2 click-wheel/touch and LCD adapters, and their source code.
+          It is a Linux x86_64 development build, not a MIPS device binary.
+
+          A Q2 Linux reader application package will only be published when the original CrossPoint
+          EPUB engine, typography, reader activities and POSIX device HAL
+          have been integrated and validated on hardware.
+          NOTES
+
+      - name: Publish GitHub prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --prerelease \
+            --title "CrossPod $RELEASE_TAG (CrossPoint Core Dev Build)" \
+            --notes-file dist/RELEASE_NOTES.md

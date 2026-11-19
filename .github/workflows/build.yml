@@ -1,37 +1,61 @@
-name: Build CrossPod
+name: CrossPoint Core CI
+
 on:
   push:
+    branches: [crosspoint-core-port]
   pull_request:
+    branches: [crosspoint-core-port]
   workflow_dispatch:
+
 permissions:
   contents: read
+
+concurrency:
+  group: crosspoint-core-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  native:
+  build:
+    name: Build and test (GCC and Clang)
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: gcc
+            cxx: g++
+          - compiler: clang
+            cxx: clang++
     steps:
       - uses: actions/checkout@v4
-      - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang lld make zip python3-pil fonts-dejavu-core
-      - name: TXT/EPUB host smoke tests
+
+      - name: Configure CrossPoint core
+        run: cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+
+      - name: Build
+        run: cmake --build build/crosspoint-core --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build/crosspoint-core --output-on-failure
+
+      - name: Package tested host components
+        if: matrix.compiler == 'gcc'
         run: |
-          mkdir -p build
-          python3 - <<'PY'
-          import zipfile
-          with zipfile.ZipFile("build/fixture.epub","w",compression=zipfile.ZIP_DEFLATED) as z:
-              z.writestr("mimetype","application/epub+zip",compress_type=zipfile.ZIP_STORED)
-              z.writestr("OEBPS/01.xhtml",'<html><body><h1>First chapter</h1><p>hello &amp; world</p></body></html>')
-              z.writestr("OEBPS/02.xhtml",'<html><body><h1>Second chapter</h1><p>Example text</p></body></html>')
-          PY
-          cc -std=c11 -O2 -Wall -Wextra -Wno-unused-variable -Isrc -o build/reader-test tests/test_reader.c src/reader.c src/epub.c
-          ./build/reader-test build/fixture.epub
-      - name: Build native MIPS card app
-        run: make
-      - name: Validate output layout
-        run: |
-          file dist/.crosspod/q2-crosspod
-          unzip -l dist/crosspod.zip
-          test -s dist/crosspod.zip
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          mkdir -p dist/core-devkit/lib dist/core-devkit/include dist/core-devkit/platform
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a dist/core-devkit/lib/
+          cp crosspoint-core/lib/Utf8/Utf8.h crosspoint-core/lib/Txt/TxtToHtml.h dist/core-devkit/include/
+          cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp dist/core-devkit/platform/
+          cp crosspoint-core/LICENSE-CROSSPOINT dist/core-devkit/
+          printf '%s\n' 'DEVELOPMENT CORE ONLY — Linux x86_64 host static libraries, NOT Q2 firmware.' > dist/core-devkit/NOT-FLASHABLE.txt
+          cd dist
+          zip -qr crosspod-crosspoint-core-devkit.zip core-devkit
+
+      - name: Upload development build
+        if: matrix.compiler == 'gcc'
+        uses: actions/upload-artifact@v4
         with:
-          name: crosspod-card-app
-          path: dist/crosspod.zip
+          name: crosspod-crosspoint-core-devkit-${{ github.sha }}
+          path: dist/crosspod-crosspoint-core-devkit.zip
+          if-no-files-found: error
+          retention-days: 30

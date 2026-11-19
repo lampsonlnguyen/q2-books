@@ -27,6 +27,7 @@ enum { SYS_READ=4003,SYS_WRITE=4004,SYS_OPEN=4005,SYS_CLOSE=4006,
  * Remove after real-device startup is confirmed.
  */
 #define DIAGNOSTIC "/mnt/mmc/.crosspod/diagnostic.txt"
+#define TONE_FILE "/mnt/mmc/.crosspod/tone.cfg"
 static int diag_fd=-1;
 static void diag(const char *msg) {
     if(diag_fd<0)return;
@@ -47,6 +48,24 @@ void *memcpy(void *dst,const void *src,__SIZE_TYPE__ n) {
     const unsigned char *q=src;
     while(n--)*p++=*q++;
     return dst;
+}
+static void tone_load(Reader *r) {
+    unsigned char data[6];
+    int fd=(int)sc(SYS_OPEN,(long)TONE_FILE,0,0,0,0,0);
+    if(fd<0)return;
+    long count=sc(SYS_READ,fd,(long)data,sizeof data,0,0,0);
+    sc(SYS_CLOSE,fd,0,0,0,0,0);
+    if(count==6&&data[0]=='C'&&data[1]=='P'&&data[2]=='T'&&data[3]==1&&data[4]<=100&&data[5]<=1){
+        r->warmth=data[4];r->night=data[5];
+    }
+}
+static void tone_save(Reader *r) {
+    const unsigned char data[6]={'C','P','T',1,(unsigned char)r->warmth,(unsigned char)r->night};
+    int fd=(int)sc(SYS_OPEN,(long)TONE_FILE,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,0644,0,0,0);
+    if(fd<0)return;
+    long count=sc(SYS_WRITE,fd,(long)data,sizeof data,0,0,0);
+    sc(SYS_CLOSE,fd,0,0,0,0,0);
+    if(count==(long)sizeof data)r->tone_dirty=0;
 }
 static Reader app;
 /* Full-size software backbuffer: draw off-screen, then publish only finished
@@ -120,6 +139,7 @@ int q2_main(void) {
         sc(SYS_CLOSE,fb,0,0,0,0,0);return 1;
     }
     reader_init(&app);
+    tone_load(&app);
     int file=(int)sc(SYS_OPEN,(long)"/mnt/mmc/.crosspod/book.epub",0,0,0,0,0);
     if(file>=0) {
         long size=sc(SYS_LSEEK,file,0,2,0,0,0);
@@ -168,11 +188,13 @@ int q2_main(void) {
         if(n>0) {
             message[n]=0;
             if(reader_input(&app,message)){
+                if(app.tone_dirty)tone_save(&app);
                 reader_render(&app,frame,SCREEN_H);
                 present_frame(pixels+visible*stride,stride);
             }
         }
     }
+    if(app.tone_dirty)tone_save(&app);
     sc(SYS_CLOSE,input,0,0,0,0,0);
     sc(SYS_UNLINK,(long)INPUT_SOCKET,0,0,0,0,0);
     sc(SYS_MUNMAP,mapped,(long)fix[5],0,0,0,0);

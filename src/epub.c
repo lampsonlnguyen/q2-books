@@ -24,7 +24,6 @@ static int match_ext(const unsigned char *s,unsigned n){
     }
     return 0;
 }
-static int isspace_c(unsigned char c){return c==' '||c=='\r'||c=='\n'||c=='\t';}
 static int lower(int ch){return ch>='A'&&ch<='Z'?ch+32:ch;}
 static int starts(const unsigned char *p,unsigned n,const char*name){
     unsigned i=0;

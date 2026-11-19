@@ -16,3 +16,6 @@ add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
 
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
+
+add_executable(crosspoint_display_tests tests/display_test.cpp)
+add_test(NAME q2_lcd_color_adapter COMMAND crosspoint_display_tests)

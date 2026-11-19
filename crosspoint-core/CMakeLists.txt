@@ -159,3 +159,19 @@ target_link_libraries(crosspoint_layout_foundation_tests PRIVATE crosspoint_layo
 target_compile_options(crosspoint_layout_foundation_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_original_css_wordstore
     COMMAND crosspoint_layout_foundation_tests)
+
+# CrossPoint's original Unicode glyph lookup, fixed-point font metrics,
+# ligature substitution and font-family style selection.
+add_library(crosspoint_font_metrics STATIC
+    lib/EpdFont/EpdFont.cpp
+    lib/EpdFont/EpdFontFamily.cpp
+)
+target_include_directories(crosspoint_font_metrics PUBLIC
+    lib/EpdFont
+    lib/Utf8
+)
+target_link_libraries(crosspoint_font_metrics PUBLIC crosspoint_utf8)
+add_executable(crosspoint_font_metrics_tests tests/font_metrics_test.cpp)
+target_link_libraries(crosspoint_font_metrics_tests PRIVATE crosspoint_font_metrics)
+target_compile_options(crosspoint_font_metrics_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_unicode_font_metrics COMMAND crosspoint_font_metrics_tests)

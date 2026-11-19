@@ -12,7 +12,7 @@ CrossPod is a lightweight, native **Linux/MIPS book reader** for [DiamondBond's 
 | `.epub` | Unencrypted EPUB/ZIP using stored or DEFLATE-compressed `.html` / `.xhtml` chapters; simplified text-only extraction |
 | EPUB images, CSS, rich layout, TOC | Not yet |
 | DRM-locked EPUB | Not supported |
-| Vietnamese, other non-ASCII scripts | Font/UTF-8 shaping not yet implemented |
+| Vietnamese precomposed UTF-8 (NFC) | Experimental bitmap glyph rendering and codepoint-aware pagination (not yet hardware validated) |
 
 The current EPUB parser does **not** yet use the OPF spine, so chapters are displayed in ZIP entry order (which can differ from reading order). Some valid EPUBs will not render correctly. Individual compressed XHTML files must be no larger than 512 KiB and uncompressed XHTML files no larger than 256 KiB. The extracted reading text is limited to 256 KiB. ZIP64 and encrypted entries are not supported.
 
@@ -21,7 +21,7 @@ The current EPUB parser does **not** yet use the OPF spine, so chapters are disp
 On Ubuntu / WSL:
 
 ```sh
-sudo apt-get install clang lld make zip
+sudo apt-get install clang lld make zip python3-pil fonts-dejavu-core
 git clone https://github.com/lampsonlnguyen/q2-crosspoint
 cd q2-crosspoint
 make
@@ -54,6 +54,12 @@ CrossPod opens a simple library picker on launch. Use the wheel or previous/next
 
 Restart Q2 Pod, then look for **CrossPod directly in Library**, not Games. Q2 Pod currently does not expose a manifest setting to nest card apps under **Library → Books**; that requires a firmware change. If CrossPod is not discovered, note Q2 Pod's card-app discovery limit and temporarily remove unused apps.
 
+## Vietnamese text status
+
+CrossPod previously drew only ASCII and displayed non-ASCII UTF-8 bytes as question marks. The new reader renderer decodes Unicode codepoints, uses generated grayscale glyph bitmaps from DejaVu Sans, and keeps multi-byte characters intact while paginating. This covers common **precomposed Vietnamese (NFC)**, including `đ ư ơ ă â ê ô` and tonal variants in text and filenames. NFD combining accents are drawn on the preceding glyph but do not yet have full normalization/shaping or reliable mark positioning. EPUB XHTML decoding is still incomplete; HTML entities beyond a small basic subset are not supported. These fixes are not yet confirmed on Q2 hardware.
+
+**Building needs `python3-pil` and `fonts-dejavu-core`.** The font is rasterized once at build time to `src/font_vn.h`; there is no Python, FreeType, or dynamic font engine in the Q2 executable. A full CrossPoint font/EPUB engine port has **not** happened.
+
 ## Reading tone and night mode
 
 CrossPod now has a software-based **warm/cool reading tone** (0 cool to 100 warm) and a separate **night mode**. While reading, tap **TONE** at the upper-right corner. Use the **wheel** or touch the color strip to adjust warmth. Tap **NIGHT**, or press the center button while the tone panel is open, to toggle dark reading mode. Press Back to close the panel. The preferences are saved in `/.crosspod/tone.cfg` and restored at next launch.
@@ -84,7 +90,7 @@ Core files:
 1. Validate CI compilation and real device reading, including nested SD directories.
 2. Save per-book reading positions and optionally resume the last open book.
 3. Correct EPUB OPF manifest and spine ordering, efficient chapter paging and CSS-aware layout.
-4. Unicode text and user-selectable readable fonts, including Vietnamese diacritics.
+4. Improve Vietnamese NFD combining-mark positioning, word wrapping, and user-selectable fonts.
 5. Optional TOC, bookmarks and KOReader progress sync.
 
 ## Licensing and credits

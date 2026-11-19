@@ -44,13 +44,13 @@ These are **host-side component tests only**, including upstream TXT-to-XHTML co
 
 ## Automated builds and releases
 
-GitHub Actions `CrossPoint Core CI` runs for every push and pull request against `crosspoint-core-port`. It builds and tests the portable CrossPoint core with GCC and Clang and uploads a host-development ZIP (not Q2-installable).
+GitHub Actions `CrossPoint Core CI` runs for every push and pull request against `main`. It builds and tests the portable CrossPoint core with GCC and Clang and uploads a host-development ZIP (not Q2-installable).
 
-To publish a development prerelease, create and push a tag named `core-vX.Y.Z` pointing to a commit on `crosspoint-core-port`:
+To publish a development prerelease, create and push a tag named `core-vX.Y.Z` pointing to a commit on `main`:
 
 ```sh
-git switch crosspoint-core-port
-git pull --ff-only origin crosspoint-core-port
+git switch main
+git pull --ff-only origin main
 git tag core-v0.1.0
 git push origin core-v0.1.0
 ```

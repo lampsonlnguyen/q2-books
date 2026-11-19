@@ -7,7 +7,8 @@
 #include <new>
 #include <vector>
 
-HalDisplay::HalDisplay() : raster_(new (std::nothrow) uint8_t[BUFFER_SIZE]) {
+HalDisplay::HalDisplay() : raster_(new (std::nothrow) uint8_t[BUFFER_SIZE]),
+  inkRaster_(new (std::nothrow) uint8_t[BUFFER_SIZE]) {
   clearScreen();
 }
 HalDisplay::~HalDisplay() = default;
@@ -30,16 +31,15 @@ void HalDisplay::drawImage(const uint8_t* img, uint16_t x, uint16_t y,
   }
 }
 void HalDisplay::displayBuffer(RefreshMode,bool) {
-  if (!raster_ || loaned_) return;
+  if (!raster_ || !inkRaster_ || loaned_) return;
   // Upstream CrossPoint framebuffer is 1=paper, 0=ink. Q2PagePresenter's
   // bridge is 1=ink. Invert only the bounded 15KB 1bpp image, not the renderer.
   static crosspod::Q2PagePresenter presenter;
   static bool tried=false, available=false;
   if (!tried) {tried=true; available=presenter.open();}
   if (!available) return;
-  std::vector<uint8_t> inverted(BUFFER_SIZE);
-  for(unsigned i=0;i<BUFFER_SIZE;i++)inverted[i]=static_cast<uint8_t>(~raster_[i]);
-  if(!presenter.presentBW(inverted.data(),inverted.size(),0,inverted_))
+  for(unsigned i=0;i<BUFFER_SIZE;i++)inkRaster_[i]=static_cast<uint8_t>(~raster_[i]);
+  if(!presenter.presentBW(inkRaster_.get(),BUFFER_SIZE,0,inverted_))
     std::fputs("CrossPod: framebuffer publish failed\n",stderr);
 }
 uint8_t* HalDisplay::lendFrameBufferStorage(uint32_t* sizeOut) {

@@ -13,6 +13,9 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CrossPoint EPUB `container.xml` parser, built with Linux Expat, rather than Q2 Pod's plain-text EPUB converter
 - Original CrossPoint `ZipFile` EPUB archive handling, compiled unchanged with POSIX file I/O and streaming zlib DEFLATE adapters; regression fixture includes Vietnamese, CJK, Arabic, Hebrew, Thai, Indic, Cyrillic and Greek text
 - Original CrossPoint `ContentOpfParser` for EPUB metadata, manifest and spine order
+- Original EPUB `CssParser` and disk-efficient `WordStore` (styling and bounded page-layout word storage)
+- Original `EpdFont`/`EpdFontFamily` Unicode coverage and glyph metrics, with original borrowed-code license notices
+- Q2 Linux socket input, native double-buffered framebuffer and page-presentation adapter; these are individually tested, not wired to a complete reader
 - Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
 - A Linux `crosspod-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
 - Standalone Q2 Pod Books shelf handoff contract for `/mnt/mmc/Books/...` paths and Vietnamese filenames
@@ -60,3 +63,7 @@ Q2 Pod, if installed, may offer a Library launcher but must not be used as the e
 ## Licensing
 
 The code copied unmodified from CrossPoint is governed by CrossPoint's original MIT license and associated third-party notices: see [LICENSE-CROSSPOINT](crosspoint-core/LICENSE-CROSSPOINT). Check every third-party dependency's license before distribution.
+
+### Q2 MIPS / hardware diagnostic
+
+The `crosspod-hwcheck` program and cross-compiler workflow are in [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7), pending validation. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.

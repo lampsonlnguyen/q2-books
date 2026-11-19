@@ -50,6 +50,8 @@ jobs:
           cp crosspoint-core/lib/Utf8/Utf8.h crosspoint-core/lib/Txt/TxtToHtml.h crosspoint-core/lib/Epub/parsers/ContainerParser.h crosspoint-core/lib/ZipFile/ZipFile.h crosspoint-core/lib/Epub/parsers/ContentOpfParser.h crosspoint-core/lib/Epub/Epub/BookMetadataCache.h crosspoint-core/lib/Serialization/BufferedFile.h crosspoint-core/lib/Serialization/Serialization.h dist/core-devkit/include/
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp dist/core-devkit/platform/
           cp crosspoint-core/LICENSE-CROSSPOINT dist/core-devkit/
+          cp -R crosspoint-core/platform/posix dist/core-devkit/posix
+          cp build/crosspoint-core/crosspod-epub-check dist/core-devkit/
           printf '%s\n' 'DEVELOPMENT CORE ONLY — Linux x86_64 host static libraries, NOT Q2 firmware.' > dist/core-devkit/NOT-FLASHABLE.txt
           cd dist
           zip -qr crosspod-crosspoint-core-devkit.zip core-devkit

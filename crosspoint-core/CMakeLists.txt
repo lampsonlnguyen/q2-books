@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(crosspod_crosspoint_core LANGUAGES CXX)
+project(crosspod_crosspoint_core LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -200,3 +200,21 @@ add_dependencies(crosspoint_epub_css_pipeline_tests epub_fixture)
 target_compile_options(crosspoint_epub_css_pipeline_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_epub_css_pipeline
     COMMAND crosspoint_epub_css_pipeline_tests "${EPUB_FIXTURE}")
+
+# Original CrossPoint MiniBidi (UAX#9) and Arabic contextual presentation.
+# This is used by upstream ParsedText/GfxRenderer. We build unmodified C
+# text direction algorithms on Linux rather than a simplified local rewrite.
+add_library(crosspoint_bidi STATIC
+    lib/MiniBidi/minibidi.c
+    lib/MiniBidi/BidiUtils.cpp
+)
+target_include_directories(crosspoint_bidi PUBLIC
+    lib/MiniBidi
+    lib/Utf8
+    platform/posix
+)
+target_link_libraries(crosspoint_bidi PUBLIC crosspoint_utf8)
+add_executable(crosspoint_bidi_tests tests/bidi_test.cpp)
+target_link_libraries(crosspoint_bidi_tests PRIVATE crosspoint_bidi)
+target_compile_options(crosspoint_bidi_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_unicode_bidi_arabic COMMAND crosspoint_bidi_tests)

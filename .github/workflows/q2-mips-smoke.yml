@@ -31,6 +31,7 @@ jobs:
           cmake -S crosspoint-core/platform/q2 -B build/q2-host -DCMAKE_BUILD_TYPE=Release
           cmake --build build/q2-host --parallel 2
           ./build/q2-host/crosspod-hwcheck --help >/dev/null 2>&1 && exit 1 || test "$?" -eq 2
+          ./build/q2-host/crosspod-engine-smoke
 
       - name: Build MIPS32 little-endian Linux diagnostic
         run: |
@@ -40,7 +41,8 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=mipsel
           cmake --build build/q2-mips --parallel 2
-          file build/q2-mips/crosspod-hwcheck
+          file build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke
+          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-engine-smoke | grep -q "Machine:.*MIPS"
           mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-hwcheck | tee build/q2-mips/elf-header.txt
           grep -q 'Machine:.*MIPS' build/q2-mips/elf-header.txt
           grep -q 'Data:.*little endian' build/q2-mips/elf-header.txt
@@ -55,6 +57,9 @@ jobs:
           cat build/q2-mips/qemu-smoke.txt
           test "$result" -eq 2
           grep -q 'Usage: crosspod-hwcheck' build/q2-mips/qemu-smoke.txt
+          timeout 20s qemu-mipsel -L /usr/mipsel-linux-gnu \
+            build/q2-mips/crosspod-engine-smoke | tee build/q2-mips/engine-smoke.txt
+          grep -q "CrossPod upstream text engine.*OK" build/q2-mips/engine-smoke.txt
 
       - name: Mark compatibility not verified
         run: |
@@ -66,7 +71,7 @@ jobs:
           The diagnostic is intended only for controlled device testing.
           Use a Q2-specific sysroot/toolchain for a production-ready binary.
           NOTE
-          (cd build/q2-mips && sha256sum crosspod-hwcheck > crosspod-hwcheck.sha256)
+          (cd build/q2-mips && sha256sum crosspod-hwcheck crosspod-engine-smoke > crosspod-hwcheck.sha256)
 
       - name: Upload MIPS experiment
         uses: actions/upload-artifact@v4
@@ -74,6 +79,8 @@ jobs:
           name: crosspod-q2-mips-hwcheck-unverified
           path: |
             build/q2-mips/crosspod-hwcheck
+            build/q2-mips/crosspod-engine-smoke
+            build/q2-mips/engine-smoke.txt
             build/q2-mips/elf-header.txt
             build/q2-mips/qemu-smoke.txt
             build/q2-mips/crosspod-hwcheck.sha256

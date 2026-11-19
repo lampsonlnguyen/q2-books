@@ -90,3 +90,20 @@ target_link_libraries(crosspod-epub-check PRIVATE crosspoint_zip crosspoint_epub
 add_dependencies(crosspod-epub-check epub_fixture)
 add_test(NAME crosspoint_epub_check_cli
     COMMAND crosspod-epub-check "${EPUB_FIXTURE}")
+
+# Original CrossPoint OPF manifest and spine parser. Temporary storage and
+# metadata-cache callback are POSIX transitional adapters (full cache to port).
+add_library(crosspoint_opf STATIC lib/Epub/parsers/ContentOpfParser.cpp)
+target_include_directories(crosspoint_opf PUBLIC
+    platform/posix
+    lib/Epub/parsers
+    lib/XmlParserUtils
+    lib/Serialization
+)
+target_link_libraries(crosspoint_opf PUBLIC EXPAT::EXPAT)
+add_executable(crosspoint_opf_spine_tests tests/opf_spine_test.cpp)
+target_link_libraries(crosspoint_opf_spine_tests PRIVATE crosspoint_zip crosspoint_opf)
+add_dependencies(crosspoint_opf_spine_tests epub_fixture)
+target_compile_options(crosspoint_opf_spine_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_original_opf_spine
+    COMMAND crosspoint_opf_spine_tests "${EPUB_FIXTURE}")

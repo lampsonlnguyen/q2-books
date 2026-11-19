@@ -42,6 +42,12 @@ Copy your book to **one** of these paths:
 
 Restart Q2 Pod, then look for **CrossPod directly in Library**, not Games. Q2 Pod currently does not expose an app-manifest setting for installing a card app inside **Library → Books**. That requires a Q2 Pod firmware menu modification. If the app is not discovered, remember Q2 Pod's card-app discovery limit; temporarily remove unused apps. This ZIP does not modify firmware.
 
+## Reading tone and night mode
+
+CrossPod now has a software-based **warm/cool reading tone** (0 cool to 100 warm) and a separate **night mode**. While reading, tap **TONE** at the upper-right corner. Use the **wheel** or touch the color strip to adjust warmth. Tap **NIGHT**, or press the center button while the tone panel is open, to toggle dark reading mode. Press Back to close the panel. The preferences are saved in `/.crosspod/tone.cfg` and restored at next launch.
+
+This changes only CrossPod's rendered page palette, **not** the Q2 LCD's hardware backlight temperature or brightness. No continuous visual effects or background redraws are used: a finished page is drawn only when needed.
+
 ## Controls
 
 - Wheel: page backward/forward

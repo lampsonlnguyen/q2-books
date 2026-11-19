@@ -13,10 +13,7 @@ dist/.crosspod/q2-crosspod: build/platform.o build/reader.o build/render.o build
 dist/.crosspod/q2app: q2app
 	mkdir -p dist/.crosspod
 	cp q2app $@
-dist/.crosspod/book.txt: sample/book.txt
-	mkdir -p dist/.crosspod
-	cp $< $@
-dist/crosspod.zip: dist/.crosspod/q2-crosspod dist/.crosspod/q2app dist/.crosspod/book.txt
-	cd dist && zip -q crosspod.zip .crosspod/q2-crosspod .crosspod/q2app .crosspod/book.txt
+dist/crosspod.zip: dist/.crosspod/q2-crosspod dist/.crosspod/q2app
+	cd dist && zip -q crosspod.zip .crosspod/q2-crosspod .crosspod/q2app
 clean:
 	rm -rf build dist

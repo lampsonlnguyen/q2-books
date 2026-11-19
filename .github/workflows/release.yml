@@ -54,8 +54,8 @@ jobs:
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
           CrossPod — CrossPoint Core development release
           Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
-          This is NOT Shanling Q2 firmware, NOT a MIPS executable, and NOT installable on Q2.
-          The full upstream EPUB renderer and device integration remain under development.
+          This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
+          The upstream EPUB rendering and Linux HAL integration remain under development.\n          No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
           NOTICE
           (
             cd dist
@@ -70,7 +70,7 @@ jobs:
           Q2 click-wheel/touch and LCD adapters, and their source code.
           It is a Linux x86_64 development build, not a MIPS device binary.
 
-          A Q2 firmware ZIP will only be published when the original CrossPoint
+          A Q2 Linux reader application package will only be published when the original CrossPoint
           EPUB engine, typography, reader activities and POSIX device HAL
           have been integrated and validated on hardware.
           NOTES

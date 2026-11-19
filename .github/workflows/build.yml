@@ -28,7 +28,7 @@ jobs:
         run: make
       - name: Validate output layout
         run: |
-          file dist/.crosspod/crosspod
+          file dist/.crosspod/q2-crosspod
           unzip -l dist/crosspod.zip
           test -s dist/crosspod.zip
       - uses: actions/upload-artifact@v4

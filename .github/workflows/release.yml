@@ -21,12 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag belongs to CrossPoint port branch
+      - name: Verify tag belongs to main
         run: |
           set -euo pipefail
-          git fetch origin crosspoint-core-port
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/crosspoint-core-port || {
-            echo "Refusing to publish: tag must point to a commit on crosspoint-core-port" >&2
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "Refusing to publish: tag must point to a commit on main" >&2
             exit 1
           }
 
@@ -58,7 +58,8 @@ jobs:
           CrossPod — CrossPoint Core development release
           Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
           This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
-          The upstream EPUB rendering and Linux HAL integration remain under development.\n          No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
+          The upstream EPUB rendering and Linux HAL integration remain under development.
+          No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
           NOTICE
           (
             cd dist

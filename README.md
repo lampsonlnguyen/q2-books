@@ -12,13 +12,16 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CrossPoint TXT-to-XHTML converter, unmodified and compiled with small POSIX compatibility shims
 - Original CrossPoint EPUB `container.xml` parser, built with Linux Expat, rather than Q2 Pod's plain-text EPUB converter
 - Original CrossPoint `ZipFile` EPUB archive handling, compiled unchanged with POSIX file I/O and streaming zlib DEFLATE adapters; regression fixture includes Vietnamese, CJK, Arabic, Hebrew, Thai, Indic, Cyrillic and Greek text
+- Original CrossPoint `ContentOpfParser` for EPUB metadata, manifest and spine order
+- Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
+- A Linux `crosspod-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
 - Standalone Q2 Pod Books shelf handoff contract for `/mnt/mmc/Books/...` paths and Vietnamese filenames
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
 - A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
 - CMake host compilation and tests for Unicode, TXT conversion, EPUB archive/ZIP streaming, container XML, wheel/touch input, and LCD output adapters
 
-**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
+**Not yet done:** CrossPoint EPUB chapter HTML/CSS layout, reader activities, font system, GfxRenderer, LCD I/O and power HAL on MIPS Linux. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
 
 ## Build currently ported source tests
 
@@ -29,7 +32,7 @@ cd q2-crosspoint
 make
 ```
 
-`make` tests the upstream CrossPoint Unicode core and Q2 adapter functions **only**. It does not produce a device binary.
+`make` runs upstream CrossPoint parsing/cache and Q2 adapter tests and builds a **host-only EPUB validation command**, `build/crosspoint-core/crosspod-epub-check`. This does not produce an installable Q2 reader.
 
 To inspect only the reader-related CrossPoint source at the pinned revision:
 

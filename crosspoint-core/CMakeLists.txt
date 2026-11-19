@@ -83,3 +83,10 @@ add_dependencies(crosspoint_epub_zip_tests epub_fixture)
 target_compile_options(crosspoint_epub_zip_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_multilingual_epub_zip
     COMMAND crosspoint_epub_zip_tests "${EPUB_FIXTURE}")
+
+# Tiny native/Linux diagnostic executable; not a full graphical reader.
+add_executable(crosspod-epub-check tools/epub_check.cpp)
+target_link_libraries(crosspod-epub-check PRIVATE crosspoint_zip crosspoint_epub_container)
+add_dependencies(crosspod-epub-check epub_fixture)
+add_test(NAME crosspoint_epub_check_cli
+    COMMAND crosspod-epub-check "${EPUB_FIXTURE}")

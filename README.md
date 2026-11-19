@@ -16,6 +16,9 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original EPUB `CssParser` and disk-efficient `WordStore` (styling and bounded page-layout word storage)
 - Original `EpdFont`/`EpdFontFamily` Unicode coverage and glyph metrics, with original borrowed-code license notices
 - Original CJK punctuation line-breaking, Hangul boundary rules, Unicode hyphenation helpers and token-break primitives
+- Original MiniBidi implementation and Arabic/Hebrew visual reordering plus contextual Arabic shaping, compiled and tested on Linux
+- Original `ParsedText.cpp` and `Page.cpp` **compile-checked** on Linux (not yet linked as a functioning reader)
+- Q2 logical-screen `HalDisplay` with original CrossPoint white/ink 1-bpp convention, frame-publication bridge and a tested raster path
 - Q2 Linux socket input, native double-buffered framebuffer and page-presentation adapter; these are individually tested, not wired to a complete reader
 - Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
 - A Linux `crosspod-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
@@ -25,7 +28,7 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
 - CMake host compilation and tests for Unicode, TXT conversion, EPUB archive/ZIP streaming, container XML, wheel/touch input, and LCD output adapters
 
-**Not yet done:** CrossPoint EPUB chapter HTML/CSS layout, reader activities, font system, GfxRenderer, LCD I/O and power HAL on MIPS Linux. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
+**Not yet done:** End-to-end chapter XHTML/CSS pagination, linking `ParsedText` and `Page` to the full upstream `GfxRenderer`/font loading/shaping and reader activities, then device-level CPU/input/display/power verification on Q2. The Q2 display/transport interfaces exist but are not driven by a full page engine. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
 
 ## Build currently ported source tests
 

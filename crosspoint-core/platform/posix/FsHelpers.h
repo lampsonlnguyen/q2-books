@@ -47,6 +47,11 @@ inline std::string normalisePath(const std::string& path) {
   return out;
 }
 
+inline bool hasTxtExtension(std::string_view p) {
+  if (p.size()<4) return false;
+  p.remove_prefix(p.size()-4);
+  return (p==".txt" || p==".TXT");
+}
 inline bool hasMarkdownExtension(std::string_view p) {
   if(p.size()<3)return false;
   std::string_view e=p.substr(p.rfind('.')==std::string_view::npos?p.size():p.rfind('.'));

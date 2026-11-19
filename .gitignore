@@ -1,0 +1,4 @@
+# Actual CrossPoint upstream source is fetched on demand and pinned, not copied into the application.
+crosspoint-core/upstream/
+build/
+dist/

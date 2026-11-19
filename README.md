@@ -10,6 +10,8 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 
 - Original CrossPoint Unicode/NFC code, unmodified and with original license
 - Original CrossPoint TXT-to-XHTML converter, unmodified and compiled with small POSIX compatibility shims
+- Original CrossPoint EPUB `container.xml` parser, built with Linux Expat, rather than Q2 Pod's plain-text EPUB converter
+- Standalone Q2 Pod Books shelf handoff contract for `/mnt/mmc/Books/...` paths and Vietnamese filenames
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
 - A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
@@ -20,7 +22,7 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 ## Build currently ported source tests
 
 ```bash
-sudo apt-get update && sudo apt-get install -y git g++ cmake make
+sudo apt-get update && sudo apt-get install -y git g++ cmake make libexpat1-dev
 git clone -b crosspoint-core-port https://github.com/lampsonlnguyen/q2-crosspoint.git
 cd q2-crosspoint
 make
@@ -35,6 +37,10 @@ make upstream
 ```
 
 A sparse checkout appears in `crosspoint-core/upstream/` and is intentionally ignored by Git. Only the Unicode, TXT, EPUB, fonts, rendering and reader-activity source families are checked out; this does not compile any ESP32 firmware.
+
+## Q2 Pod Books integration
+
+Q2 Pod already has a `/Books` shelf and a basic EPUB/TXT reader in `patch/books.c`. Its EPUB implementation flattens XHTML into plain text and paints it using the stock font. CrossPod will **keep the Books shelf** but replace the reading experience with CrossPoint's actual engine in an independent Linux process. For the source-level findings, planned controls and safe fallback details, see [Q2 Pod Books integration](docs/q2pod-books-integration.md).
 
 ## Device integration design
 

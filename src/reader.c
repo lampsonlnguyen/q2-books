@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "crosspod.h"
+#include "utf8.h"
 
 static int ascii_lower(int c){return c>='A'&&c<='Z'?c+32:c;}
 static int compare(const char *a,const char *b){
@@ -71,13 +72,22 @@ void reader_index(Reader *r) {
   r->line_count=0;r->page=0;
   if(!r->book_len)return;
   r->starts[r->line_count++]=0;
-  while(pos<r->book_len && r->line_count<LINE_MAX) {
-    unsigned char ch=(unsigned char)r->book[pos++];
-    if(ch=='\r')continue;
-    if(ch=='\n'){col=0;if(pos<r->book_len)r->starts[r->line_count++]=pos;continue;}
+  while(pos<r->book_len && r->line_count<LINE_MAX){
+    unsigned bytes=0;
+    unsigned cp=cp_utf8_next(r->book+pos,r->book_len-pos,&bytes);
+    if(!bytes)break;
+    pos+=bytes;
+    if(cp=='\r')continue;
+    if(cp=='\n'){
+      col=0;
+      if(pos<r->book_len)r->starts[r->line_count++]=pos;
+      continue;
+    }
+    if(cp>=0x300&&cp<=0x36f)continue; /* combining marks do not add a column */
     col++;
     if(col>=COLS && pos<r->book_len){
-      r->starts[r->line_count++]=pos;col=0;
+      r->starts[r->line_count++]=pos;
+      col=0;
     }
   }
 }

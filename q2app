@@ -1,3 +1,4 @@
 name=CrossPod
-game=0
+game=1
+row=library
 audio=0

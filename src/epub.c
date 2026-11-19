@@ -47,7 +47,7 @@ static void append_html(Reader*r,const unsigned char*buf,unsigned len){
             unsigned j=i+1,closing=0;
             if(j<len&&buf[j]=='/'){closing=1;j++;}
             unsigned start=j;
-            while(j<len&&((buf[j]>='a'&&buf[j]<='z')||(buf[j]>='A'&&buf[j]<='Z')||buf[j]>='0'&&buf[j]<='9'))j++;
+            while(j<len&&((buf[j]>='a'&&buf[j]<='z')||(buf[j]>='A'&&buf[j]<='Z')||(buf[j]>='0'&&buf[j]<='9')))j++;
             unsigned n=j-start;
             if(starts(buf+start,n,"body")){seen_body=1;in_body=!closing;}
             if(starts(buf+start,n,"script")||starts(buf+start,n,"style")||starts(buf+start,n,"head")||starts(buf+start,n,"svg")) {

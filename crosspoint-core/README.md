@@ -23,7 +23,7 @@ A Linux process requires an entry point and access to actual Q2 input/display ha
 
 ## Upstream source brought over so far
 
-`lib/Utf8/Utf8.h`, `Utf8.cpp`, and `Utf8ComposeTable.h` were copied unmodified from CrossPoint. These functions implement Vietnamese NFC normalization, including decomposed text frequently produced on macOS and inside EPUBs. `reference/` files are unmodified dependency-audit copies of the CrossPoint EPUB and layout code, **not yet compiled**. They identify what needs to be ported without replacing the algorithms.
+`lib/Utf8/Utf8.h`, `Utf8.cpp`, and `Utf8ComposeTable.h` were copied unmodified from CrossPoint. The original `lib/Txt/TxtToHtml.cpp` and `TxtToHtml.h` are also compiled unchanged using narrow POSIX replacements for Arduino Print, memory allocation, file helper and logging interfaces. These functions implement Vietnamese NFC normalization, including decomposed text frequently produced on macOS and inside EPUBs. `reference/` files are unmodified dependency-audit copies of the CrossPoint EPUB and layout code, **not yet compiled**. They identify what needs to be ported without replacing the algorithms.
 
 CrossPoint original source is under MIT, with separately licensed dependencies and fonts (see CrossPoint's `LICENSE` and `licenses/`). The old CrossPod GPL prototype retains its own license. Porting new CrossPoint files must preserve upstream and third-party notices.
 
@@ -40,7 +40,7 @@ cmake --build build/crosspoint-core
 ctest --test-dir build/crosspoint-core --output-on-failure
 ```
 
-These are **host-side component tests only**. This branch does not yet produce a complete CrossPoint-based Q2 reader. The legacy root `make` still builds the earlier prototype; **do not confuse that binary with this port**.
+These are **host-side component tests only**, including actual upstream TXT-to-XHTML conversion of Vietnamese UTF-8. This branch does not yet produce a complete CrossPoint-based Q2 reader. The legacy root `make` still builds the earlier prototype; **do not confuse that binary with this port**.
 
 ## Next technical milestones
 

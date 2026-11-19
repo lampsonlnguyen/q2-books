@@ -141,3 +141,21 @@ add_executable(crosspod_framebuffer_tests tests/framebuffer_test.cpp)
 target_link_libraries(crosspod_framebuffer_tests PRIVATE crosspod_q2_framebuffer)
 target_compile_options(crosspod_framebuffer_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_q2_framebuffer_rotation COMMAND crosspod_framebuffer_tests)
+
+# Original CrossPoint bounded text arena (WordStore) and stylesheet parser.
+# Both compile untouched; only their ESP32 cache reclamation and filesystem
+# services are provided through POSIX compatibility interfaces.
+add_library(crosspoint_layout_foundation STATIC
+    lib/Epub/WordStore.cpp
+    lib/Epub/css/CssParser.cpp
+)
+target_include_directories(crosspoint_layout_foundation PUBLIC
+    lib/Epub
+    lib/Epub/css
+    platform/posix
+)
+add_executable(crosspoint_layout_foundation_tests tests/layout_foundation_test.cpp)
+target_link_libraries(crosspoint_layout_foundation_tests PRIVATE crosspoint_layout_foundation)
+target_compile_options(crosspoint_layout_foundation_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_original_css_wordstore
+    COMMAND crosspoint_layout_foundation_tests)

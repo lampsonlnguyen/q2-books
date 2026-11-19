@@ -40,6 +40,9 @@ class HalFile {
     const long at = std::ftell(fp_);
     return at < 0 ? 0 : static_cast<size_t>(at);
   }
+  size_t write(const void* data, size_t count) {
+    return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
+  }
   size_t write(const uint8_t* data, size_t count) {
     return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
   }
@@ -84,5 +87,6 @@ class HalStorage {
     return true;
   }
   bool remove(const char* path) { return std::remove(path) == 0; }
+  bool rename(const char* from, const char* to) { return std::rename(from, to) == 0; }
 };
 #define Storage HalStorage::getInstance()

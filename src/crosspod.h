@@ -7,7 +7,8 @@ typedef uint32_t u32;
 typedef struct {
   char book[BOOK_MAX+1];
   unsigned starts[LINE_MAX];
-  unsigned line_count, book_len, page, wheel_acc;
+  unsigned line_count, book_len, page;
+  int wheel_acc;
   int quit, loaded, touch_down, center_down;
 } Reader;
 void reader_init(Reader *r);

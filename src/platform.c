@@ -21,7 +21,7 @@ enum { SYS_READ=4003,SYS_WRITE=4004,SYS_OPEN=4005,SYS_CLOSE=4006,
        FB_VSCREEN=0x4600,FB_FSCREEN=0x4602,FB_PAN=0x4606,
        O_WRONLY=1,O_RDWR=2,O_CREAT=0x100,O_TRUNC=0x200,O_CLOEXEC=0x80000,
        MSG_DONTWAIT=0x40,FRAME_MS=17 };
-#define INPUT_SOCKET "/tmp/crosspod.input.sock"
+#define INPUT_SOCKET "/tmp/q2-crosspod.input.sock"
 /* Diagnostic file on the card: helps distinguish launch failure from display failure.
  * Rewritten at each launch; tiny, one-shot writes (no writes in animation loop).
  * Remove after real-device startup is confirmed.

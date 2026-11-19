@@ -1,98 +1,51 @@
-# CrossPod — TXT + EPUB reader for Q2 Pod
+# CrossPod — direct CrossPoint Reader port to Shanling Q2
 
-CrossPod is a lightweight, native **Linux/MIPS book reader** for [DiamondBond's Q2 Pod](https://github.com/DiamondBond/q2-pod) on the Shanling Q2. Its goal is to adapt reading ideas and portable components from [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) to the Q2, without running ESP32 firmware or replacing Q2 Pod.
+**This is the real CrossPoint engine migration branch. It is not yet a functional Q2 e-reader.**
 
-**Development status:** native TXT reader and experimental EPUB ZIP/DEFLATE + XHTML text extraction have been implemented. CI and physical Q2 performance **have not yet been verified**. This is not a full CrossPoint EPUB layout engine.
+The original CrossPod prototype is preserved on the [main branch](https://github.com/lampsonlnguyen/q2-crosspoint/tree/main). This branch **removes** its custom C EPUB extractor, text renderer, bitmap font reader and Q2 game-style runtime.
 
-## Book formats
+The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout, fonts, page caches, activities and settings, and adapts only the hardware interfaces to the Q2's Linux display, click wheel, touchscreen and SD card. See [the technical plan](crosspoint-core/README.md).
 
-| Format | Current support |
-| --- | --- |
-| `.txt` | Basic plaintext display and page navigation |
-| `.epub` | Unencrypted EPUB/ZIP using stored or DEFLATE-compressed `.html` / `.xhtml` chapters; simplified text-only extraction |
-| EPUB images, CSS, rich layout, TOC | Not yet |
-| DRM-locked EPUB | Not supported |
-| Vietnamese precomposed UTF-8 (NFC) | Experimental bitmap glyph rendering and codepoint-aware pagination (not yet hardware validated) |
+## What is actually ported now
 
-The current EPUB parser does **not** yet use the OPF spine, so chapters are displayed in ZIP entry order (which can differ from reading order). Some valid EPUBs will not render correctly. Individual compressed XHTML files must be no larger than 512 KiB and uncompressed XHTML files no larger than 256 KiB. The extracted reading text is limited to 256 KiB. ZIP64 and encrypted entries are not supported.
+- Original CrossPoint Unicode/NFC code, unmodified and with original license
+- A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
+- A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
+- A reproducible checkout script for the **complete pinned CrossPoint upstream source**
+- CMake host compilation and test workflow for these components
 
-## Build and install
+**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no replacement `crosspod.zip` from this branch yet. A genuine build requires porting the FreeInk/Arduino/FreeRTOS integrations, not pretending CrossPoint's ESP32 firmware can run directly on Linux.
 
-On Ubuntu / WSL:
+## Build currently ported source tests
 
-```sh
-sudo apt-get install clang lld make zip python3-pil fonts-dejavu-core
-git clone https://github.com/lampsonlnguyen/q2-crosspoint
+```bash
+sudo apt-get update && sudo apt-get install -y git g++ cmake make
+git clone -b crosspoint-core-port https://github.com/lampsonlnguyen/q2-crosspoint.git
 cd q2-crosspoint
 make
 ```
 
-Extract `dist/crosspod.zip` at the **SD card root**. The package contains only the app files:
+`make` tests the upstream CrossPoint Unicode core and Q2 adapter functions **only**. It does not produce a device binary.
 
-```text
-/.crosspod/q2app
-/.crosspod/q2-crosspod
+For the complete original CrossPoint code at the reviewed revision:
+
+```bash
+make upstream
 ```
 
-Place TXT and unencrypted EPUB books in the existing **`Books/`** folder at the **root of the SD card**. No renaming is required:
+It appears in `crosspoint-core/upstream/` and is intentionally ignored by Git.
 
-```text
-SD Card/
-  .crosspod/
-    q2app
-    q2-crosspod
-  Books/
-    Dracula.epub
-    My Notes.txt
-    Fiction/
-      Novel.epub
-```
+## Device integration design
 
-CrossPod opens a simple library picker on launch. Use the wheel or previous/next buttons to select a book, then press **Center**. Touch a row to select; tap it again to open it. Press **Back** in the reader to return to the list, then Back once more to exit. Warm/cool tone and night mode remain available while reading.
+- Click wheel: previous/next scrolling/page turning via CrossPoint's input action model
+- Touch: gesture and press events using CrossPoint's UI and reader menu
+- Display: CrossPoint's layout and rasterization → adapted LCD output
+- Storage: standard POSIX files under `/mnt/mmc/Books` with original CrossPoint cache format
+- Reading preferences: CrossPoint's settings, with Q2-specific color/brightness controls
+- System lifecycle: Q2 Linux idle dim, sleep, restore; not an ESP32 deep-sleep implementation
 
-**Limits:** up to 128 books indexed, subfolders up to three levels deep (the root `Books/` level is depth zero), and relative filenames under 192 bytes. Results are sorted by filename/path. Hidden files and symbolic links are skipped. EPUB layout remains experimental and text-only, and book selection does not yet save individual reading positions.
+Q2 Pod, if installed, may offer a Library launcher but must not be used as the e-reader runtime or rendering framework.
 
-Restart Q2 Pod, then look for **CrossPod directly in Library**, not Games. Q2 Pod currently does not expose a manifest setting to nest card apps under **Library → Books**; that requires a firmware change. If CrossPod is not discovered, note Q2 Pod's card-app discovery limit and temporarily remove unused apps.
+## Licensing
 
-## Vietnamese text status
-
-CrossPod previously drew only ASCII and displayed non-ASCII UTF-8 bytes as question marks. The new reader renderer decodes Unicode codepoints, uses generated grayscale glyph bitmaps from DejaVu Sans, and keeps multi-byte characters intact while paginating. This covers common **precomposed Vietnamese (NFC)**, including `đ ư ơ ă â ê ô` and tonal variants in text and filenames. NFD combining accents are drawn on the preceding glyph but do not yet have full normalization/shaping or reliable mark positioning. EPUB XHTML decoding is still incomplete; HTML entities beyond a small basic subset are not supported. These fixes are not yet confirmed on Q2 hardware.
-
-**Building needs `python3-pil` and `fonts-dejavu-core`.** The font is rasterized once at build time to `src/font_vn.h`; there is no Python, FreeType, or dynamic font engine in the Q2 executable. A full CrossPoint font/EPUB engine port has **not** happened.
-
-## Reading tone and night mode
-
-CrossPod now has a software-based **warm/cool reading tone** (0 cool to 100 warm) and a separate **night mode**. While reading, tap **TONE** at the upper-right corner. Use the **wheel** or touch the color strip to adjust warmth. Tap **NIGHT**, or press the center button while the tone panel is open, to toggle dark reading mode. Press Back to close the panel. The preferences are saved in `/.crosspod/tone.cfg` and restored at next launch.
-
-This changes only CrossPod's rendered page palette, **not** the Q2 LCD's hardware backlight temperature or brightness. No continuous visual effects or background redraws are used: a finished page is drawn only when needed.
-
-## Controls
-
-- **Book list:** wheel or previous/next to select, Center to open, Back to exit
-- **Reading:** wheel or previous/next to change pages, Center for next page, Back to book list
-- **Touch:** select/open rows in book list; left/right half to turn pages while reading
-
-## Design
-
-The reader uses the native Q2 framebuffer, a lightweight software-drawn paper-style page, and the existing Q2 card-app input socket approach. Unlike a game, redraw is only requested when changing pages, reducing background work.
-
-Core files:
-
-- `src/platform.c` — MIPS system calls, framebuffer, input and file IO
-- `src/reader.c` — TXT indexing, pagination, navigation
-- `src/epub.c` — EPUB ZIP directory lookup and XHTML-to-text conversion
-- `src/sinfl.h` — small independent DEFLATE decoder by Micha Mettke
-- `src/render.c` — plain book-page UI
-- `tests/test_reader.c` — portable TXT/EPUB parser smoke test
-
-## Next milestones
-
-1. Validate CI compilation and real device reading, including nested SD directories.
-2. Save per-book reading positions and optionally resume the last open book.
-3. Correct EPUB OPF manifest and spine ordering, efficient chapter paging and CSS-aware layout.
-4. Improve Vietnamese NFD combining-mark positioning, word wrapping, and user-selectable fonts.
-5. Optional TOC, bookmarks and KOReader progress sync.
-
-## Licensing and credits
-
-CrossPod's application code and Q2 bridge derive from the GPL-3.0-or-later native Q2 examples in [q2-games](https://github.com/lampsonlnguyen/q2-games), and are distributed under GPL-3.0. The adapted font originated from that Q2 example and retains its original licensing obligations. `src/sinfl.h` is Micha Mettke's MIT/public-domain code, with notice retained in the file. CrossPoint Reader itself is separately maintained; its original code is generally MIT-licensed, while some components have additional terms. No claim of official CrossPoint affiliation or full CrossPoint feature compatibility is made.
+The code copied unmodified from CrossPoint is governed by CrossPoint's original MIT license and associated third-party notices: see [LICENSE-CROSSPOINT](crosspoint-core/LICENSE-CROSSPOINT). The previous GPL reader code remains on the separate `main` branch.

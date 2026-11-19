@@ -9,10 +9,11 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 ## What is actually ported now
 
 - Original CrossPoint Unicode/NFC code, unmodified and with original license
+- Original CrossPoint TXT-to-XHTML converter, unmodified and compiled with small POSIX compatibility shims
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
 - A reproducible checkout script for the **complete pinned CrossPoint upstream source**
-- CMake host compilation and test workflow for these components
+- CMake host compilation and tests for Unicode, Vietnamese TXT conversion, wheel/touch input and LCD output adapters
 
 **Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no replacement `crosspod.zip` from this branch yet. A genuine build requires porting the FreeInk/Arduino/FreeRTOS integrations, not pretending CrossPoint's ESP32 firmware can run directly on Linux.
 

@@ -1,10 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "crosspod.h"
-static Reader *unused_pointer;
 void reader_init(Reader *r) {
   r->book_len=0;r->line_count=0;r->page=0;r->wheel_acc=0;
   r->quit=0;r->loaded=0;r->touch_down=0;r->center_down=0;
-  r->book[0]=0;unused_pointer=r;
+  r->book[0]=0;
 }
 void reader_index(Reader *r) {
   unsigned pos=0,col=0;

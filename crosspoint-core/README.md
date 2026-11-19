@@ -23,7 +23,7 @@ A Linux process requires an entry point and access to actual Q2 input/display ha
 
 ## Upstream source brought over so far
 
-`lib/Utf8/Utf8.h`, `Utf8.cpp`, and `Utf8ComposeTable.h` were copied unmodified from CrossPoint. The original `lib/Txt/TxtToHtml.cpp` and `TxtToHtml.h` are also compiled unchanged using narrow POSIX replacements for Arduino Print, memory allocation, file helper and logging interfaces. These functions implement Vietnamese NFC normalization, including decomposed text frequently produced on macOS and inside EPUBs. `reference/` files are unmodified dependency-audit copies of the CrossPoint EPUB and layout code, **not yet compiled**. They identify what needs to be ported without replacing the algorithms.
+`lib/Utf8/Utf8.h`, `Utf8.cpp`, and `Utf8ComposeTable.h` were copied unmodified from CrossPoint. The original `lib/Txt/TxtToHtml.cpp` and `TxtToHtml.h` are also compiled unchanged using narrow POSIX replacements for Arduino Print, memory allocation, file helper and logging interfaces. The original EPUB `ContainerParser` and `XmlParserUtils` are now built against Linux Expat; Q2 book path handoff validation lives under `platform/q2/Q2BookHandoff.hpp`. These functions implement Vietnamese NFC normalization, including decomposed text frequently produced on macOS and inside EPUBs. `reference/` files are unmodified dependency-audit copies of the CrossPoint EPUB and layout code, **not yet compiled**. They identify what needs to be ported without replacing the algorithms.
 
 CrossPoint original source is under MIT, with separately licensed dependencies and fonts (see CrossPoint's `LICENSE` and `licenses/`). The old CrossPod GPL prototype retains its own license. Porting new CrossPoint files must preserve upstream and third-party notices.
 
@@ -34,13 +34,13 @@ Source base inspected: CrossPoint commit `9ac3475733e677b7f61ba3f6e8ce41ce1b9b29
 On Ubuntu / WSL:
 
 ```sh
-sudo apt-get install -y cmake g++ make
+sudo apt-get install -y cmake g++ make libexpat1-dev
 cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
 cmake --build build/crosspoint-core
 ctest --test-dir build/crosspoint-core --output-on-failure
 ```
 
-These are **host-side component tests only**, including actual upstream TXT-to-XHTML conversion of Vietnamese UTF-8. This branch does not yet produce a complete CrossPoint-based Q2 reader. The root `make` only runs CrossPoint-core and Q2-adapter host tests; it does **not** package the legacy prototype.
+These are **host-side component tests only**, including upstream TXT-to-XHTML conversion of Vietnamese UTF-8, upstream EPUB container parsing, and Q2 Pod Books path handoff. This branch does not yet produce a complete CrossPoint-based Q2 reader. The root `make` only runs CrossPoint-core and Q2-adapter host tests; it does **not** package the legacy prototype.
 
 ## Automated builds and releases
 
@@ -64,5 +64,7 @@ The release workflow rebuilds and tests before publishing the archive and SHA-25
 3. Connect the original CrossPoint reader activities and reader settings to Q2 input, an LCD display backend and native Linux power control.
 4. Verify Vietnamese (NFC **and** NFD), CSS, chapter order, resume state, and battery impact on physical Q2 hardware.
 5. Replace the legacy `src/` application on `main` only after real book reading passes these tests.
+
+For the existing Q2 Pod Books implementation and the cross-process integration contract see [Q2 Pod Books integration](../docs/q2pod-books-integration.md).
 
 **Design rule:** preserve upstream CrossPoint reader logic and its update path. Do not write another bespoke EPUB parser or text layout engine.

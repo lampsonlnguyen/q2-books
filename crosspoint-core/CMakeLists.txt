@@ -13,3 +13,6 @@ enable_testing()
 add_executable(crosspoint_core_tests tests/utf8_test.cpp)
 target_link_libraries(crosspoint_core_tests PRIVATE crosspoint_utf8)
 add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
+
+add_executable(crosspoint_controls_tests tests/controls_test.cpp)
+add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)

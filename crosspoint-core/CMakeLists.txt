@@ -175,3 +175,19 @@ add_executable(crosspoint_font_metrics_tests tests/font_metrics_test.cpp)
 target_link_libraries(crosspoint_font_metrics_tests PRIVATE crosspoint_font_metrics)
 target_compile_options(crosspoint_font_metrics_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_unicode_font_metrics COMMAND crosspoint_font_metrics_tests)
+
+# Original CrossPoint Unicode CJK line-breaking, punctuation and hyphenation
+# primitives (used by ParsedText / TextBlock when they are ported).
+add_library(crosspoint_linebreak STATIC
+    lib/Epub/CjkBreaks.cpp
+    lib/Epub/hyphenation/HyphenationCommon.cpp
+)
+target_include_directories(crosspoint_linebreak PUBLIC
+    lib/Epub
+    lib/Utf8
+)
+target_link_libraries(crosspoint_linebreak PUBLIC crosspoint_utf8)
+add_executable(crosspoint_linebreak_tests tests/cjk_breaks_test.cpp)
+target_link_libraries(crosspoint_linebreak_tests PRIVATE crosspoint_linebreak)
+target_compile_options(crosspoint_linebreak_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_cjk_linebreak COMMAND crosspoint_linebreak_tests)

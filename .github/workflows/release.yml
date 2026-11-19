@@ -49,11 +49,11 @@ jobs:
           set -euo pipefail
           folder="crosspod-${RELEASE_TAG}-core-devkit"
           mkdir -p "dist/$folder/lib" "dist/$folder/platform"
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libcrosspod_q2_input.a build/crosspoint-core/libcrosspod_q2_framebuffer.a "dist/$folder/lib/"
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libcrosspod_q2_input.a build/crosspoint-core/libcrosspod_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a "dist/$folder/lib/"
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp "dist/$folder/platform/"
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
-          cp crosspoint-core/LICENSE-CROSSPOINT "dist/$folder/"
+          cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE "dist/$folder/"
           cp build/crosspoint-core/crosspod-epub-check "dist/$folder/"
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
           CrossPod — CrossPoint Core development release

@@ -40,7 +40,22 @@ cmake --build build/crosspoint-core
 ctest --test-dir build/crosspoint-core --output-on-failure
 ```
 
-These are **host-side component tests only**, including actual upstream TXT-to-XHTML conversion of Vietnamese UTF-8. This branch does not yet produce a complete CrossPoint-based Q2 reader. The legacy root `make` still builds the earlier prototype; **do not confuse that binary with this port**.
+These are **host-side component tests only**, including actual upstream TXT-to-XHTML conversion of Vietnamese UTF-8. This branch does not yet produce a complete CrossPoint-based Q2 reader. The root `make` only runs CrossPoint-core and Q2-adapter host tests; it does **not** package the legacy prototype.
+
+## Automated builds and releases
+
+GitHub Actions `CrossPoint Core CI` runs for every push and pull request against `crosspoint-core-port`. It builds and tests the portable CrossPoint core with GCC and Clang and uploads a host-development ZIP (not Q2-installable).
+
+To publish a development prerelease, create and push a tag named `core-vX.Y.Z` pointing to a commit on `crosspoint-core-port`:
+
+```sh
+git switch crosspoint-core-port
+git pull --ff-only origin crosspoint-core-port
+git tag core-v0.1.0
+git push origin core-v0.1.0
+```
+
+The release workflow rebuilds and tests before publishing the archive and SHA-256 checksum. It labels the output **NOT Q2-installable**, because the current libraries are x86_64 host builds. These releases contain no ESP32 firmware, bootloader, FreeRTOS binary, or hardware drivers. A Linux/MIPS executable and app-installation archive will be added only when the actual CrossPoint reader is running on Q2.
 
 ## Next technical milestones
 

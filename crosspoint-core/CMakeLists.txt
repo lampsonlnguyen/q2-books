@@ -218,3 +218,23 @@ add_executable(crosspoint_bidi_tests tests/bidi_test.cpp)
 target_link_libraries(crosspoint_bidi_tests PRIVATE crosspoint_bidi)
 target_compile_options(crosspoint_bidi_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_unicode_bidi_arabic COMMAND crosspoint_bidi_tests)
+
+# Original CrossPoint ParsedText line composition/pagination engine and Page
+# model. Compile-check only until the complete GfxRenderer and HTML chapter
+# parser are connected. Do NOT present these object files as a working reader.
+add_library(crosspoint_pagination_objects OBJECT
+    lib/Epub/ParsedText.cpp
+    lib/Epub/Page.cpp
+)
+target_include_directories(crosspoint_pagination_objects PRIVATE
+    lib
+    lib/Epub
+    lib/Epub/css
+    lib/EpdFont
+    lib/GfxRenderer
+    lib/Utf8
+    lib/MiniBidi
+    lib/Serialization
+    lib/XmlParserUtils
+    platform/posix
+)

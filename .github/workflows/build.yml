@@ -2,9 +2,9 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [crosspoint-core-port]
+    branches: [main]
   pull_request:
-    branches: [crosspoint-core-port]
+    branches: [main]
   workflow_dispatch:
 
 permissions:

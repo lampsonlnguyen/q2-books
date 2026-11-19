@@ -44,3 +44,8 @@ target_link_libraries(crosspoint_epub_container PUBLIC EXPAT::EXPAT)
 add_executable(crosspoint_epub_container_tests tests/container_test.cpp)
 target_link_libraries(crosspoint_epub_container_tests PRIVATE crosspoint_epub_container)
 add_test(NAME crosspoint_epub_container COMMAND crosspoint_epub_container_tests)
+
+# Q2 Pod keeps its existing Books shelf and supplies the selected path.
+# CrossPoint uses this standalone contract rather than the game's app runtime.
+add_executable(crosspoint_books_handoff_tests tests/book_handoff_test.cpp)
+add_test(NAME q2_books_handoff COMMAND crosspoint_books_handoff_tests)

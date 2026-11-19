@@ -1,21 +1,15 @@
-Q2_CC ?= clang
-Q2_LD ?= ld.lld
-Q2_FLAGS = --target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mno-abicalls -fno-pic -G0 -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables
-CFLAGS = -Oz -Wall -Wextra -Werror -Wno-unused-variable -std=c11 -Isrc
-.PHONY: all clean
-src/font_vn.h: tools/generate_vn_font.py
-	python3 tools/generate_vn_font.py
-all: dist/crosspod.zip
-build/%.o: src/%.c src/crosspod.h src/font_vn.h src/utf8.h
-	mkdir -p build
-	$(Q2_CC) $(Q2_FLAGS) $(CFLAGS) -c $< -o $@
-dist/.crosspod/q2-crosspod: build/platform.o build/reader.o build/render.o build/epub.o
-	mkdir -p dist/.crosspod
-	$(Q2_LD) -m elf32ltsmip -static -e __start -s -z noexecstack -o $@ $^
-dist/.crosspod/q2app: q2app
-	mkdir -p dist/.crosspod
-	cp q2app $@
-dist/crosspod.zip: dist/.crosspod/q2-crosspod dist/.crosspod/q2app
-	cd dist && zip -q crosspod.zip .crosspod/q2-crosspod .crosspod/q2app
+# The genuine CrossPoint port is built separately from the old CrossPod prototype.
+# Do not ship a legacy reader ZIP when this target is requested.
+.PHONY: all test upstream clean
+all: test
+
+test:
+	cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
+	cmake --build build/crosspoint-core --parallel 2
+	ctest --test-dir build/crosspoint-core --output-on-failure
+
+upstream:
+	bash crosspoint-core/tools/fetch-upstream.sh
+
 clean:
-	rm -rf build dist
+	rm -rf build/crosspoint-core

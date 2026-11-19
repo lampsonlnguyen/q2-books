@@ -24,7 +24,7 @@ jobs:
       - name: Install compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu
+          sudo apt-get install -y cmake g++ gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu qemu-user
 
       - name: Native diagnostic build
         run: |
@@ -45,6 +45,17 @@ jobs:
           grep -q 'Machine:.*MIPS' build/q2-mips/elf-header.txt
           grep -q 'Data:.*little endian' build/q2-mips/elf-header.txt
 
+      - name: Execute MIPS diagnostic argument check under QEMU
+        run: |
+          set +e
+          timeout 15s qemu-mipsel -L /usr/mipsel-linux-gnu \
+            build/q2-mips/crosspod-hwcheck --help > build/q2-mips/qemu-smoke.txt 2>&1
+          result=$?
+          set -e
+          cat build/q2-mips/qemu-smoke.txt
+          test "$result" -eq 2
+          grep -q 'Usage: crosspod-hwcheck' build/q2-mips/qemu-smoke.txt
+
       - name: Mark compatibility not verified
         run: |
           cat > build/q2-mips/READ-BEFORE-TESTING.txt <<'NOTE'
@@ -64,6 +75,7 @@ jobs:
           path: |
             build/q2-mips/crosspod-hwcheck
             build/q2-mips/elf-header.txt
+            build/q2-mips/qemu-smoke.txt
             build/q2-mips/crosspod-hwcheck.sha256
             build/q2-mips/READ-BEFORE-TESTING.txt
           retention-days: 30

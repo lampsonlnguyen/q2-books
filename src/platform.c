@@ -62,11 +62,6 @@ static void present_frame(u32 *dst,unsigned stride) {
     }
 }
 
-static unsigned now_ms(void) {
-    long time[2]={0};
-    sc(SYS_CLOCK_GETTIME,1,(long)time,0,0,0,0);
-    return (unsigned)time[0]*1000u+(unsigned)time[1]/1000000u;
-}
 static int bind_input(void) {
     struct { unsigned short family; char path[108]; } addr={1,INPUT_SOCKET};
     int fd=(int)sc(SYS_SOCKET,1,1,0,0,0,0);

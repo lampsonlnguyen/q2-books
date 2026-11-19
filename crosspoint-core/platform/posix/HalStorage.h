@@ -84,5 +84,6 @@ class HalStorage {
     return true;
   }
   bool remove(const char* path) { return std::remove(path) == 0; }
+  bool rename(const char* from, const char* to) { return std::rename(from, to) == 0; }
 };
 #define Storage HalStorage::getInstance()

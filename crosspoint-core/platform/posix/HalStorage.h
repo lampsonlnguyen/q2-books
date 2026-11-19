@@ -35,6 +35,14 @@ class HalFile {
     return fp_ && off >= LONG_MIN && off <= LONG_MAX &&
            std::fseek(fp_, static_cast<long>(off), SEEK_CUR) == 0;
   }
+  size_t position() const {
+    if (!fp_) return 0;
+    const long at = std::ftell(fp_);
+    return at < 0 ? 0 : static_cast<size_t>(at);
+  }
+  size_t write(const uint8_t* data, size_t count) {
+    return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
+  }
   int read(void* dst, size_t count) {
     if (!fp_ || (!dst && count)) return -1;
     const size_t n = std::fread(dst, 1, count, fp_);
@@ -65,5 +73,16 @@ class HalStorage {
     file = HalFile(std::fopen(path.c_str(), "rb"));
     return file.isOpen();
   }
+  bool openFileForWrite(const char*, const std::string& path, HalFile& file) {
+    file = HalFile(std::fopen(path.c_str(), "wb"));
+    return file.isOpen();
+  }
+  bool exists(const char* path) {
+    std::FILE* fp = std::fopen(path, "rb");
+    if (!fp) return false;
+    std::fclose(fp);
+    return true;
+  }
+  bool remove(const char* path) { return std::remove(path) == 0; }
 };
 #define Storage HalStorage::getInstance()

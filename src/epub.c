@@ -3,6 +3,9 @@
  * The 3rd party DEFLATE implementation is licensed in src/sinfl.h.
  */
 #include "crosspod.h"
+/* Freestanding MIPS build provides these routines in platform.c. */
+void *memcpy(void *dest,const void *src,__SIZE_TYPE__ n);
+void *memset(void *dest,int value,__SIZE_TYPE__ n);
 #define SINFL_NO_SIMD
 #define SINFL_IMPLEMENTATION
 #include "sinfl.h"
@@ -14,7 +17,7 @@ static unsigned rd32(const unsigned char*p){return rd16(p)|(rd16(p+2)<<16);}
 static int match_ext(const unsigned char *s,unsigned n){
     if(n<5)return 0;
     const unsigned char *p=s+n-5;
-    if((p[0]=='.'||p[0]=='.')&&(p[1]=='h'||p[1]=='H')&&(p[2]=='t'||p[2]=='T')&&(p[3]=='m'||p[3]=='M')&&(p[4]=='l'||p[4]=='L'))return 1;
+    if(p[0]=='.'&&(p[1]=='h'||p[1]=='H')&&(p[2]=='t'||p[2]=='T')&&(p[3]=='m'||p[3]=='M')&&(p[4]=='l'||p[4]=='L'))return 1;
     if(n>=6) {
         p=s+n-6;
         if(p[0]=='.'&&(p[1]=='x'||p[1]=='X')&&(p[2]=='h'||p[2]=='H')&&(p[3]=='t'||p[3]=='T')&&(p[4]=='m'||p[4]=='M')&&(p[5]=='l'||p[5]=='L'))return 1;

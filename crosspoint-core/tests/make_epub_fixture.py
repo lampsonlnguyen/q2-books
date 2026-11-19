@@ -16,7 +16,8 @@ opf = '''<?xml version="1.0" encoding="utf-8"?>
 <dc:title>CrossPoint multilingual test</dc:title>\n<dc:creator>CrossPod Test Author</dc:creator>
 <dc:language>mul</dc:language></metadata>
 <manifest><item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
-<item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>\n<item id="css" href="book.css" media-type="text/css"/></manifest>
+<item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/>
+<item id="css" href="book.css" media-type="text/css"/></manifest>
 <spine><itemref idref="c1"/><itemref idref="c2"/></spine>
 </package>'''
 chapter1 = '''<?xml version="1.0" encoding="utf-8"?>
@@ -31,4 +32,5 @@ with ZipFile(path, "w") as z:
     z.writestr("META-INF/container.xml", container, compress_type=ZIP_DEFLATED)
     z.writestr("OEBPS/content.opf", opf, compress_type=ZIP_DEFLATED)
     z.writestr("OEBPS/chapter1.xhtml", chapter1, compress_type=ZIP_DEFLATED)
-    z.writestr("OEBPS/chapter2.xhtml", chapter2, compress_type=ZIP_DEFLATED)\n    z.writestr("OEBPS/book.css", "p { text-align: left; } p.highlight { text-align: center; font-style: italic; }", compress_type=ZIP_DEFLATED)
+    z.writestr("OEBPS/chapter2.xhtml", chapter2, compress_type=ZIP_DEFLATED)
+    z.writestr("OEBPS/book.css", "p { text-align: left; } p.highlight { text-align: center; font-style: italic; }", compress_type=ZIP_DEFLATED)

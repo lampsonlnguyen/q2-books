@@ -99,6 +99,7 @@ target_include_directories(crosspoint_opf PUBLIC
     lib/Epub/parsers
     lib/XmlParserUtils
     lib/Serialization
+    lib/Epub
 )
 target_link_libraries(crosspoint_opf PUBLIC EXPAT::EXPAT)
 add_executable(crosspoint_opf_spine_tests tests/opf_spine_test.cpp)
@@ -107,3 +108,18 @@ add_dependencies(crosspoint_opf_spine_tests epub_fixture)
 target_compile_options(crosspoint_opf_spine_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_original_opf_spine
     COMMAND crosspoint_opf_spine_tests "${EPUB_FIXTURE}")
+
+# Actual CrossPoint low-RAM on-disk metadata/spine/TOC cache and buffered IO.
+add_library(crosspoint_book_cache STATIC
+    lib/Epub/Epub/BookMetadataCache.cpp
+)
+target_include_directories(crosspoint_book_cache PUBLIC
+    lib/Epub
+    lib/Epub/Epub
+    lib/Serialization
+    lib/Utf8
+    lib/ZipFile
+    platform/posix
+)
+target_link_libraries(crosspoint_book_cache PUBLIC crosspoint_zip crosspoint_utf8)
+target_link_libraries(crosspoint_opf PUBLIC crosspoint_book_cache)

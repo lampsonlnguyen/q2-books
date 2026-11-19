@@ -1,8 +1,8 @@
 # CrossPod — direct CrossPoint Reader port to Shanling Q2
 
-**This is the real CrossPoint engine migration branch. It is not yet a functional Q2 e-reader.**
+**This repository contains an incomplete CrossPoint engine port. It is not yet a functional Q2 e-reader.**
 
-The original CrossPod prototype is preserved on the [main branch](https://github.com/lampsonlnguyen/q2-crosspoint/tree/main). This branch **removes** its custom C EPUB extractor, text renderer, bitmap font reader and Q2 game-style runtime.
+The earlier CrossPod prototype has been replaced on `main` by the CrossPoint reader-port foundation. The old prototype remains available in Git history; this implementation does not use its custom EPUB extractor or rendering engine.
 
 The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout, fonts, page caches, activities and settings, and adapts only the hardware interfaces to the Q2's Linux display, click wheel, touchscreen and SD card. See [the technical plan](crosspoint-core/README.md).
 
@@ -11,19 +11,20 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CrossPoint Unicode/NFC code, unmodified and with original license
 - Original CrossPoint TXT-to-XHTML converter, unmodified and compiled with small POSIX compatibility shims
 - Original CrossPoint EPUB `container.xml` parser, built with Linux Expat, rather than Q2 Pod's plain-text EPUB converter
+- Original CrossPoint `ZipFile` EPUB archive handling, compiled unchanged with POSIX file I/O and streaming zlib DEFLATE adapters; regression fixture includes Vietnamese, CJK, Arabic, Hebrew, Thai, Indic, Cyrillic and Greek text
 - Standalone Q2 Pod Books shelf handoff contract for `/mnt/mmc/Books/...` paths and Vietnamese filenames
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
 - A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
-- CMake host compilation and tests for Unicode, Vietnamese TXT conversion, wheel/touch input and LCD output adapters
+- CMake host compilation and tests for Unicode, TXT conversion, EPUB archive/ZIP streaming, container XML, wheel/touch input, and LCD output adapters
 
-**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no replacement `crosspod.zip` from this branch yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
+**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
 
 ## Build currently ported source tests
 
 ```bash
-sudo apt-get update && sudo apt-get install -y git g++ cmake make libexpat1-dev
-git clone -b crosspoint-core-port https://github.com/lampsonlnguyen/q2-crosspoint.git
+sudo apt-get update && sudo apt-get install -y git g++ cmake make libexpat1-dev zlib1g-dev python3
+git clone https://github.com/lampsonlnguyen/q2-crosspoint.git
 cd q2-crosspoint
 make
 ```
@@ -55,4 +56,4 @@ Q2 Pod, if installed, may offer a Library launcher but must not be used as the e
 
 ## Licensing
 
-The code copied unmodified from CrossPoint is governed by CrossPoint's original MIT license and associated third-party notices: see [LICENSE-CROSSPOINT](crosspoint-core/LICENSE-CROSSPOINT). The previous GPL reader code remains on the separate `main` branch.
+The code copied unmodified from CrossPoint is governed by CrossPoint's original MIT license and associated third-party notices: see [LICENSE-CROSSPOINT](crosspoint-core/LICENSE-CROSSPOINT). Check every third-party dependency's license before distribution.

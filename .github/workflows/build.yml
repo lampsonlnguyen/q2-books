@@ -6,6 +6,15 @@ on:
 permissions:
   contents: read
 jobs:
+  upstream-crosspoint-core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test unmodified CrossPoint UTF-8 engine and click-wheel adapter
+        run: |
+          cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/crosspoint-core --parallel 2
+          ctest --test-dir build/crosspoint-core --output-on-failure
   native:
     runs-on: ubuntu-24.04
     steps:

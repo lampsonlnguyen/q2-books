@@ -17,9 +17,9 @@ __asm__(".text\n.set noreorder\n.globl sc\nsc:\n"
 enum { SYS_READ=4003,SYS_WRITE=4004,SYS_OPEN=4005,SYS_CLOSE=4006,
        SYS_UNLINK=4010,SYS_LSEEK=4019,SYS_RENAME=4038,SYS_IOCTL=4054,SYS_MMAP=4090,
        SYS_MUNMAP=4091,SYS_FSYNC=4118,SYS_BIND=4169,SYS_RECV=4175,
-       SYS_SOCKET=4183,SYS_POLL=4188,SYS_CLOCK_GETTIME=4263,
+       SYS_SOCKET=4183,SYS_POLL=4188,SYS_CLOCK_GETTIME=4263,SYS_GETDENTS64=4219,
        FB_VSCREEN=0x4600,FB_FSCREEN=0x4602,FB_PAN=0x4606,
-       O_WRONLY=1,O_RDWR=2,O_CREAT=0x100,O_TRUNC=0x200,O_CLOEXEC=0x80000,
+       O_WRONLY=1,O_RDWR=2,O_CREAT=0x100,O_TRUNC=0x200,O_DIRECTORY=0x10000,O_CLOEXEC=0x80000,
        MSG_DONTWAIT=0x40,FRAME_MS=17 };
 #define INPUT_SOCKET "/tmp/q2-crosspod.input.sock"
 /* Diagnostic file on the card: helps distinguish launch failure from display failure.
@@ -93,6 +93,106 @@ int q2_read_at(int fd,unsigned offset,void *dest,unsigned n) {
     return (int)done;
 }
 int epub_load(Reader *r,int fd,unsigned length);
+
+#define BOOKS_DIR "/mnt/mmc/Books"
+static int ends_epub(const char *s){
+    unsigned n=0;while(s[n])n++;
+    if(n<5)return 0;
+    return s[n-5]=='.' && (s[n-4]=='e'||s[n-4]=='E')
+        && (s[n-3]=='p'||s[n-3]=='P') && (s[n-2]=='u'||s[n-2]=='U')
+        && (s[n-1]=='b'||s[n-1]=='B');
+}
+static int build_book_path(char *out,unsigned cap,const char *relative){
+    const char *root=BOOKS_DIR;
+    unsigned n=0,i=0;
+    while(root[i]){
+        if(n+1>=cap)return 0;
+        out[n++]=root[i++];
+    }
+    if(n+1>=cap)return 0;
+    out[n++]='/';
+    for(i=0;relative[i];i++){
+        if(n+1>=cap)return 0;
+        out[n++]=relative[i];
+    }
+    out[n]=0;
+    return 1;
+}
+/* Linux MIPS o32 getdents64 records. Never follow symlinks or "." entries.
+ * DT_UNKNOWN entries on FAT are checked with O_DIRECTORY for recursion. */
+static void scan_books(Reader *r,const char *prefix,unsigned depth){
+    if(depth>3||r->book_count>=LIB_MAX)return;
+    char full[256];
+    if(!build_book_path(full,sizeof full,prefix))return;
+    /* An empty prefix refers to /Books/ itself. */
+    int dir=(int)sc(SYS_OPEN,(long)full,O_DIRECTORY|O_CLOEXEC,0,0,0,0);
+    if(dir<0)return;
+    unsigned char buffer[2048];
+    for(;;){
+        long count=sc(SYS_GETDENTS64,dir,(long)buffer,sizeof buffer,0,0,0);
+        if(count<=0)break;
+        unsigned pos=0;
+        while(pos<(unsigned)count && r->book_count<LIB_MAX){
+            unsigned char *entry=buffer+pos;
+            if((unsigned)count-pos<20)break;
+            unsigned record=(unsigned)entry[16]|(unsigned)entry[17]<<8;
+            if(record<20||record>(unsigned)count-pos)break;
+            unsigned max=record-19, length=0;
+            const char *name=(const char *)(entry+19);
+            while(length<max&&name[length])length++;
+            unsigned char type=entry[18];
+            if(length&&length<max&&name[0]!='.' && type!=10){
+                char rel[PATH_MAX];
+                unsigned i=0,j=0;
+                while(prefix[i]&&j+1<sizeof rel)rel[j++]=prefix[i++];
+                if(prefix[0]&&j+1<sizeof rel)rel[j++]='/';
+                for(i=0;i<length&&j+1<sizeof rel;i++)rel[j++]=name[i];
+                rel[j]=0;
+                if(i==length){
+                    int is_dir=type==4;
+                    if(type==0&&depth<3){
+                        char nested[256];
+                        if(build_book_path(nested,sizeof nested,rel)){
+                            int probe=(int)sc(SYS_OPEN,(long)nested,O_DIRECTORY|O_CLOEXEC,0,0,0,0);
+                            if(probe>=0){is_dir=1;sc(SYS_CLOSE,probe,0,0,0,0,0);}
+                        }
+                    }
+                    if(is_dir&&depth<3)scan_books(r,rel,depth+1);
+                    else if(!is_dir&&(type==8||type==0))reader_catalog_add(r,rel);
+                }
+            }
+            pos+=record;
+        }
+        if(r->book_count>=LIB_MAX)break;
+    }
+    sc(SYS_CLOSE,dir,0,0,0,0,0);
+}
+static int load_selected(Reader *r,unsigned selection){
+    if(selection>=r->book_count)return 0;
+    char path[256];
+    if(!build_book_path(path,sizeof path,r->paths[selection]))return 0;
+    int file=(int)sc(SYS_OPEN,(long)path,O_CLOEXEC,0,0,0,0);
+    if(file<0)return 0;
+    int ok=0;
+    r->book_len=0;r->line_count=0;r->page=0;r->book[0]=0;
+    if(ends_epub(r->paths[selection])){
+        long size=sc(SYS_LSEEK,file,0,2,0,0,0);
+        if(size>0&&size<=0x7fffffffl&&epub_load(r,file,(unsigned)size)>0)ok=1;
+    } else {
+        unsigned total=0;
+        while(total<BOOK_MAX){
+            long amount=sc(SYS_READ,file,(long)(r->book+total),BOOK_MAX-total,0,0,0);
+            if(amount<=0)break;
+            total+=(unsigned)amount;
+        }
+        r->book_len=total;r->book[total]=0;
+        reader_index(r);
+        ok=1;
+    }
+    sc(SYS_CLOSE,file,0,0,0,0,0);
+    return ok;
+}
+
 static int bind_input(void) {
     struct { unsigned short family; char path[108]; } addr={1,INPUT_SOCKET};
     int fd=(int)sc(SYS_SOCKET,1,1,0,0,0,0);
@@ -140,35 +240,10 @@ int q2_main(void) {
     }
     reader_init(&app);
     tone_load(&app);
-    int file=(int)sc(SYS_OPEN,(long)"/mnt/mmc/.crosspod/book.epub",0,0,0,0,0);
-    if(file>=0) {
-        long size=sc(SYS_LSEEK,file,0,2,0,0,0);
-        if(size>0&&size<=0x7fffffffl&&epub_load(&app,file,(unsigned)size)>0) {
-            app.loaded=1;
-            diag("OK: EPUB opened and XHTML chapters decoded\\n");
-        } else {
-            diag("ERROR: EPUB parse failed\\n");
-        }
-        sc(SYS_CLOSE,file,0,0,0,0,0);
-    }
-    if(!app.loaded){
-        app.book_len=0;
-        file=(int)sc(SYS_OPEN,(long)"/mnt/mmc/.crosspod/book.txt",0,0,0,0,0);
-        if(file>=0){
-            long total=0;
-            while(total<BOOK_MAX){
-                long n=sc(SYS_READ,file,(long)(app.book+total),BOOK_MAX-total,0,0,0);
-                if(n<=0)break;
-                total+=n;
-            }
-            app.book_len=(unsigned)total;
-            app.book[total]=0;
-            app.loaded=1;
-            reader_index(&app);
-            sc(SYS_CLOSE,file,0,0,0,0,0);
-            diag("OK: TXT loaded\\n");
-        } else diag("ERROR: neither book.epub nor book.txt available\\n");
-    }
+    scan_books(&app,"",0);
+    reader_catalog_sort(&app);
+    if(app.book_count)diag("OK: /Books library scanned\\n");
+    else diag("INFO: /Books library empty or missing\\n");
     diag("OK: input socket bound and reader state initialized\\n");
     /* Paint the first menu to the currently visible framebuffer page.
      * This prevents initial black display if a dual-page pan is reported
@@ -188,6 +263,11 @@ int q2_main(void) {
         if(n>0) {
             message[n]=0;
             if(reader_input(&app,message)){
+                if(app.open_request){
+                    unsigned selection=(unsigned)(app.open_request-1);
+                    int success=load_selected(&app,selection);
+                    reader_open_result(&app,success);
+                }
                 /* Avoid SD writes on every wheel tick: save when the tone panel closes. */
                 if(app.tone_dirty && !app.tone_open)tone_save(&app);
                 reader_render(&app,frame,SCREEN_H);

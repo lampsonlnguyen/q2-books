@@ -56,6 +56,33 @@ void reader_render(const Reader *r,u32 *d,unsigned s){
   rect(d,s,0,0,SCREEN_W,SCREEN_H,paper);
   rect(d,s,0,0,SCREEN_W,32,ink);
   text(d,s,15,10,"CROSSPOD",8,0xffffff);
+  if(!r->reading){
+    text(d,s,258,10,"LIBRARY",7,0xffffff);
+    text(d,s,18,38,"BOOKS /BOOKS",12,accent);
+    if(!r->book_count){
+      text(d,s,23,111,"NO BOOKS FOUND",14,ink);
+      text(d,s,23,141,"COPY TXT OR EPUB TO",19,muted);
+      text(d,s,23,164,"SD CARD /BOOKS",14,muted);
+    } else {
+      unsigned first=r->selected>=LIB_ROWS?r->selected-(LIB_ROWS-1):0;
+      for(unsigned i=0;i<LIB_ROWS&&first+i<r->book_count;i++){
+        unsigned index=first+i;
+        int y=50+(int)i*34;
+        if(index==r->selected){
+          rect(d,s,9,y,SCREEN_W-18,32,accent);
+        }else if((i&1u)==0u){
+          rect(d,s,9,y,SCREEN_W-18,32,r->night?0x24333b:0xe2e6dc);
+        }
+        const char *name=r->paths[index];
+        int len=0;while(name[len]&&len<PATH_MAX-1)len++;
+        text(d,s,21,y+9,name,len,index==r->selected?0xffffff:ink);
+      }
+    }
+    if(r->book_error)text(d,s,16,292,"UNABLE TO READ BOOK",19,r->night?0xf2ab9a:0xa43b30);
+    rect(d,s,0,302,SCREEN_W,18,ink);
+    text(d,s,12,305,"WHEEL SELECT   CENTER OPEN",26,0xffffff);
+    return;
+  }
   text(d,s,256,10,"TONE",4,0xffffff);
   text(d,s,307,10,r->night?"NIGHT":"WARM",r->night?5:4,0xffffff);
   if(!r->loaded){

@@ -32,7 +32,7 @@ int main() {
   int width=0,height=0;
   regular.getTextDimensions("A", &width, &height);
   assert(width >= 8 && height >= 10);
-  EpdFontFamily family(&regular);
+  EpdFontFamily family(12, &regular);
   assert(family.hasCodepoint(0x1EA1, EpdFontFamily::REGULAR));
   assert(!family.hasCodepoint(0x4E2D, EpdFontFamily::REGULAR));
   assert(family.getGlyph(0x00E9, EpdFontFamily::REGULAR) == &glyphs[1]);

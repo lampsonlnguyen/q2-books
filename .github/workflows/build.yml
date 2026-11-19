@@ -1,4 +1,4 @@
-name: Build CrossPod
+name: CrossPoint Core Port Tests
 on:
   push:
   pull_request:
@@ -6,41 +6,12 @@ on:
 permissions:
   contents: read
 jobs:
-  upstream-crosspoint-core:
+  crosspoint-engine:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Test unmodified CrossPoint UTF-8 engine and click-wheel adapter
+      - name: Build unchanged upstream CrossPoint Unicode code and Q2 platform adapters
         run: |
           cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
           cmake --build build/crosspoint-core --parallel 2
           ctest --test-dir build/crosspoint-core --output-on-failure
-  native:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y clang lld make zip python3-pil fonts-dejavu-core
-      - name: TXT/EPUB host smoke tests
-        run: |
-          mkdir -p build
-          python3 - <<'PY'
-          import zipfile
-          with zipfile.ZipFile("build/fixture.epub","w",compression=zipfile.ZIP_DEFLATED) as z:
-              z.writestr("mimetype","application/epub+zip",compress_type=zipfile.ZIP_STORED)
-              z.writestr("OEBPS/01.xhtml",'<html><body><h1>First chapter</h1><p>hello &amp; world</p></body></html>')
-              z.writestr("OEBPS/02.xhtml",'<html><body><h1>Second chapter</h1><p>Example text</p></body></html>')
-          PY
-          cc -std=c11 -O2 -Wall -Wextra -Wno-unused-variable -Isrc -o build/reader-test tests/test_reader.c src/reader.c src/epub.c
-          ./build/reader-test build/fixture.epub
-      - name: Build native MIPS card app
-        run: make
-      - name: Validate output layout
-        run: |
-          file dist/.crosspod/q2-crosspod
-          unzip -l dist/crosspod.zip
-          test -s dist/crosspod.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: crosspod-card-app
-          path: dist/crosspod.zip

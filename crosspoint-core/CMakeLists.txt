@@ -132,3 +132,12 @@ add_executable(crosspod_q2_input_tests tests/socket_input_test.cpp)
 target_link_libraries(crosspod_q2_input_tests PRIVATE crosspod_q2_input)
 target_compile_options(crosspod_q2_input_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_q2_input_protocol COMMAND crosspod_q2_input_tests)
+
+# Linux framebuffer backed by the Q2's two native portrait LCD pages.
+# Static ARGB rotation tests do not require access to /dev/fb0.
+add_library(crosspod_q2_framebuffer STATIC platform/q2/Q2Framebuffer.cpp)
+target_include_directories(crosspod_q2_framebuffer PUBLIC platform/q2)
+add_executable(crosspod_framebuffer_tests tests/framebuffer_test.cpp)
+target_link_libraries(crosspod_framebuffer_tests PRIVATE crosspod_q2_framebuffer)
+target_compile_options(crosspod_framebuffer_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_q2_framebuffer_rotation COMMAND crosspod_framebuffer_tests)

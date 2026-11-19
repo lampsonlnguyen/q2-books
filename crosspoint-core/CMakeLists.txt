@@ -123,3 +123,12 @@ target_include_directories(crosspoint_book_cache PUBLIC
 )
 target_link_libraries(crosspoint_book_cache PUBLIC crosspoint_zip crosspoint_utf8)
 target_link_libraries(crosspoint_opf PUBLIC crosspoint_book_cache)
+
+# Standalone Linux Q2 Pod input protocol and nonblocking UNIX datagram receiver.
+# No AWTK or ESP32 dependencies are needed for this interface.
+add_library(crosspod_q2_input STATIC platform/q2/Q2SocketInput.cpp)
+target_include_directories(crosspod_q2_input PUBLIC platform/q2)
+add_executable(crosspod_q2_input_tests tests/socket_input_test.cpp)
+target_link_libraries(crosspod_q2_input_tests PRIVATE crosspod_q2_input)
+target_compile_options(crosspod_q2_input_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_q2_input_protocol COMMAND crosspod_q2_input_tests)

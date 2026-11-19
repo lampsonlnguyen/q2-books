@@ -3,8 +3,10 @@ Q2_LD ?= ld.lld
 Q2_FLAGS = --target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mno-abicalls -fno-pic -G0 -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables
 CFLAGS = -Oz -Wall -Wextra -Werror -Wno-unused-variable -std=c11 -Isrc
 .PHONY: all clean
+src/font_vn.h: tools/generate_vn_font.py
+	python3 tools/generate_vn_font.py
 all: dist/crosspod.zip
-build/%.o: src/%.c src/crosspod.h src/font.h
+build/%.o: src/%.c src/crosspod.h src/font_vn.h src/utf8.h
 	mkdir -p build
 	$(Q2_CC) $(Q2_FLAGS) $(CFLAGS) -c $< -o $@
 dist/.crosspod/q2-crosspod: build/platform.o build/reader.o build/render.o build/epub.o

@@ -36,6 +36,7 @@ jobs:
       - name: Build MIPS32 little-endian Linux diagnostic
         run: |
           cmake -S crosspoint-core/platform/q2 -B build/q2-mips \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
             -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_SYSTEM_NAME=Linux \

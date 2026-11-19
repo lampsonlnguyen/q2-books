@@ -1,7 +1,9 @@
 #pragma once
 // Linux/MIPS implementation of the subset of CrossPoint's HalStorage used by ZipFile.
 // The CrossPoint ZIP parsing algorithms remain unchanged.
+#include <Print.h>
 #include <cstddef>
+#include <cstdlib>
 #include <cstdint>
 #include <climits>
 #include <algorithm>

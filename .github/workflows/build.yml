@@ -1,0 +1,25 @@
+name: Build CrossPod
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang lld make zip
+      - name: Build native MIPS card app
+        run: make
+      - name: Validate output layout
+        run: |
+          file dist/.crosspod/crosspod
+          unzip -l dist/crosspod.zip
+          test -s dist/crosspod.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-card-app
+          path: dist/crosspod.zip

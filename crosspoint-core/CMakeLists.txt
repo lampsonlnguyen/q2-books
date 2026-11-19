@@ -30,3 +30,17 @@ target_include_directories(crosspoint_txt PUBLIC
 add_executable(crosspoint_txt_tests tests/txt_to_html_test.cpp)
 target_link_libraries(crosspoint_txt_tests PRIVATE crosspoint_txt)
 add_test(NAME crosspoint_vietnamese_txt COMMAND crosspoint_txt_tests)
+
+# The original CrossPoint EPUB container.xml parser. The XML parser itself is
+# Expat (system library on Linux), not the ESP32 toolchain or Q2 Pod EPUB code.
+find_package(EXPAT REQUIRED)
+add_library(crosspoint_epub_container STATIC lib/Epub/parsers/ContainerParser.cpp)
+target_include_directories(crosspoint_epub_container PUBLIC
+    lib/Epub/parsers
+    lib/XmlParserUtils
+    platform/posix
+)
+target_link_libraries(crosspoint_epub_container PUBLIC EXPAT::EXPAT)
+add_executable(crosspoint_epub_container_tests tests/container_test.cpp)
+target_link_libraries(crosspoint_epub_container_tests PRIVATE crosspoint_epub_container)
+add_test(NAME crosspoint_epub_container COMMAND crosspoint_epub_container_tests)

@@ -13,7 +13,7 @@ opf = '''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
 <dc:identifier id="bookid">crosspod-multilingual-test</dc:identifier>
-<dc:title>CrossPoint multilingual test</dc:title>
+<dc:title>CrossPoint multilingual test</dc:title>\n<dc:creator>CrossPod Test Author</dc:creator>
 <dc:language>mul</dc:language></metadata>
 <manifest><item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
 <item id="c2" href="chapter2.xhtml" media-type="application/xhtml+xml"/></manifest>

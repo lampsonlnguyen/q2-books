@@ -31,7 +31,7 @@ Extract `dist/crosspod.zip` at the **SD card root**. The package contains:
 
 ```text
 /.crosspod/q2app
-/.crosspod/crosspod
+/.crosspod/q2-crosspod
 /.crosspod/book.txt
 ```
 
@@ -40,7 +40,7 @@ Copy your book to **one** of these paths:
 - `/.crosspod/book.epub` — tried first
 - `/.crosspod/book.txt` — fallback when there is no valid EPUB
 
-Restart Q2 Pod, then look for **CrossPod in Library**, not Games. If the app is not discovered, remember Q2 Pod's card-app discovery limit; temporarily remove unused apps. This ZIP does not modify firmware.
+Restart Q2 Pod, then look for **CrossPod directly in Library**, not Games. Q2 Pod currently does not expose an app-manifest setting for installing a card app inside **Library → Books**. That requires a Q2 Pod firmware menu modification. If the app is not discovered, remember Q2 Pod's card-app discovery limit; temporarily remove unused apps. This ZIP does not modify firmware.
 
 ## Controls
 

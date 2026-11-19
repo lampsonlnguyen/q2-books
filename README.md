@@ -12,10 +12,10 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CrossPoint TXT-to-XHTML converter, unmodified and compiled with small POSIX compatibility shims
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
-- A reproducible checkout script for the **complete pinned CrossPoint upstream source**
+- A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
 - CMake host compilation and tests for Unicode, Vietnamese TXT conversion, wheel/touch input and LCD output adapters
 
-**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no replacement `crosspod.zip` from this branch yet. A genuine build requires porting the FreeInk/Arduino/FreeRTOS integrations, not pretending CrossPoint's ESP32 firmware can run directly on Linux.
+**Not yet done:** CrossPoint EPUB/TXT activities, storage, font system, GfxRenderer and power HAL on MIPS Linux. There is no replacement `crosspod.zip` from this branch yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
 
 ## Build currently ported source tests
 
@@ -28,13 +28,13 @@ make
 
 `make` tests the upstream CrossPoint Unicode core and Q2 adapter functions **only**. It does not produce a device binary.
 
-For the complete original CrossPoint code at the reviewed revision:
+To inspect only the reader-related CrossPoint source at the pinned revision:
 
 ```bash
 make upstream
 ```
 
-It appears in `crosspoint-core/upstream/` and is intentionally ignored by Git.
+A sparse checkout appears in `crosspoint-core/upstream/` and is intentionally ignored by Git. Only the Unicode, TXT, EPUB, fonts, rendering and reader-activity source families are checked out; this does not compile any ESP32 firmware.
 
 ## Device integration design
 

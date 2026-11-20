@@ -132,6 +132,24 @@ jobs:
           print('Real MIPS renderer: 375x320 Vietnamese text raster verified')
           PY
 
+      - name: MIPS QEMU illustrated EPUB image raster regression
+        run: |
+          set -euo pipefail
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --render-images build/mips-reader/illustrated.epub \
+            build/mips-reader/illustrated-on-mips.pgm \
+            | tee build/mips-reader/illustrated-on-mips.log
+          python3 - <<'PY'
+          from pathlib import Path
+          log = Path("build/mips-reader/illustrated-on-mips.log").read_text()
+          image = Path("build/mips-reader/illustrated-on-mips.pgm").read_bytes()
+          assert "CrossPod rendered PNG images: 1" in log
+          assert image.startswith(b"P5\\n375 320\\n255\\n")
+          assert len(image) == 15 + 375 * 320
+          assert image[15:].count(0) > 30
+          print("Embedded PNG decoded and rasterized under static MIPS QEMU")
+          PY
+
       - name: Verify card app browser and real MIPS menu pixels under QEMU
         run: |
           set -euo pipefail

@@ -263,14 +263,30 @@ bool ZipFile::loadZipDetails() {
     return false;
   }
 
-  file.seek(fileSize - scanRange);
-  file.read(buffer, scanRange);
+  if (!file.seek(fileSize - scanRange) ||
+      file.read(buffer, scanRange) != scanRange) {
+    LOG_ERR("ZIP", "Failed to read EOCD scan buffer");
+    free(buffer);
+    return false;
+  }
+
+  // ZIP is little-endian regardless of CPU. Bytewise loads avoid unaligned
+  // uint32_t/uint16_t dereferences (SIGBUS on Shanling Q2 MIPS32).
+  const auto loadLe16 = [](const uint8_t* p) -> uint16_t {
+    return static_cast<uint16_t>(p[0] | (static_cast<uint16_t>(p[1]) << 8));
+  };
+  const auto loadLe32 = [](const uint8_t* p) -> uint32_t {
+    return static_cast<uint32_t>(p[0]) |
+           (static_cast<uint32_t>(p[1]) << 8) |
+           (static_cast<uint32_t>(p[2]) << 16) |
+           (static_cast<uint32_t>(p[3]) << 24);
+  };
 
   // Scan backwards for the signature
   int foundOffset = -1;
   for (int i = scanRange - 22; i >= 0; i--) {
     constexpr uint32_t signature = 0x06054b50;
-    if (*reinterpret_cast<uint32_t*>(&buffer[i]) == signature) {
+    if (loadLe32(buffer + i) == signature) {
       foundOffset = i;
       break;
     }
@@ -286,8 +302,8 @@ bool ZipFile::loadZipDetails() {
   // Relative positions within EOCD:
   // Offset 10: Total number of entries (2 bytes)
   // Offset 16: Offset of start of central directory with respect to the starting disk number (4 bytes)
-  zipDetails.totalEntries = *reinterpret_cast<uint16_t*>(&buffer[foundOffset + 10]);
-  zipDetails.centralDirOffset = *reinterpret_cast<uint32_t*>(&buffer[foundOffset + 16]);
+  zipDetails.totalEntries = loadLe16(buffer + foundOffset + 10);
+  zipDetails.centralDirOffset = loadLe32(buffer + foundOffset + 16);
   zipDetails.isSet = true;
 
   free(buffer);

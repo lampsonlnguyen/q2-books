@@ -1,0 +1,346 @@
+name: CrossPod Shanling Q2 FP64/NaN-2008 card app
+on:
+  push:
+    branches: [crosspod-renderer-linux-link]
+    paths:
+      - "crosspoint-core/reader/**"
+      - "crosspoint-core/CMakeLists.txt"
+      - ".github/workflows/q2-mips-reader.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-mips-reader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git cmake make python3 zip \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+            binutils-mipsel-linux-gnu qemu-user gdb-multiarch
+      - name: Verify Shanling Q2 cross-compiler supports target ABI
+        run: |
+          set -euo pipefail
+          printf 'int main(void) { return 0; }\n' > /tmp/q2-abi-probe.c
+          mipsel-linux-gnu-gcc -march=mips32r2 -mabi=32 \
+            -mhard-float -mfp64 -mnan=2008 -mabs=2008 \
+            -c /tmp/q2-abi-probe.c -o /tmp/q2-abi-probe.o
+          mipsel-linux-gnu-readelf -h /tmp/q2-abi-probe.o | grep -q nan2008
+          mipsel-linux-gnu-readelf -A /tmp/q2-abi-probe.o \
+            | grep -q 'Hard float.*64-bit FPU'
+          # A compiler that emits NaN2008 objects is not enough: Ubuntu's
+          # default MIPS startup/runtime libraries are legacy-NaN and cannot
+          # link them. Never suppress this error with --no-warn-mismatch.
+          if ! mipsel-linux-gnu-gcc \
+            -march=mips32r2 -mabi=32 -mhard-float \
+            -mfp64 -mnan=2008 -mabs=2008 \
+            /tmp/q2-abi-probe.c -o /tmp/q2-abi-probe \
+            > /tmp/q2-abi-link.log 2>&1; then
+            cat /tmp/q2-abi-link.log >&2
+            echo "::error::Q2 ABI toolchain unavailable: legacy-NaN host C runtime conflicts with the device's NaN-2008 ABI. Supply a proper Shanling Q2 NaN-2008 C and C++ sysroot/toolchain; do not use --no-warn-mismatch."
+            exit 1
+          fi
+          echo "Q2 ABI compiler and runtime link probe passed"
+
+      - name: Build pinned zlib 1.3.1 and Expat 2.6.4 for MIPS
+        run: |
+          set -euo pipefail
+          mkdir -p build/deps-src
+          git clone --quiet --depth 1 --branch v1.3.1 \
+            https://github.com/madler/zlib.git build/deps-src/zlib
+          git clone --quiet --depth 1 --branch R_2_6_4 \
+            https://github.com/libexpat/libexpat.git build/deps-src/libexpat
+
+          prefix="$PWD/build/mips-deps"
+          cmake -S build/deps-src/zlib -B build/mips-zlib \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF \
+            -DCMAKE_INSTALL_PREFIX="$prefix"
+          cmake --build build/mips-zlib --parallel 2
+          cmake --install build/mips-zlib
+
+          cmake -S build/deps-src/libexpat/expat -B build/mips-expat \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=Release -DEXPAT_SHARED_LIBS=OFF \
+            -DEXPAT_BUILD_DOCS=OFF -DEXPAT_BUILD_TOOLS=OFF \
+            -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_TESTS=OFF \
+            -DEXPAT_BUILD_PKGCONFIG=OFF -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_PREFIX="$prefix"
+          cmake --build build/mips-expat --parallel 2
+          cmake --install build/mips-expat
+
+          test -f "$prefix/lib/libz.a"
+          test -f "$prefix/lib/libexpat.a"
+          mipsel-linux-gnu-readelf -h "$prefix/lib/libz.a" | grep -q 'Machine:.*MIPS'
+          mipsel-linux-gnu-readelf -h "$prefix/lib/libexpat.a" | grep -q 'Machine:.*MIPS'
+
+      - name: Cross-compile full original CrossPoint reader to static MIPS ELF
+        run: |
+          set -euo pipefail
+          prefix="$PWD/build/mips-deps"
+          cmake -S crosspoint-core -B build/mips-reader \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -no-pie" \
+            -DZLIB_LIBRARY="$prefix/lib/libz.a" \
+            -DZLIB_INCLUDE_DIR="$prefix/include" \
+            -DEXPAT_LIBRARY="$prefix/lib/libexpat.a" \
+            -DEXPAT_INCLUDE_DIR="$prefix/include"
+          cmake --build build/mips-reader --target crosspod-reader --parallel 2
+          file build/mips-reader/crosspod-reader
+          mipsel-linux-gnu-readelf -h build/mips-reader/crosspod-reader | tee build/mips-reader/elf-header.txt
+          grep -q 'Machine:.*MIPS' build/mips-reader/elf-header.txt
+          grep -q 'Data:.*little endian' build/mips-reader/elf-header.txt
+          if mipsel-linux-gnu-readelf -l build/mips-reader/crosspod-reader | grep -q INTERP; then
+            echo 'Expected a static ELF without PT_INTERP' >&2
+            exit 1
+          fi
+
+      - name: Strict Q2 ELF compatibility gate (pre-release)
+        run: |
+          set -euo pipefail
+          python3 crosspoint-core/tools/check_q2_elf.py \
+            build/mips-reader/crosspod-reader \
+            mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+          mipsel-linux-gnu-readelf -h build/mips-reader/crosspod-reader \
+            > build/mips-reader/q2-elf-header.txt
+          mipsel-linux-gnu-readelf -A build/mips-reader/crosspod-reader \
+            > build/mips-reader/q2-elf-attributes.txt
+
+      - name: QEMU smoke test of original EPUB spine parser and renderer
+        run: |
+          set -euo pipefail
+          set +e
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --validate build/mips-reader/multilingual.epub \
+            | tee build/mips-reader/reader-spine.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "MIPS smoke failed (status $status); recording GDB trace"
+            qemu-mipsel -g 12349 build/mips-reader/crosspod-reader \
+              --validate build/mips-reader/multilingual.epub > build/mips-reader/gdb-qemu.log 2>&1 &
+            qemu_pid=$!
+            sleep 1
+            timeout 25s gdb-multiarch -q -batch \
+              -ex "set pagination off" \
+              -ex "file build/mips-reader/crosspod-reader" \
+              -ex "target remote localhost:12349" \
+              -ex "continue" \
+              -ex "info registers" \
+              -ex "bt 30" \
+              | tee build/mips-reader/gdb-backtrace.log || true
+            kill "$qemu_pid" 2>/dev/null || true
+            exit "$status"
+          fi
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --render build/mips-reader/vietnamese-prose.epub \
+              build/mips-reader/vietnamese-on-mips.pgm \
+            | tee build/mips-reader/reader-vietnamese.log
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --walk build/mips-reader/multilingual.epub \
+            | tee build/mips-reader/reader-walk.log
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --walk build/mips-reader/vietnamese-prose.epub \
+            | tee build/mips-reader/reader-walk-vietnamese.log
+          grep -q 'CrossPod walked' build/mips-reader/reader-walk.log
+          grep -q 'CrossPod walked' build/mips-reader/reader-walk-vietnamese.log
+          grep -q 'CrossPod validated' build/mips-reader/reader-spine.log
+          grep -q 'CrossPod validated' build/mips-reader/reader-vietnamese.log
+          python3 - <<'PY'
+          from pathlib import Path
+          image = Path('build/mips-reader/vietnamese-on-mips.pgm').read_bytes()
+          assert image[:15] == b'P5\n375 320\n255\n'
+          assert len(image) == 15 + 375 * 320
+          assert image[15:].count(0) > 1000
+          print('Real MIPS renderer: 375x320 Vietnamese text raster verified')
+          PY
+
+      - name: MIPS QEMU illustrated EPUB image raster regression
+        run: |
+          set -euo pipefail
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --render-images build/mips-reader/illustrated.epub \
+            build/mips-reader/illustrated-on-mips.pgm \
+            | tee build/mips-reader/illustrated-on-mips.log
+          python3 - <<'PY'
+          from pathlib import Path
+          log = Path("build/mips-reader/illustrated-on-mips.log").read_text()
+          image = Path("build/mips-reader/illustrated-on-mips.pgm").read_bytes()
+          assert "CrossPod rendered PNG images: 1" in log
+          assert image.startswith(b"P5" + bytes([10]) + b"375 320" + bytes([10]) + b"255" + bytes([10]))
+          assert len(image) == 15 + 375 * 320
+          assert image[15:].count(0) > 30
+          print("Embedded PNG decoded and rasterized under static MIPS QEMU")
+          PY
+
+      - name: Verify card app browser and real MIPS menu pixels under QEMU
+        run: |
+          set -euo pipefail
+          mkdir -p build/mips-reader/books-test/Subfolder build/mips-reader/books-test/.hidden
+          cp build/mips-reader/vietnamese-prose.epub build/mips-reader/books-test/
+          cp build/mips-reader/multilingual.epub build/mips-reader/books-test/Subfolder/
+          printf 'ignore' > build/mips-reader/books-test/plain.txt
+          timeout 25s qemu-mipsel build/mips-reader/crosspod-reader \
+            --list-books build/mips-reader/books-test | tee build/mips-reader/card-list.log
+          test "$(wc -l < build/mips-reader/card-list.log)" -eq 2
+          timeout 30s qemu-mipsel build/mips-reader/crosspod-reader \
+            --card-preview build/mips-reader/books-test build/mips-reader/card-menu.pgm
+          python3 - <<'PY'
+          from pathlib import Path
+          image=Path("build/mips-reader/card-menu.pgm").read_bytes()
+          assert image[:15] == ("P5"+chr(10)+"375 320"+chr(10)+"255"+chr(10)).encode()
+          assert len(image)==15+375*320
+          assert image[15:].count(0)>1500
+          print("CrossPod card menu MIPS framebuffer preview: OK")
+          PY
+
+      - name: Package reversible Q2 reader alpha (never flashable)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/crosspod-q2-reader-alpha/.crosspod
+          mkdir -p dist/crosspod-q2-reader-alpha/sample-books
+          cp build/mips-reader/crosspod-reader \
+            dist/crosspod-q2-reader-alpha/.crosspod/crosspod
+          mipsel-linux-gnu-strip --strip-debug \
+            dist/crosspod-q2-reader-alpha/.crosspod/crosspod
+          mkdir -p dist/crosspod-q2-reader-alpha/licenses
+          cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE \
+             dist/crosspod-q2-reader-alpha/licenses/
+          cp crosspoint-core/licenses/hyphenation.txt \
+             dist/crosspod-q2-reader-alpha/licenses/
+          cp build/deps-src/libexpat/expat/COPYING \
+             dist/crosspod-q2-reader-alpha/licenses/Expat-COPYING.txt
+          cp build/deps-src/zlib/README \
+             dist/crosspod-q2-reader-alpha/licenses/zlib-README.txt
+          cp build/mips-reader/vietnamese-prose.epub \
+            dist/crosspod-q2-reader-alpha/sample-books/
+          cp docs/q2-reader-alpha-hardware.md \
+            dist/crosspod-q2-reader-alpha/README.md
+          (
+            cd dist/crosspod-q2-reader-alpha
+            sha256sum .crosspod/crosspod sample-books/vietnamese-prose.epub > SHA256SUMS
+          )
+          (
+            cd dist
+            zip -q -r crosspod-q2-reader-alpha.zip crosspod-q2-reader-alpha
+            sha256sum crosspod-q2-reader-alpha.zip > crosspod-q2-reader-alpha.zip.sha256
+          )
+
+      - name: Fetch two original CrossPoint font families at four readable sizes
+        run: |
+          set -euo pipefail
+          fonts="dist/crosspod-card/.crosspod/fonts"
+          mkdir -p "$fonts"
+          base="https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4"
+          for size in 12 14 16 18; do
+            for family in NotoSansExtended NotoSerifExtended; do
+              case "$family" in
+                NotoSansExtended) short=sans ;;
+                NotoSerifExtended) short=serif ;;
+              esac
+              curl --fail --location --retry 3 --silent --show-error \
+                "$base/${family}_${size}.cpfont" -o "$fonts/${short}-${size}.cpfont"
+              test "$(stat -c%s "$fonts/${short}-${size}.cpfont")" -gt 200000
+            done
+          done
+          cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt \
+            dist/crosspod-card/.crosspod/NotoSans-OFL.txt
+
+      - name: QEMU verify both font choices and font-size raster
+        run: |
+          set -euo pipefail
+          state="$PWD/dist/crosspod-card/.crosspod"
+          printf 'CROSSPOD-TYPE1 sans 16\n' > "$state/typography.conf"
+          CROSSPOD_STATE_DIR="$state" timeout 90s qemu-mipsel \
+            build/mips-reader/crosspod-reader --render \
+            build/mips-reader/vietnamese-prose.epub build/mips-reader/font-sans.pgm
+          printf 'CROSSPOD-TYPE1 serif 18\n' > "$state/typography.conf"
+          CROSSPOD_STATE_DIR="$state" timeout 90s qemu-mipsel \
+            build/mips-reader/crosspod-reader --render \
+            build/mips-reader/vietnamese-prose.epub build/mips-reader/font-serif.pgm
+          python3 - <<'PY'
+          from pathlib import Path
+          files=[Path("build/mips-reader/font-sans.pgm"),Path("build/mips-reader/font-serif.pgm")]
+          data=[f.read_bytes() for f in files]
+          assert all(d.startswith(b"P5"+bytes([10])+b"375 320"+bytes([10])+b"255"+bytes([10])) for d in data)
+          assert all(len(d)==15+375*320 for d in data)
+          assert data[0]!=data[1], "Changing family/size did not change glyph raster"
+          print("Two font variants produce distinct real MIPS output")
+          PY
+          rm -f "$state/typography.conf"
+
+      - name: Test Q2 card launcher before package
+        run: |
+          set -euo pipefail
+          python3 crosspoint-core/tests/card_launcher_test.py \
+            crosspoint-core/platform/q2/crosspod-launcher.sh
+
+      - name: Package standalone Q2 Pod card app
+        run: |
+          set -euo pipefail
+          mkdir -p dist/crosspod-card/.crosspod
+          test -s dist/crosspod-card/.crosspod/fonts/sans-12.cpfont
+          test -s dist/crosspod-card/.crosspod/fonts/serif-18.cpfont
+          cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/crosspod-engine
+          cp crosspoint-core/platform/q2/crosspod-launcher.sh \
+            dist/crosspod-card/.crosspod/q2-crosspod
+          chmod 755 dist/crosspod-card/.crosspod/q2-crosspod \
+            dist/crosspod-card/.crosspod/crosspod-engine
+          /bin/sh -n dist/crosspod-card/.crosspod/q2-crosspod
+          python3 crosspoint-core/tools/check_q2_elf.py \
+            dist/crosspod-card/.crosspod/crosspod-engine \
+            mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+          printf 'name=CrossPod\ngame=1\nrow=library\n' > dist/crosspod-card/.crosspod/q2app
+          cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt
+          cp -r dist/crosspod-q2-reader-alpha/licenses dist/crosspod-card/.crosspod/
+          mkdir -p dist/crosspod-card/Books
+          cp build/mips-reader/vietnamese-prose.epub dist/crosspod-card/Books/
+          (cd dist/crosspod-card && zip -q -r ../crosspod-card-app.zip .crosspod Books)
+          unzip -t dist/crosspod-card-app.zip
+          unzip -l dist/crosspod-card-app.zip | grep -F 'Books/vietnamese-prose.epub'
+          unzip -p dist/crosspod-card-app.zip .crosspod/q2app | grep -Fx 'game=1'
+          unzip -p dist/crosspod-card-app.zip .crosspod/q2-crosspod \
+            | head -n 1 | grep -Fx '#!/bin/sh'
+          unzip -l dist/crosspod-card-app.zip \
+            | grep -F '.crosspod/crosspod-engine'
+          file dist/crosspod-card/.crosspod/crosspod-engine \
+            | grep -q 'ELF 32-bit LSB.*MIPS'
+
+      - name: Upload installable standalone card app
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-card-app
+          path: dist/crosspod-card-app.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Q2 reader prototype and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-reader-alpha-mips-static
+          path: |
+            dist/crosspod-q2-reader-alpha.zip
+            dist/crosspod-q2-reader-alpha.zip.sha256
+            build/mips-reader/elf-header.txt
+            build/mips-reader/q2-elf-header.txt
+            build/mips-reader/q2-elf-attributes.txt
+            build/mips-reader/reader-spine.log
+            build/mips-reader/reader-vietnamese.log
+            build/mips-reader/reader-walk.log
+            build/mips-reader/reader-walk-vietnamese.log
+          if-no-files-found: error
+          retention-days: 30

@@ -44,3 +44,7 @@ target_link_libraries(crosspod_upstream_text PUBLIC Threads::Threads)
 # CSS, CJK and BiDi algorithms under Linux/MIPS, with no display access.
 add_executable(crosspod-engine-smoke crosspod_engine_smoke.cpp)
 target_link_libraries(crosspod-engine-smoke PRIVATE crosspod_upstream_text)
+
+# Explicit opt-in page-only Q2 LCD diagnostic. Not the production EPUB reader.
+add_executable(crosspod-page-demo crosspod_page_demo.cpp)
+target_link_libraries(crosspod-page-demo PRIVATE crosspod_platform Threads::Threads)

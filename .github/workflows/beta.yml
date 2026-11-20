@@ -2,7 +2,7 @@ name: Publish CrossPoint Core Beta Dev Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, crosspod-renderer-linux-link]
     paths:
       - "crosspoint-core/BETA_VERSION"
 
@@ -55,11 +55,20 @@ jobs:
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp "dist/$folder/platform/"
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
+          cp -R crosspoint-core/tools crosspoint-core/licenses "dist/$folder/"
+          mkdir -p "dist/$folder/docs"
+          cp docs/epub-page-preview-testing.md "dist/$folder/docs/"
+          cp build/crosspoint-core/libcrosspoint_hyphenation.a "dist/$folder/lib/"
           cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE "dist/$folder/"
-          cp build/crosspoint-core/crosspod-epub-check "dist/$folder/"
+          cp build/crosspoint-core/crosspod-epub-check build/crosspoint-core/crosspoint_renderer_link_tests build/crosspoint-core/crosspod_epub_page_preview "dist/$folder/"
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-epub-preview.pgm "dist/crosspod-${RELEASE_TAG}-epub-preview.png"
+          cp build/crosspoint-core/crosspod-epub-preview.pgm "dist/$folder/"
+          cp "dist/crosspod-${RELEASE_TAG}-epub-preview.png" "dist/$folder/"
+          (cd dist && sha256sum "crosspod-${RELEASE_TAG}-epub-preview.png" > "crosspod-${RELEASE_TAG}-epub-preview.png.sha256")
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
-          CrossPod — CrossPoint Core development release
-          Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
+          CrossPod core v0.2.0 beta — native host development preview.
+          Contains tested Linux x86_64 host static libraries, original renderer,
+          EPUB page preview test programs, source code and Q2 adapter headers.
           This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
           The upstream EPUB rendering and Linux HAL integration remain under development.
           No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
@@ -70,16 +79,30 @@ jobs:
             sha256sum "$folder.zip" > "$folder.zip.sha256"
           )
           cat > dist/RELEASE_NOTES.md <<'NOTES'
-          CrossPod CrossPoint core development release.
+          ## CrossPod core v0.2.0-beta.1 — development preview
 
-          **Not installable on the Shanling Q2.** This prerelease provides tested
-          upstream CrossPoint Unicode/NFC and TXT conversion components,
-          Q2 click-wheel/touch and LCD adapters, and their source code.
-          It is a Linux x86_64 development build, not a MIPS device binary.
+          **NOT INSTALLABLE ON THE SHANLING Q2.** Host-only Linux x86_64
+          development release; not a firmware update or MIPS reader.
 
-          A Q2 Linux reader application package will only be published when the original CrossPoint
-          EPUB engine, typography, reader activities and POSIX device HAL
-          have been integrated and validated on hardware.
+          ### Improvements over v0.1.0
+          - Original CrossPoint ZIP, OPF/spine and CSS parser primitives.
+          - Original GfxRenderer and compressed font rasterization.
+          - Original OpenType shaping, ParsedText/TextBlock layout and
+            multilingual Liang hyphenation (11 languages).
+          - Reproducible 375x320 PNG and PGM text-page output from a real
+            EPUB fixture, plus original renderer/EPUB host test executables.
+          - GCC and Clang CI: all 21 regression tests passed.
+
+          ### Known limitations
+          - Preview uses a test-only XHTML paragraph extractor rather than
+            the complete ChapterHtmlSlimParser/CSS/image engine.
+          - Current sample font lacks coverage for CJK, Arabic and Hebrew:
+            characters can render as replacement glyphs.
+          - No working Q2 MIPS reader, touchscreen or click-wheel integration
+            in a complete EPUB app; no physical Q2 testing yet.
+          - Full Section/Page/image pipeline not finished.
+
+          See docs/epub-page-preview-testing.md and draft PR #15.
           NOTES
 
       - name: Publish GitHub prerelease
@@ -92,7 +115,7 @@ jobs:
             echo "Release already exists: $RELEASE_TAG" >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 \
+          gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 dist/crosspod-*.png dist/crosspod-*.png.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \

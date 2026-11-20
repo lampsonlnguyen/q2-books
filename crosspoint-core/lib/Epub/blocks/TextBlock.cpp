@@ -10,7 +10,11 @@
 #include <cstring>
 #include <string_view>
 
+#if !defined(CROSSPOD_LINUX)
+// UI-only font identifiers belong to the ESP32 firmware; TextBlock uses
+// runtime section font IDs when built as a standalone Q2 reader.
 #include "../../../../src/fontIds.h"
+#endif
 #include "../CjkBreaks.h"
 
 size_t TextBlock::arenaSize(const uint16_t wordCount, const bool hasFocus, const uint16_t textBytes,

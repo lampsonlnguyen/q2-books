@@ -2,14 +2,16 @@
 // Linux/MIPS implementation of the subset of CrossPoint's HalStorage used by ZipFile.
 // The CrossPoint ZIP parsing algorithms remain unchanged.
 #include <Print.h>
+#include <Print.h>
+#include <cerrno>
+#include <sys/stat.h>
+#include <Arduino.h>  // Q2 POSIX millis() and heap probes used by the original font cache
 #include <cstddef>
 #include <cstdlib>
 #include <cstdint>
 #include <climits>
 #include <algorithm>
 #include <cstdio>
-#include <cerrno>
-#include <sys/stat.h>
 #include <string>
 #include <utility>
 class HalFile : public Print {
@@ -33,11 +35,12 @@ class HalFile : public Print {
     return std::fclose(fp) == 0;
   }
   bool seek(size_t off) { return fp_ && off <= LONG_MAX && std::fseek(fp_, static_cast<long>(off), SEEK_SET) == 0; }
+  // SdCardFont uses the SdFat spelling; both move to an absolute offset.
+  bool seekSet(size_t off) { return seek(off); }
   bool seekCur(int64_t off) {
     return fp_ && off >= LONG_MIN && off <= LONG_MAX &&
            std::fseek(fp_, static_cast<long>(off), SEEK_CUR) == 0;
   }
-  bool flush() { return fp_ && std::fflush(fp_) == 0; }
   size_t position() const {
     if (!fp_) return 0;
     const long at = std::ftell(fp_);
@@ -46,10 +49,12 @@ class HalFile : public Print {
   size_t write(const void* data, size_t count) {
     return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
   }
-  size_t write(uint8_t byte) override { return fp_ ? std::fwrite(&byte,1,1,fp_) : 0; }
+  bool flush() { return fp_ && std::fflush(fp_) == 0; }
+  size_t write(uint8_t byte) override { return fp_ ? std::fwrite(&byte, 1, 1, fp_) : 0; }
   size_t write(const uint8_t* data, size_t count) override {
     return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
   }
+  int read() { return fp_ ? std::fgetc(fp_) : -1; }
   int read(void* dst, size_t count) {
     if (!fp_ || (!dst && count)) return -1;
     const size_t n = std::fread(dst, 1, count, fp_);
@@ -63,6 +68,8 @@ class HalFile : public Print {
     std::fseek(fp_, previous, SEEK_SET);
     return end < 0 ? 0 : static_cast<size_t>(end);
   }
+  // Retain the original CrossPoint HalFile API without changing EPUB/fonts.
+  size_t fileSize() { return size(); }
   int available() const {
     if (!fp_) return 0;
     const long pos = std::ftell(fp_);

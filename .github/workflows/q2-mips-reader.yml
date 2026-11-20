@@ -1,0 +1,139 @@
+name: CrossPod Q2 MIPS reader prototype (text EPUB)
+on:
+  push:
+    branches: [crosspod-renderer-linux-link]
+    paths:
+      - "crosspoint-core/reader/**"
+      - "crosspoint-core/CMakeLists.txt"
+      - ".github/workflows/q2-mips-reader.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-mips-reader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain and build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git cmake make python3 zip \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+            binutils-mipsel-linux-gnu qemu-user
+      - name: Build pinned zlib 1.3.1 and Expat 2.6.4 for MIPS
+        run: |
+          set -euo pipefail
+          mkdir -p build/deps-src
+          git clone --quiet --depth 1 --branch v1.3.1 \
+            https://github.com/madler/zlib.git build/deps-src/zlib
+          git clone --quiet --depth 1 --branch R_2_6_4 \
+            https://github.com/libexpat/libexpat.git build/deps-src/libexpat
+
+          prefix="$PWD/build/mips-deps"
+          cmake -S build/deps-src/zlib -B build/mips-zlib \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF \
+            -DCMAKE_INSTALL_PREFIX="$prefix"
+          cmake --build build/mips-zlib --parallel 2 --target zlibstatic
+          cmake --install build/mips-zlib
+
+          cmake -S build/deps-src/libexpat/expat -B build/mips-expat \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=Release -DEXPAT_SHARED_LIBS=OFF \
+            -DEXPAT_BUILD_DOCS=OFF -DEXPAT_BUILD_TOOLS=OFF \
+            -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_TESTS=OFF \
+            -DEXPAT_BUILD_PKGCONFIG=OFF -DCMAKE_INSTALL_LIBDIR=lib \
+            -DCMAKE_INSTALL_PREFIX="$prefix"
+          cmake --build build/mips-expat --parallel 2
+          cmake --install build/mips-expat
+
+          test -f "$prefix/lib/libz.a"
+          test -f "$prefix/lib/libexpat.a"
+          mipsel-linux-gnu-readelf -h "$prefix/lib/libz.a" | grep -q 'Machine:.*MIPS'
+          mipsel-linux-gnu-readelf -h "$prefix/lib/libexpat.a" | grep -q 'Machine:.*MIPS'
+
+      - name: Cross-compile full original CrossPoint reader to static MIPS ELF
+        run: |
+          set -euo pipefail
+          prefix="$PWD/build/mips-deps"
+          cmake -S crosspoint-core -B build/mips-reader \
+            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32" \
+            -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            -DZLIB_LIBRARY="$prefix/lib/libz.a" \
+            -DZLIB_INCLUDE_DIR="$prefix/include" \
+            -DEXPAT_LIBRARY="$prefix/lib/libexpat.a" \
+            -DEXPAT_INCLUDE_DIR="$prefix/include"
+          cmake --build build/mips-reader --target crosspod-reader --parallel 2
+          file build/mips-reader/crosspod-reader
+          mipsel-linux-gnu-readelf -h build/mips-reader/crosspod-reader | tee build/mips-reader/elf-header.txt
+          grep -q 'Machine:.*MIPS' build/mips-reader/elf-header.txt
+          grep -q 'Data:.*little endian' build/mips-reader/elf-header.txt
+          if mipsel-linux-gnu-readelf -l build/mips-reader/crosspod-reader | grep -q INTERP; then
+            echo 'Expected a static ELF without PT_INTERP' >&2
+            exit 1
+          fi
+
+      - name: QEMU smoke test of original EPUB spine parser and renderer
+        run: |
+          set -euo pipefail
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --validate build/mips-reader/multilingual.epub \
+            | tee build/mips-reader/reader-spine.log
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --render build/mips-reader/vietnamese-prose.epub \
+              build/mips-reader/vietnamese-on-mips.pgm \
+            | tee build/mips-reader/reader-vietnamese.log
+          grep -q 'CrossPod validated' build/mips-reader/reader-spine.log
+          grep -q 'CrossPod validated' build/mips-reader/reader-vietnamese.log
+          python3 - <<'PY'
+          from pathlib import Path
+          image = Path('build/mips-reader/vietnamese-on-mips.pgm').read_bytes()
+          assert image[:15] == b'P5\n375 320\n255\n'
+          assert len(image) == 15 + 375 * 320
+          assert image[15:].count(0) > 1000
+          print('Real MIPS renderer: 375x320 Vietnamese text raster verified')
+          PY
+
+      - name: Package reversible Q2 reader alpha (never flashable)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/crosspod-q2-reader-alpha/.crosspod
+          mkdir -p dist/crosspod-q2-reader-alpha/sample-books
+          cp build/mips-reader/crosspod-reader \
+            dist/crosspod-q2-reader-alpha/.crosspod/crosspod
+          cp build/mips-reader/vietnamese-prose.epub \
+            dist/crosspod-q2-reader-alpha/sample-books/
+          cp docs/q2-reader-alpha-hardware.md \
+            dist/crosspod-q2-reader-alpha/README.md
+          (
+            cd dist/crosspod-q2-reader-alpha
+            sha256sum .crosspod/crosspod sample-books/vietnamese-prose.epub > SHA256SUMS
+          )
+          (
+            cd dist
+            zip -q -r crosspod-q2-reader-alpha.zip crosspod-q2-reader-alpha
+            sha256sum crosspod-q2-reader-alpha.zip > crosspod-q2-reader-alpha.zip.sha256
+          )
+
+      - name: Upload Q2 reader prototype and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-reader-alpha-mips-static
+          path: |
+            dist/crosspod-q2-reader-alpha.zip
+            dist/crosspod-q2-reader-alpha.zip.sha256
+            build/mips-reader/elf-header.txt
+            build/mips-reader/reader-spine.log
+            build/mips-reader/reader-vietnamese.log
+          if-no-files-found: error
+          retention-days: 30

@@ -192,8 +192,12 @@ jobs:
           cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/q2-crosspod
           printf 'name=CrossPod\ngame=1\nrow=library\n' > dist/crosspod-card/.crosspod/q2app
           cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt
-          (cd dist/crosspod-card && zip -q -r ../crosspod-card-app.zip .crosspod)
+          cp -r dist/crosspod-q2-reader-alpha/licenses dist/crosspod-card/.crosspod/
+          mkdir -p dist/crosspod-card/Books
+          cp build/mips-reader/vietnamese-prose.epub dist/crosspod-card/Books/
+          (cd dist/crosspod-card && zip -q -r ../crosspod-card-app.zip .crosspod Books)
           unzip -t dist/crosspod-card-app.zip
+          unzip -l dist/crosspod-card-app.zip | grep -F 'Books/vietnamese-prose.epub'
           unzip -p dist/crosspod-card-app.zip .crosspod/q2app | grep -Fx 'game=1'
           file dist/crosspod-card/.crosspod/q2-crosspod | grep -q 'ELF 32-bit LSB.*MIPS'
 

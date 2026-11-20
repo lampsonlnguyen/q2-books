@@ -45,7 +45,7 @@ constexpr size_t MAX_TEXT_BYTES = 2 * 1024 * 1024;
 constexpr size_t MAX_BLOCKS = 16000;
 constexpr size_t MAX_PAGES_PER_SPINE = 512;
 constexpr int SCREEN_H = 320, LEFT = 14, TOP = 16;
-constexpr int TEXT_WIDTH = 345, LINE_HEIGHT = 27, BOTTOM = 306;
+constexpr int TEXT_WIDTH = 345, BOTTOM = 306;
 volatile std::sig_atomic_t interrupted = 0;
 void exitOnSignal(int) { interrupted = 1; }
 

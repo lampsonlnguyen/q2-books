@@ -18,6 +18,7 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Original CJK punctuation line-breaking, Hangul boundary rules, Unicode hyphenation helpers and token-break primitives
 - Original MiniBidi implementation and Arabic/Hebrew visual reordering plus contextual Arabic shaping, compiled and tested on Linux
 - Original `ParsedText.cpp` and `Page.cpp` **compile-checked** on Linux (not yet linked as a functioning reader)
+- Original `ChapterHtmlSlimParser.cpp` (EPUB XHTML/CSS chapter parsing) **compile-checked** on Linux with original `Epub.h`; section and image-decoder source headers staged, but not yet linked as a functioning reader
 - Q2 logical-screen `HalDisplay` with original CrossPoint white/ink 1-bpp convention, frame-publication bridge and a tested raster path
 - Q2 Linux socket input, native double-buffered framebuffer and page-presentation adapter; these are individually tested, not wired to a complete reader
 - Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
@@ -71,3 +72,16 @@ The code copied unmodified from CrossPoint is governed by CrossPoint's original 
 ### Q2 MIPS / hardware diagnostic
 
 The `crosspod-hwcheck` diagnostic was merged from [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7). Its MIPS cross-build, ELF check and QEMU command-line smoke test passed, but it has **not been tested on the actual Q2 device**. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.
+
+### End-to-end reader integration status
+
+Source-level checks are intentionally distinct from an installable Q2 reader. The original
+GfxRenderer, SD fonts, OpenType shaping and bitmap decompression are staged under
+[draft PR #15](https://github.com/lampsonlnguyen/q2-crosspoint/pull/15), with a
+mandatory full-link smoke test. The original XHTML chapter parser was compiler-validated
+and merged in [PR #17](https://github.com/lampsonlnguyen/q2-crosspoint/pull/17).
+The full renderer linker check still needs resolving upstream font/cache/shaping
+implementation dependencies. Do **not** install the development binaries as
+`/mnt/mmc/.crosspod/crosspod`; a correct reader executable has not been produced.
+Physical Q2 testing, font coverage, actual page-turn latency, RAM and battery
+measurements remain unverified until the full reader runs on the device.

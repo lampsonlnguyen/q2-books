@@ -19,6 +19,7 @@
 #include <SdCardFont.h>
 #include "Typography.hpp"
 #include "ReadingPosition.hpp"
+#include "PngPreview.hpp"
 #include <Q2SocketInput.hpp>
 #include <ZipFile.h>
 #include <builtinFonts/notosans_12_regular.h>
@@ -73,6 +74,7 @@ struct Paragraph {
   CssTextAlign align = CssTextAlign::Justify;
   bool rtl = false;
   bool heading = false;
+  std::string imagePath; // EPUB ZIP path, set only for resolved PNG resources.
 };
 struct HtmlCollector {
   // The full upstream ChapterHtmlSlimParser is being integrated separately.
@@ -173,6 +175,44 @@ struct HtmlCollector {
     s.scopes.push_back(scope);
     if(n=="br" && s.collectingDepth && !scope.hidden)
       s.current.runs.push_back({" ",EpdFontFamily::REGULAR});
+    if((n=="img" || n=="image") && !scope.hidden) {
+      const auto uri=attribute(attrs,n=="img"?"src":"href");
+      // Resolve paths inside EPUB ZIP: safe relative segments only, no URLs,
+      // no filesystem escape, never fetch network resources.
+      if(!uri.empty() && uri[0]!='/' && uri.find(':')==std::string_view::npos &&
+         uri.find('?')==std::string_view::npos && uri.find('#')==std::string_view::npos) {
+        std::vector<std::string> parts;
+        std::string path=s.chapterDir+std::string(uri);
+        size_t start=0;
+        bool safe=true;
+        while(start<=path.size()) {
+          const size_t end=path.find('/',start);
+          const std::string part=path.substr(start,end==std::string::npos?
+                                             std::string::npos:end-start);
+          if(part=="..") {
+            if(parts.empty()){safe=false;break;}
+            parts.pop_back();
+          } else if(part!="" && part!=".")parts.push_back(part);
+          if(end==std::string::npos)break;
+          start=end+1;
+        }
+        if(safe && !parts.empty() && s.items.size()<MAX_BLOCKS) {
+          std::string resolved;
+          for(const auto& part:parts){if(!resolved.empty())resolved+='/';resolved+=part;}
+          if(resolved.size()>4 && resolved.substr(resolved.size()-4)==".png") {
+            if(s.collectingDepth && !s.current.runs.empty()) {
+              s.items.push_back(std::move(s.current));
+              s.current=Paragraph{};
+              s.current.align=scope.align;
+              s.current.rtl=scope.rtl;
+            }
+            Paragraph image;
+            image.imagePath=std::move(resolved);
+            s.items.push_back(std::move(image));
+          }
+        }
+      }
+    }
   }
   static void XMLCALL data(void* user, const XML_Char* bytes, int len) {
     auto& s=*static_cast<HtmlCollector*>(user);
@@ -262,8 +302,13 @@ struct RenderLine {
   std::unique_ptr<TextBlock> block;
   int y = 0;
 };
+struct RenderImage {
+  crosspod::PngPreview png;
+  int x=0,y=0,width=0,height=0;
+};
 struct RenderPage {
   std::vector<RenderLine> lines;
+  std::vector<RenderImage> images;
 };
 class Reader {
   std::string bookPath_;
@@ -313,8 +358,33 @@ class Reader {
     pages_.emplace_back();
     int y=TOP;
     size_t totalLines=0;
+    size_t totalImages=0;
     bool pageLimitReached=false;
     for (const auto& p:paragraphs) {
+      if(!p.imagePath.empty()) {
+        size_t bytes=0;
+        if(!archive_.getInflatedFileSize(p.imagePath.c_str(),&bytes) ||
+           bytes==0 || bytes>4u*1024u*1024u)continue;
+        std::unique_ptr<uint8_t,decltype(&std::free)> resource(
+          archive_.readFileToMemory(p.imagePath.c_str(),&bytes,false),&std::free);
+        crosspod::PngPreview png;
+        if(!resource || !crosspod::decodePngPreview(resource.get(),bytes,png))continue;
+        const int width=std::min<int>(TEXT_WIDTH,png.width);
+        const int height=std::max<int>(1,static_cast<int>(
+          static_cast<int64_t>(png.height)*width/png.width));
+        const int fitH=std::min(height,BOTTOM-TOP);
+        const int fitW=std::max<int>(1,static_cast<int>(
+          static_cast<int64_t>(width)*fitH/height));
+        if(y+fitH>BOTTOM && !pages_.back().lines.empty() &&
+           !beginNextPage(y))return false;
+        if(y+fitH>BOTTOM && !pages_.back().images.empty() &&
+           !beginNextPage(y))return false;
+        pages_.back().images.push_back({
+          std::move(png),LEFT+(TEXT_WIDTH-fitW)/2,y,fitW,fitH});
+        ++totalImages;
+        y+=fitH+8;
+        continue;
+      }
       BlockStyle block;
       block.alignment=p.align;
       block.textAlignDefined=true;
@@ -358,8 +428,9 @@ class Reader {
       }
       y += p.heading ? 12 : 8;
     }
-    if (pages_.size()>1 && pages_.back().lines.empty()) pages_.pop_back();
-    if (pages_.empty() || !totalLines) return false;
+    if (pages_.size()>1 && pages_.back().lines.empty() &&
+        pages_.back().images.empty()) pages_.pop_back();
+    if (pages_.empty() || (!totalLines && !totalImages)) return false;
     return true;
   }
  public:
@@ -512,8 +583,23 @@ class Reader {
   }
   void render() {
     renderer_.clearScreen(0xff);
-    for (const auto& line:pages_[currentPage_].lines)
+    const auto& page=pages_[currentPage_];
+    for (const auto& line:page.lines)
       line.block->render(renderer_,1,LEFT,line.y);
+    // 4x4 ordered Bayer halftone; preserve image detail on Q2's 1-bit surface.
+    static constexpr uint8_t bayer[4][4]={
+      {0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}};
+    for(const auto& image:page.images) {
+      for(int dy=0;dy<image.height;++dy) {
+        const size_t sy=static_cast<size_t>(dy)*image.png.height/image.height;
+        for(int dx=0;dx<image.width;++dx) {
+          const size_t sx=static_cast<size_t>(dx)*image.png.width/image.width;
+          const unsigned gray=image.png.gray[sy*image.png.width+sx];
+          const unsigned threshold=static_cast<unsigned>(bayer[dy&3][dx&3])*16u+8u;
+          if(gray<threshold)renderer_.drawPixel(image.x+dx,image.y+dy,true);
+        }
+      }
+    }
   }
   void present() {
     render();
@@ -534,6 +620,10 @@ class Reader {
     }
     if(std::fclose(file)!=0)ok=false;
     return ok;
+  }
+  size_t imageCount() const {
+    size_t n=0;for(const auto& page:pages_)n+=page.images.size();
+    return n;
   }
   void report() const {
     std::printf("CrossPod validated %s: page %zu/%zu, spine %d/%d\n",
@@ -825,6 +915,13 @@ int main(int argc,char** argv) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
     return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--render-images")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    if(reader.imageCount()==0)return 4;
+    std::printf("CrossPod rendered PNG images: %zu\n",reader.imageCount());
+    return reader.savePgm(argv[3])?0:5;
   }
   if(argc==4 && std::strcmp(argv[1],"--inspect-styles")==0) {
     // ZipFile retains a const std::string&: the path must outlive the archive.

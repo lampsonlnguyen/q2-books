@@ -34,7 +34,7 @@ if dynamic_loader:
     # Q2's glibc is 2.28; newer symbols cannot resolve on the device.
     version_info = read(readelf, "--version-info")
     requested_versions = [
-        (int(a), int(b)) for a, b in re.findall(r"GLIBC_(\\d+)\\.(\\d+)", version_info)
+        (int(a), int(b)) for a, b in re.findall(r"GLIBC_(\d+)\.(\d+)", version_info)
     ]
     glibc_ok = all(v <= (2, 28) for v in requested_versions)
 else:

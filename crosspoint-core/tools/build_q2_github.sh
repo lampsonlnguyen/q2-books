@@ -19,7 +19,7 @@ git clone --quiet --depth 1 --branch shanlingq2 https://github.com/DiamondBond/q
 test "$(git -C "$work/librespot" rev-parse HEAD)" = 4775f9c0b8f02cb76166482abb0d0dc5416f572f
 mkdir -p "$work/headers/gnu"
 cp /usr/mipsel-linux-gnu/include/gnu/stubs-o32_hard.h "$work/headers/gnu/stubs-o32_hard_2008.h"
-flags="--target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mabicalls -O2 -fPIC -D_FILE_OFFSET_BITS=64 -isystem $work/headers -isystem /usr/mipsel-linux-gnu/include"
+flags="--target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mabicalls -O2 -fPIC -D_FILE_OFFSET_BITS=64 -D_GLIBCXX_USE_CXX11_ABI=0 -isystem $work/headers -isystem /usr/mipsel-linux-gnu/include"
 clang $flags -c "$work/librespot/contrib/shanlingq2/start.c" -o "$work/start.o"
 clang $flags -c "$work/librespot/contrib/shanlingq2/nonshared.c" -o "$work/nonshared.o"
 llvm-ar rcs "$root/lib/libq2nonshared.a" "$work/nonshared.o"
@@ -67,6 +67,8 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
 cmake --build "$work/reader" --target crosspod-reader --parallel 2
 elf="$work/reader/crosspod-reader"
 python3 crosspoint-core/tools/check_q2_elf.py "$elf" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+echo "C++ ABI requirements:"
+mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || true
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --walk "$work/reader/multilingual.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" "$work/vietnamese.pgm"

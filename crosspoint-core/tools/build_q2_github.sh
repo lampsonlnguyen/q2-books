@@ -38,8 +38,13 @@ cmake -S "$work/zlib" -B "$work/zlib-build" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_C_COMPILER=clang "-DCMAKE_C_FLAGS=$flags" \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release \
   "-DCMAKE_INSTALL_PREFIX=$prefix" -DZLIB_BUILD_EXAMPLES=OFF
-cmake --build "$work/zlib-build" --parallel 2
-cmake --install "$work/zlib-build"
+# zlib 1.3.1 also defines a shared target even when the consumer needs
+# only the static archive. Building 'all' links that unused shared target
+# against Ubuntu's legacy-NaN CRT and fails. Never build that target.
+cmake --build "$work/zlib-build" --target zlibstatic --parallel 2
+mkdir -p "$prefix/lib" "$prefix/include"
+cp "$work/zlib-build/libz.a" "$prefix/lib/libz.a"
+cp "$work/zlib/zlib.h" "$work/zlib-build/zconf.h" "$prefix/include/"
 cmake -S "$work/expat/expat" -B "$work/expat-build" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_C_COMPILER=clang "-DCMAKE_C_FLAGS=$flags" \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release \

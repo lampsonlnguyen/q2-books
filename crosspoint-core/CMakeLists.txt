@@ -348,3 +348,25 @@ add_executable(crosspoint_ot_table_tests
 target_include_directories(crosspoint_ot_table_tests PRIVATE lib/OtShaper)
 target_compile_options(crosspoint_ot_table_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_opentype_table_bounds COMMAND crosspoint_ot_table_tests)
+
+# Genuine upstream EPUB text-pagination and glyph-rendering integration gate.
+# The small XHTML extractor in the test is NOT part of the production reader;
+# complete ChapterHtmlSlimParser and CSS/images remain separately required.
+add_executable(crosspod_epub_page_preview
+    tests/epub_page_preview.cpp
+    lib/Epub/ParsedText.cpp
+    lib/Epub/blocks/TextBlock.cpp
+    $<TARGET_OBJECTS:crosspoint_renderer_objects>)
+target_include_directories(crosspod_epub_page_preview PRIVATE
+    lib lib/Epub lib/Epub/blocks lib/Epub/css lib/EpdFont lib/GfxRenderer
+    lib/Utf8 lib/MiniBidi lib/Memory lib/Serialization platform/posix)
+target_compile_definitions(crosspod_epub_page_preview PRIVATE CROSSPOD_LINUX=1)
+set_target_properties(crosspod_epub_page_preview PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(crosspod_epub_page_preview PRIVATE
+    crosspoint_zip crosspoint_hyphenation crosspoint_linebreak
+    crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
+target_compile_options(crosspod_epub_page_preview PRIVATE -UNDEBUG)
+add_dependencies(crosspod_epub_page_preview epub_fixture)
+add_test(NAME crosspoint_real_epub_text_page_preview
+    COMMAND crosspod_epub_page_preview "${EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-epub-preview.pgm")

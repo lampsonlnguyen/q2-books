@@ -24,3 +24,11 @@ capture device diagnostics instead of replacing firmware or system libraries.
 
 This build uses CrossPoint's original EPUB ZIP/OPF/spine, ParsedText, TextBlock
 and GfxRenderer; XHTML collection is provisional and can lose styling.
+
+Reading-position resume (development branch): CrossPod now stores a small
+per-book progress file under /mnt/mmc/.crosspod/ after an interactive page
+turn. Reopening the same EPUB restores the last chapter and page. Progress
+is ignored when the EPUB file size or modification time changes. The saved
+page is clamped to the currently paginated chapter; this transitional format
+is NOT CrossPoint's native progress.bin and is not KOReader sync compatible.
+The CLI --validate, --render and --walk modes do not write progress.

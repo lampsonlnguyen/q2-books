@@ -32,6 +32,8 @@
 #include <utility>
 #include <vector>
 #include <sys/stat.h>
+#include <dirent.h>
+#include <cctype>
 #include <unistd.h>
 
 namespace {
@@ -332,11 +334,245 @@ class Reader {
   }
 };
 
+
+// Q2 Pod card-app launcher: the card executable receives no book-path argv.
+// The Books shelf is intentionally independent of the stock reader and only
+// discovers regular, non-hidden EPUB files from the SD card (one subdir deep).
+struct ShelfEntry {
+  std::string path;
+  std::string label;
+};
+std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
+  std::vector<ShelfEntry> books;
+  constexpr size_t MAX_CARD_BOOKS = 512;
+  const auto visit = [&](const std::string& dir, bool nested) {
+    // Iterative one-level walk: avoid recursion through attacker-controlled
+    // directory trees on removable media.
+    DIR* d = opendir(dir.c_str());
+    if (!d) return std::vector<std::string>{};
+    std::vector<std::string> subfolders;
+    for (dirent* entry; (entry=readdir(d)) != nullptr;) {
+      if (entry->d_name[0] == '.') continue;
+      const std::string name(entry->d_name);
+      if (name.size() > 240) continue;
+      const std::string path=dir+"/"+name;
+      if (path.size()>1000) continue;
+      struct stat st{};
+      if (lstat(path.c_str(),&st) != 0) continue;
+      if (S_ISDIR(st.st_mode)) {
+        if (!nested && subfolders.size()<128) subfolders.push_back(path);
+        continue;
+      }
+      if (!S_ISREG(st.st_mode) || books.size()>=MAX_CARD_BOOKS) continue;
+      if (name.size()<6)continue;
+      const std::string_view ending(name.data()+name.size()-5,5);
+      if (!(ending==".epub"||ending==".EPUB"||ending==".Epub")) continue;
+      books.push_back({path,name.substr(0,name.size()-5)});
+    }
+    closedir(d);
+    return subfolders;
+  };
+  const auto folders=visit(root,false);
+  for(const auto& dir:folders) {
+    if(books.size()>=MAX_CARD_BOOKS)break;
+    (void)visit(dir,true);
+  }
+  const auto less=[](const ShelfEntry& a,const ShelfEntry& b){
+    // ASCII case-fold only for stable sort; retain Unicode bytes intact.
+    const std::string& x=a.label;
+    const std::string& y=b.label;
+    const size_t n=std::min(x.size(),y.size());
+    for(size_t i=0;i<n;++i) {
+      const unsigned char cx=static_cast<unsigned char>(x[i]);
+      const unsigned char cy=static_cast<unsigned char>(y[i]);
+      const auto lx=static_cast<unsigned char>(std::tolower(cx));
+      const auto ly=static_cast<unsigned char>(std::tolower(cy));
+      if(lx!=ly)return lx<ly;
+    }
+    return x.size()<y.size() || (x.size()==y.size() && a.path<b.path);
+  };
+  std::sort(books.begin(),books.end(),less);
+  return books;
+}
+std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
+  std::string out;
+  size_t pos=0,count=0;
+  while(pos<label.size() && count<maxCodepoints) {
+    unsigned char c=static_cast<unsigned char>(label[pos]);
+    size_t len=c<0x80?1:(c>=0xC2&&c<0xE0?2:(c<0xF0?3:4));
+    if(pos+len>label.size())break;
+    out.append(label,pos,len);
+    pos+=len;
+    ++count;
+  }
+  if(pos<label.size())out+="...";
+  return out;
+}
+
+class CardShelf {
+  const std::vector<ShelfEntry>& books_;
+  HalDisplay display_;
+  GfxRenderer renderer_;
+  EpdFont font_;
+  FontDecompressor decompressor_;
+  FontCacheManager fontCache_;
+  size_t selected_ = 0;
+  std::string notice_;
+  static constexpr int TOP_Y=59, ROW_H=36, VISIBLE_ROWS=6;
+
+ public:
+  explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0):
+      books_(books),renderer_(display_),font_(&notosans_12_regular),
+      fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
+    if(!books_.empty())selected_=std::min(selection,books_.size()-1);
+  }
+  bool open() {
+    display_.begin();
+    renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
+    renderer_.begin();
+    renderer_.insertFont(1,EpdFontFamily(12,&font_));
+    if(!decompressor_.init())return false;
+    fontCache_.setFontDecompressor(&decompressor_);
+    renderer_.setFontCacheManager(&fontCache_);
+    return true;
+  }
+  size_t selected() const {return selected_;}
+  bool empty() const {return books_.empty();}
+  const std::string& bookPath() const {return books_[selected_].path;}
+  bool change(int direction) {
+    if(books_.empty())return false;
+    const auto before=selected_;
+    if(direction>0 && selected_+1<books_.size())++selected_;
+    else if(direction<0 && selected_>0)--selected_;
+    notice_.clear();
+    return selected_!=before;
+  }
+  bool tap(int x,int y) {
+    if(books_.empty() || x<0||x>=375 || y<TOP_Y || y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+    const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
+    const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
+    if(index>=books_.size())return false;
+    selected_=index;
+    return true;
+  }
+  void setNotice(std::string notice) {notice_=std::move(notice);}
+  void paint() {
+    renderer_.clearScreen(0xff);
+    renderer_.fillRect(0,0,375,43,true);
+    renderer_.drawText(1,17,16,"CrossPod",false);
+    char counter[80];
+    std::snprintf(counter,sizeof(counter),"%zu EPUB book%s",books_.size(),books_.size()==1?"":"s");
+    renderer_.drawText(1,18,45,counter);
+    if(books_.empty()) {
+      renderer_.drawText(1,18,112,"No EPUB books found.");
+      renderer_.drawText(1,18,144,"Copy books to /Books/");
+    } else {
+      const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
+      for(size_t row=0;row<VISIBLE_ROWS && start+row<books_.size();++row) {
+        const size_t index=start+row;
+        const int y=TOP_Y+static_cast<int>(row)*ROW_H;
+        const bool active=index==selected_;
+        if(active)renderer_.fillRect(10,y+2,355,31,true);
+        else renderer_.drawLine(14,y+ROW_H-3,361,y+ROW_H-3,true);
+        const std::string label=clippedLabel(books_[index].label,34);
+        renderer_.drawText(1,18,y+10,label.c_str(),!active);
+      }
+    }
+    if(!notice_.empty()) {
+      renderer_.fillRect(0,272,375,20,true);
+      renderer_.drawText(1,12,277,clippedLabel(notice_,43).c_str(),false);
+    }
+    renderer_.drawText(1,18,299,"Wheel: select   Center: open   Back: exit");
+  }
+  void present() {paint();display_.displayBuffer();}
+  bool savePgm(const std::string& out) {
+    paint();
+    const uint8_t* pixels=display_.getFrameBuffer();
+    std::FILE* f=std::fopen(out.c_str(),"wb");
+    if(!f)return false;
+    bool ok=std::fprintf(f,"P5\n375 320\n255\n")>0;
+    for(int y=0;y<320 && ok;++y)
+      for(int x=0;x<375;++x) {
+        const unsigned char color=
+          (pixels[y*47+x/8]&(0x80u>>(x&7)))?255:0;
+        if(std::fwrite(&color,1,1,f)!=1) {ok=false;break;}
+      }
+    if(std::fclose(f)!=0)ok=false;
+    return ok;
+  }
+};
+
+int runCardApp(const std::string& bookDir) {
+  const std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  crosspod::Q2SocketInput input;
+  if(!input.open()) {
+    std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
+    return 5;
+  }
+  std::signal(SIGINT,exitOnSignal);
+  std::signal(SIGTERM,exitOnSignal);
+  size_t selection=0;
+  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection));
+  if(!shelf->open())return 4;
+  shelf->present();
+  crosspod::Q2Controls controls;
+  std::unique_ptr<Reader> reader;
+  while(!interrupted) {
+    crosspod::PhysicalEvent event{};
+    if(!input.receive(event)) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      continue;
+    }
+    const auto action=controls.translate(event).action;
+    if(reader) {
+      if(action==crosspod::LogicalAction::Back) {
+        reader.reset(); // close book/cache BEFORE reopening the card shelf
+        shelf.reset(new CardShelf(books,selection));
+        if(!shelf->open())return 6;
+        shelf->present();
+        continue;
+      }
+      bool changed=false;
+      if(action==crosspod::LogicalAction::Next ||
+         action==crosspod::LogicalAction::Confirm) changed=reader->move(1);
+      if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
+      if(event.kind==crosspod::PhysicalKind::TouchUp)
+        changed=reader->move(event.x>=187?1:-1);
+      if(changed)reader->present();
+      continue;
+    }
+    if(action==crosspod::LogicalAction::Back)break;
+    if(action==crosspod::LogicalAction::Previous && shelf->change(-1))shelf->present();
+    if(action==crosspod::LogicalAction::Next && shelf->change(1))shelf->present();
+    bool activate=action==crosspod::LogicalAction::Confirm;
+    if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
+    if(!activate || shelf->empty())continue;
+    selection=shelf->selected();
+    const std::string chosen=shelf->bookPath();
+    shelf->setNotice("Opening EPUB...");
+    shelf->present();
+    auto next=std::make_unique<Reader>(chosen);
+    if(!next->open()) {
+      shelf->setNotice("Cannot read this EPUB");
+      shelf->present();
+    } else {
+      shelf.reset();
+      reader=std::move(next);
+      reader->present();
+    }
+  }
+  input.close();
+  return 0;
+}
+
 void usage() {
   std::fputs(
     "Usage:\n"
     "  crosspod-reader --validate <book.epub>       (no framebuffer)\n"
     "  crosspod-reader --walk <book.epub>           (test pagination)\n"
+    "  crosspod-reader --list-books <directory>     (card scanner test)\n"
+    "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
+    "  crosspod-reader (no args)                    (Q2 card app)\n"
     "  crosspod-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
     "  crosspod-reader <book.epub>                  (Q2 Pod Books handoff)\n"
     "On Q2, only run interactively after Q2 Pod yields /dev/fb0.\n",stderr);
@@ -344,6 +580,18 @@ void usage() {
 } // namespace
 
 int main(int argc,char** argv) {
+  // Card apps start with NO book argument; the on-device picker owns launch.
+  if(argc==1) return runCardApp("/mnt/mmc/Books");
+  if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    for(const auto& b:books)std::printf("%s\n",b.path.c_str());
+    return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--card-preview")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    CardShelf shelf(books);
+    return shelf.open() && shelf.savePgm(argv[3])?0:4;
+  }
   bool dry=false,render=false,walk=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {

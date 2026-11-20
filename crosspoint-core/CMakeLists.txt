@@ -423,3 +423,10 @@ add_test(NAME crosspod_reader_walk_multispine
     COMMAND crosspod-reader --walk "${EPUB_FIXTURE}")
 add_test(NAME crosspod_reader_walk_vietnamese
     COMMAND crosspod-reader --walk "${VIETNAMESE_EPUB_FIXTURE}")
+
+# Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
+# The binary gets its book path from its own scrollable /Books/ picker.
+add_test(NAME crosspod_reader_card_empty_library
+    COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/empty-books")
+add_test(NAME crosspod_reader_card_list_fixture
+    COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/books-test")

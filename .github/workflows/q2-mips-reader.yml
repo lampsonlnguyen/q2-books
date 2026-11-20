@@ -132,6 +132,27 @@ jobs:
           print('Real MIPS renderer: 375x320 Vietnamese text raster verified')
           PY
 
+      - name: Verify card app browser and real MIPS menu pixels under QEMU
+        run: |
+          set -euo pipefail
+          mkdir -p build/mips-reader/books-test/Subfolder build/mips-reader/books-test/.hidden
+          cp build/mips-reader/vietnamese-prose.epub build/mips-reader/books-test/
+          cp build/mips-reader/multilingual.epub build/mips-reader/books-test/Subfolder/
+          printf 'ignore' > build/mips-reader/books-test/plain.txt
+          timeout 25s qemu-mipsel build/mips-reader/crosspod-reader \
+            --list-books build/mips-reader/books-test | tee build/mips-reader/card-list.log
+          test "$(wc -l < build/mips-reader/card-list.log)" -eq 2
+          timeout 30s qemu-mipsel build/mips-reader/crosspod-reader \
+            --card-preview build/mips-reader/books-test build/mips-reader/card-menu.pgm
+          python3 - <<'PY'
+          from pathlib import Path
+          image=Path("build/mips-reader/card-menu.pgm").read_bytes()
+          assert image[:15]==b"P5\\n375 320\\n255\\n".replace(b"\\n",b"\n")
+          assert len(image)==15+375*320
+          assert image[15:].count(0)>1500
+          print("CrossPod card menu MIPS framebuffer preview: OK")
+          PY
+
       - name: Package reversible Q2 reader alpha (never flashable)
         run: |
           set -euo pipefail
@@ -163,6 +184,26 @@ jobs:
             zip -q -r crosspod-q2-reader-alpha.zip crosspod-q2-reader-alpha
             sha256sum crosspod-q2-reader-alpha.zip > crosspod-q2-reader-alpha.zip.sha256
           )
+
+      - name: Package standalone Q2 Pod card app
+        run: |
+          set -euo pipefail
+          mkdir -p dist/crosspod-card/.crosspod
+          cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/q2-crosspod
+          printf 'name=CrossPod\\ngame=1\\nrow=library\\n' > dist/crosspod-card/.crosspod/q2app
+          cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt
+          (cd dist/crosspod-card && zip -q -r ../crosspod-card-app.zip .crosspod)
+          unzip -t dist/crosspod-card-app.zip
+          unzip -p dist/crosspod-card-app.zip .crosspod/q2app | grep -Fx 'game=1'
+          file dist/crosspod-card/.crosspod/q2-crosspod | grep -q 'ELF 32-bit LSB.*MIPS'
+
+      - name: Upload installable standalone card app
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-card-app
+          path: dist/crosspod-card-app.zip
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Q2 reader prototype and checksum
         uses: actions/upload-artifact@v4

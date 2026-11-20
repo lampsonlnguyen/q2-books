@@ -35,6 +35,7 @@ class HalFile {
     return fp_ && off >= LONG_MIN && off <= LONG_MAX &&
            std::fseek(fp_, static_cast<long>(off), SEEK_CUR) == 0;
   }
+  bool flush() { return fp_ && std::fflush(fp_) == 0; }
   size_t position() const {
     if (!fp_) return 0;
     const long at = std::ftell(fp_);

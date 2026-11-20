@@ -252,3 +252,26 @@ add_executable(crosspoint_q2_hal_display_tests tests/q2_hal_display_test.cpp)
 target_link_libraries(crosspoint_q2_hal_display_tests PRIVATE crosspoint_q2_hal_display)
 target_compile_options(crosspoint_q2_hal_display_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tests)
+
+# CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
+# Compile only until missing FreeInk image codecs and reading activity
+# dependencies can be ported; this is not a linked reader.
+add_library(crosspoint_xhtml_parser_objects OBJECT
+    lib/Epub/parsers/ChapterHtmlSlimParser.cpp
+)
+set_target_properties(crosspoint_xhtml_parser_objects PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(crosspoint_xhtml_parser_objects PRIVATE
+    lib
+    lib/Epub
+    lib/Epub/parsers
+    lib/Epub/css
+    lib/EpdFont
+    lib/GfxRenderer
+    lib/Utf8
+    lib/MiniBidi
+    lib/Serialization
+    lib/XmlParserUtils
+    platform/posix
+    platform/q2
+)

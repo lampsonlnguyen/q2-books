@@ -17,11 +17,22 @@
 #include <Utf8.h>
 
 #include <algorithm>
+#include <cassert>
+#include <chrono>
+#include <cstdlib>
 
 #include "../Memory/Memory.h"
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"
 
+#if defined(CROSSPOD_LINUX)
+// Monotonic elapsed time used by upstream CrossPoint rendering diagnostics.
+static unsigned long millis() {
+  using namespace std::chrono;
+  return static_cast<unsigned long>(
+      duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+#endif
 namespace {
 // Synthesized small caps: lowercase letters draw as capitals at roughly x-height.
 constexpr int SMALL_CAPS_SCALE_NUM = 3;
@@ -297,7 +308,11 @@ void GfxRenderer::FrameBufferLoan::end() {
     // Only reachable if the framebuffer never existed, which begin() already
     // asserts against; kept as a backstop since running blind helps nobody.
     LOG_ERR("GFX", "Framebuffer restore failed - restarting");
+    #if defined(CROSSPOD_LINUX)
+    std::abort();  // Q2 must never reset firmware due to reader graphics failure.
+#else
     ESP.restart();
+#endif
   }
 }
 

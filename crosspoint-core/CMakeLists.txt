@@ -225,10 +225,12 @@ add_test(NAME crosspoint_unicode_bidi_arabic COMMAND crosspoint_bidi_tests)
 add_library(crosspoint_pagination_objects OBJECT
     lib/Epub/ParsedText.cpp
     lib/Epub/Page.cpp
+    lib/Epub/blocks/TextBlock.cpp
 )
 # Recent upstream CrossPoint Memory.h uses C++20 constrained templates.
 set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD 20)
 set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD_REQUIRED ON)
+target_compile_definitions(crosspoint_pagination_objects PRIVATE CROSSPOD_LINUX=1)
 target_include_directories(crosspoint_pagination_objects PRIVATE
     lib
     lib/Epub
@@ -306,8 +308,7 @@ target_include_directories(crosspoint_renderer_objects PRIVATE
 # the linker. Compile-only success is not enough to establish a working engine.
 add_executable(crosspoint_renderer_link_tests
     tests/renderer_link_test.cpp
-    $<TARGET_OBJECTS:crosspoint_renderer_objects>
-    $<TARGET_OBJECTS:crosspoint_pagination_objects>)
+    $<TARGET_OBJECTS:crosspoint_renderer_objects>)
 target_include_directories(crosspoint_renderer_link_tests PRIVATE
     lib lib/Epub lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
     lib/Memory platform/posix)

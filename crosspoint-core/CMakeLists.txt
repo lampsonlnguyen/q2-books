@@ -382,3 +382,30 @@ add_custom_target(vietnamese_epub_fixture ALL DEPENDS "${VIETNAMESE_EPUB_FIXTURE
 add_dependencies(crosspod_epub_page_preview vietnamese_epub_fixture)
 add_test(NAME crosspoint_vietnamese_book_page_preview
     COMMAND crosspod_epub_page_preview "${VIETNAMESE_EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-vietnamese-preview.pgm" "OEBPS/chapter1.xhtml")
+
+# Native Q2 EPUB vertical slice: original CrossPoint ZIP/OPF/spine, ParsedText,
+# TextBlock and full linked GfxRenderer. The POSIX XHTML text-block collector
+# remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
+add_executable(crosspod-reader
+    reader/crosspod_reader.cpp
+    lib/Epub/ParsedText.cpp
+    lib/Epub/blocks/TextBlock.cpp
+    $<TARGET_OBJECTS:crosspoint_renderer_objects>)
+target_include_directories(crosspod-reader PRIVATE
+    lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
+    lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
+    lib/Memory lib/Serialization platform/posix platform/q2)
+target_compile_definitions(crosspod-reader PRIVATE CROSSPOD_LINUX=1)
+set_target_properties(crosspod-reader PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(crosspod-reader PRIVATE
+    crosspoint_zip crosspoint_epub_container crosspoint_opf
+    crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
+    crosspoint_q2_hal_display crosspod_q2_input
+    crosspoint_font_metrics crosspoint_bidi
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
+add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
+add_test(NAME crosspod_reader_real_epub_spine
+    COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
+add_test(NAME crosspod_reader_vietnamese_epub
+    COMMAND crosspod-reader --render "${VIETNAMESE_EPUB_FIXTURE}"
+        "${CMAKE_CURRENT_BINARY_DIR}/crosspod-reader-vietnamese.pgm")

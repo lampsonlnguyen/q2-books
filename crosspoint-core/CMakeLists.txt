@@ -275,6 +275,7 @@ add_library(crosspoint_renderer_objects OBJECT
     lib/OtShaper/OtBuffer.cpp
     lib/OtShaper/OtGpos.cpp
     lib/OtShaper/OtGsub.cpp
+    lib/OtShaper/OtTable.cpp
     platform/posix/FontAlloc.c
 )
 target_compile_definitions(crosspoint_renderer_objects PRIVATE CROSSPOD_LINUX=1)

@@ -14,6 +14,7 @@
 #include <HalDisplay.h>
 #include <ParsedText.h>
 #include <Q2Controls.hpp>
+#include "ReadingPosition.hpp"
 #include <Q2SocketInput.hpp>
 #include <ZipFile.h>
 #include <builtinFonts/notosans_12_regular.h>
@@ -178,6 +179,7 @@ class Reader {
   std::vector<RenderPage> pages_;
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
+  bool resumeEnabled_ = false;
 
   bool beginNextPage(int& y) {
     if (pages_.size() >= MAX_PAGES_PER_SPINE) return false;
@@ -273,6 +275,17 @@ class Reader {
         info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
     return loadSpine(0,1);
   }
+  void enableResume() {
+    resumeEnabled_=true;
+    crosspod::ReadingPosition saved;
+    if(!crosspod::loadReadingPosition(bookPath_,saved))return;
+    if(!loadSpine(saved.spine,1) || currentSpine_!=saved.spine)return;
+    currentPage_=std::min(saved.page,pages_.size()-1);
+  }
+  void persistPosition() const {
+    if(resumeEnabled_)
+      (void)crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_});
+  }
   bool loadSpine(int index,int direction) {
     // Crossing a spine boundary must not destroy the current page if the next
     // chapter is unreadable or the user is at the beginning/end of the book.
@@ -298,9 +311,11 @@ class Reader {
     return false;
   }
   bool move(int direction) {
-    if (direction>0 && currentPage_+1<pages_.size()) { ++currentPage_; return true; }
-    if (direction<0 && currentPage_>0) { --currentPage_; return true; }
-    return loadSpine(currentSpine_+direction,direction);
+    if (direction>0 && currentPage_+1<pages_.size()) { ++currentPage_; persistPosition(); return true; }
+    if (direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
+    const bool changed=loadSpine(currentSpine_+direction,direction);
+    if(changed)persistPosition();
+    return changed;
   }
   void render() {
     renderer_.clearScreen(0xff);
@@ -558,6 +573,7 @@ int runCardApp(const std::string& bookDir) {
     } else {
       shelf.reset();
       reader=std::move(next);
+      reader->enableResume();
       reader->present();
     }
   }
@@ -635,6 +651,7 @@ int main(int argc,char** argv) {
   }
   std::signal(SIGINT,exitOnSignal);
   std::signal(SIGTERM,exitOnSignal);
+  reader.enableResume();
   reader.present();
   crosspod::Q2Controls controls;
   while(!interrupted) {

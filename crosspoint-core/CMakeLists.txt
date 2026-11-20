@@ -259,6 +259,7 @@ add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tes
 add_library(crosspoint_renderer_objects OBJECT
     lib/GfxRenderer/GfxRenderer.cpp
 )
+target_compile_definitions(crosspoint_renderer_objects PRIVATE CROSSPOD_LINUX=1)
 set_target_properties(crosspoint_renderer_objects PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_renderer_objects PRIVATE

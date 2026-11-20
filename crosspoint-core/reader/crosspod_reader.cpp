@@ -279,7 +279,10 @@ class Reader {
     resumeEnabled_=true;
     crosspod::ReadingPosition saved;
     if(!crosspod::loadReadingPosition(bookPath_,saved))return;
-    if(!loadSpine(saved.spine,1) || currentSpine_!=saved.spine)return;
+    if(!loadSpine(saved.spine,1) || currentSpine_!=saved.spine) {
+      (void)loadSpine(0,1);
+      return;
+    }
     currentPage_=std::min(saved.page,pages_.size()-1);
   }
   void persistPosition() const {

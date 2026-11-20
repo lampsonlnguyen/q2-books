@@ -32,3 +32,20 @@ is ignored when the EPUB file size or modification time changes. The saved
 page is clamped to the currently paginated chapter; this transitional format
 is NOT CrossPoint's native progress.bin and is not KOReader sync compatible.
 The CLI --validate, --render and --walk modes do not write progress.
+
+TYPOGRAPHY MENU (experimental font builds):
+While reading, press Centre or tap the top 45 pixels to open Reading appearance.
+Turn the wheel to choose Font or Size; Centre cycles the selected value.
+Back closes the menu. Choose Sans or Serif and 12, 14, 16, or 18 pt.
+CrossPod repaginates the current chapter and saves your choices in
+/mnt/mmc/.crosspod/typography.conf. The book's page number may shift when
+font size changes; location anchoring is still a follow-up.
+
+The card app CI downloads exactly two original CrossPoint .cpfont families:
+NotoSansExtended and NotoSerifExtended (each in 12/14/16/18pt), supplied
+from the official crosspoint-reader/crosspoint-fonts sd-fonts-m1-b4 release.
+They're installed under .crosspod/fonts/ in the card-app ZIP.
+An older ZIP without these files supports only built-in Sans 12.
+Font loading or repagination failure is shown in the menu and retains the
+previous setting. Full language coverage depends on each font's glyph set.
+Original font notices and release: https://github.com/crosspoint-reader/crosspoint-fonts

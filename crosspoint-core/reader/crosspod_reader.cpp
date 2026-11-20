@@ -146,8 +146,8 @@ class TempCache {
     if (dir_.empty()) return;
     // CrossPoint cache owns temporary .items/.spine/.toc and book.bin files.
     // The private directory is only used by this process.
-    for (const char* name: {"book.bin","spine.tmp","toc.tmp","items.tmp",
-                            ".spine.bin",".toc.bin",".items.bin"}) {
+    for (const char* name: {"book.bin","spine.bin.tmp","toc.bin.tmp",
+                            ".items.bin"}) {
       std::remove((dir_+"/"+name).c_str());
     }
     // Removal of any remaining entries is intentionally NOT recursive.
@@ -177,15 +177,18 @@ class Reader {
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
 
-  void beginNextPage(int& y) {
-    if (pages_.size() < MAX_PAGES_PER_SPINE) pages_.emplace_back();
+  bool beginNextPage(int& y) {
+    if (pages_.size() >= MAX_PAGES_PER_SPINE) return false;
+    pages_.emplace_back();
     y=TOP;
+    return true;
   }
   bool paginate(const std::vector<Paragraph>& paragraphs) {
     pages_.clear();
     pages_.emplace_back();
     int y=TOP;
     size_t totalLines=0;
+    bool pageLimitReached=false;
     for (const auto& p:paragraphs) {
       ParsedText layout(false,false,BlockStyle(),0);
       std::istringstream words(p.value);
@@ -195,13 +198,18 @@ class Reader {
       layout.layoutAndExtractLines(renderer_,1,TEXT_WIDTH,
           [&](std::unique_ptr<TextBlock> line,uint32_t) {
             if (!line || !line->valid() || pages_.size() > MAX_PAGES_PER_SPINE) return;
-            if (y + LINE_HEIGHT > BOTTOM) beginNextPage(y);
-            if (pages_.size() > MAX_PAGES_PER_SPINE) return;
+            if (y + LINE_HEIGHT > BOTTOM && !beginNextPage(y)) {
+              pageLimitReached=true;
+              return;
+            }
             pages_.back().lines.push_back({std::move(line),y});
             y+=LINE_HEIGHT;
             ++totalLines;
           });
-      if (pages_.size() >= MAX_PAGES_PER_SPINE && y + LINE_HEIGHT > BOTTOM) break;
+      if (pageLimitReached) {
+        std::fputs("CrossPod: chapter exceeds the bounded page cache\n",stderr);
+        return false;
+      }
       y += p.heading ? 12 : 8;
     }
     if (pages_.size()>1 && pages_.back().lines.empty()) pages_.pop_back();
@@ -264,6 +272,11 @@ class Reader {
     return loadSpine(0,1);
   }
   bool loadSpine(int index,int direction) {
+    // Crossing a spine boundary must not destroy the current page if the next
+    // chapter is unreadable or the user is at the beginning/end of the book.
+    const int oldSpine=currentSpine_;
+    const size_t oldPage=currentPage_;
+    auto oldPages=std::move(pages_);
     const int n=metadata_.getSpineCount();
     while (index>=0 && index<n) {
       const auto entry=metadata_.getSpineEntry(index);
@@ -277,6 +290,9 @@ class Reader {
       }
       index+=direction;
     }
+    pages_=std::move(oldPages);
+    currentPage_=oldPage;
+    currentSpine_=oldSpine;
     return false;
   }
   bool move(int direction) {

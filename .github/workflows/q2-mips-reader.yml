@@ -33,6 +33,19 @@ jobs:
           mipsel-linux-gnu-readelf -h /tmp/q2-abi-probe.o | grep -q nan2008
           mipsel-linux-gnu-readelf -A /tmp/q2-abi-probe.o \
             | grep -q 'Hard float.*64-bit FPU'
+          # A compiler that emits NaN2008 objects is not enough: Ubuntu's
+          # default MIPS startup/runtime libraries are legacy-NaN and cannot
+          # link them. Never suppress this error with --no-warn-mismatch.
+          if ! mipsel-linux-gnu-gcc \
+            -march=mips32r2 -mabi=32 -mhard-float \
+            -mfp64 -mnan=2008 -mabs=2008 \
+            /tmp/q2-abi-probe.c -o /tmp/q2-abi-probe \
+            > /tmp/q2-abi-link.log 2>&1; then
+            cat /tmp/q2-abi-link.log >&2
+            echo "::error::Q2 ABI toolchain unavailable: legacy-NaN host C runtime conflicts with the device's NaN-2008 ABI. Supply a proper Shanling Q2 NaN-2008 C and C++ sysroot/toolchain; do not use --no-warn-mismatch."
+            exit 1
+          fi
+          echo "Q2 ABI compiler and runtime link probe passed"
 
       - name: Build pinned zlib 1.3.1 and Expat 2.6.4 for MIPS
         run: |

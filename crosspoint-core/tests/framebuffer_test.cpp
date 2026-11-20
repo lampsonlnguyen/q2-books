@@ -28,6 +28,21 @@ int main() {
   assert(at(0,0)==0xff345678);
   assert(at(0,374)==0xff8899aa);
   assert(at(160,200)==0xff112233);
+  // CrossPod Test V3 was confirmed readable on physical Q2 hardware.
+  // Its addressing rule writes pixel (logical_x, logical_y) to
+  // panel row logical_x, column (319 - logical_y).
+  // Check an asymmetric three-point 'L' to prevent mirrored text regressions.
+  std::vector<uint32_t> asymmetric(W*H, 0xff000000);
+  asymmetric[10*W+10] = 0xffff0000;
+  asymmetric[10*W+11] = 0xff00ff00;
+  asymmetric[11*W+10] = 0xff0000ff;
+  assert(Q2Framebuffer::rotateARGB(asymmetric.data(),asymmetric.size(),
+                                    panel.data(),panel.size(),PW*4));
+  assert(at(309,10) == 0xffff0000);
+  assert(at(309,11) == 0xff00ff00);
+  assert(at(308,10) == 0xff0000ff);
+  assert(at(308,11) == 0xff000000);
+
   assert(!Q2Framebuffer::rotateARGB(logical.data(),logical.size(),
                                     panel.data(),panel.size()-5,PW*4));
   assert(!Q2Framebuffer::rotateARGB(logical.data(),logical.size(),

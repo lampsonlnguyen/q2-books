@@ -436,6 +436,12 @@ target_include_directories(crosspod_typography_tests PRIVATE reader)
 target_compile_options(crosspod_typography_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_two_font_preferences COMMAND crosspod_typography_tests)
 
+# Preserve original CrossPoint non-visible XHTML filtering semantics.
+add_executable(crosspoint_visible_text_tests tests/visible_text_utils_test.cpp)
+target_include_directories(crosspoint_visible_text_tests PRIVATE lib/Epub)
+target_compile_options(crosspoint_visible_text_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_visible_xhtml_elements COMMAND crosspoint_visible_text_tests)
+
 # Compile-only interface gate for the exact upstream CrossPoint XHTML parser.
 # Full implementation still needs Epub/Section, images and CSS reader wiring.
 add_executable(crosspoint_chapter_parser_interface_tests

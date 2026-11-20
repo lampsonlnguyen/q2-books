@@ -8,6 +8,8 @@
 #include <climits>
 #include <algorithm>
 #include <cstdio>
+#include <cerrno>
+#include <sys/stat.h>
 #include <string>
 #include <utility>
 class HalFile : public Print {
@@ -88,6 +90,7 @@ class HalStorage {
     std::fclose(fp);
     return true;
   }
+  bool mkdir(const char* path) { return path && (::mkdir(path,0755)==0 || errno==EEXIST); }
   bool remove(const char* path) { return std::remove(path) == 0; }
   bool rename(const char* from, const char* to) { return std::rename(from, to) == 0; }
 };

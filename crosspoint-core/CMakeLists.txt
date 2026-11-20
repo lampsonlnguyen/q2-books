@@ -149,6 +149,10 @@ add_library(crosspoint_layout_foundation STATIC
     lib/Epub/WordStore.cpp
     lib/Epub/css/CssParser.cpp
 )
+# The upstream CSS parser marks standard-algorithm comparisons constexpr.
+# std::equal is constexpr in C++20, not in the older MIPS GCC C++17 library.
+set_property(TARGET crosspoint_layout_foundation PROPERTY CXX_STANDARD 20)
+set_property(TARGET crosspoint_layout_foundation PROPERTY CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_layout_foundation PUBLIC
     lib/Epub
     lib/Epub/css

@@ -147,7 +147,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           image=Path("build/mips-reader/card-menu.pgm").read_bytes()
-          assert image[:15]==b"P5\\n375 320\\n255\\n".replace(b"\\n",b"\n")
+          assert image[:15] == ("P5"+chr(10)+"375 320"+chr(10)+"255"+chr(10)).encode()
           assert len(image)==15+375*320
           assert image[15:].count(0)>1500
           print("CrossPod card menu MIPS framebuffer preview: OK")
@@ -190,7 +190,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist/crosspod-card/.crosspod
           cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/q2-crosspod
-          printf 'name=CrossPod\\ngame=1\\nrow=library\\n' > dist/crosspod-card/.crosspod/q2app
+          printf 'name=CrossPod\ngame=1\nrow=library\n' > dist/crosspod-card/.crosspod/q2app
           cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt
           (cd dist/crosspod-card && zip -q -r ../crosspod-card-app.zip .crosspod)
           unzip -t dist/crosspod-card-app.zip

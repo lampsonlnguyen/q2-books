@@ -38,7 +38,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
             -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF \
             -DCMAKE_INSTALL_PREFIX="$prefix"
-          cmake --build build/mips-zlib --parallel 2 --target zlibstatic
+          cmake --build build/mips-zlib --parallel 2
           cmake --install build/mips-zlib
 
           cmake -S build/deps-src/libexpat/expat -B build/mips-expat \

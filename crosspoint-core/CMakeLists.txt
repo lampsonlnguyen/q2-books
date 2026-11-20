@@ -252,3 +252,26 @@ add_executable(crosspoint_q2_hal_display_tests tests/q2_hal_display_test.cpp)
 target_link_libraries(crosspoint_q2_hal_display_tests PRIVATE crosspoint_q2_hal_display)
 target_compile_options(crosspoint_q2_hal_display_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tests)
+
+# Compile original upstream renderer as an object library. This is a
+# compile-only integration gate: linking a real reader requires all font,
+# image and FreeInk-independent Q2 adapters.
+add_library(crosspoint_renderer_objects OBJECT
+    lib/GfxRenderer/GfxRenderer.cpp
+)
+set_target_properties(crosspoint_renderer_objects PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(crosspoint_renderer_objects PRIVATE
+    lib
+    lib/Epub
+    lib/Epub/css
+    lib/EpdFont
+    lib/GfxRenderer
+    lib/Utf8
+    lib/MiniBidi
+    lib/Serialization
+    lib/Memory
+    lib/XmlParserUtils
+    platform/posix
+    platform/q2
+)

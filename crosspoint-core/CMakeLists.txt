@@ -271,7 +271,9 @@ add_library(crosspoint_renderer_objects OBJECT
     lib/OtShaper/OtUse.cpp
     lib/OtShaper/OtFace.cpp
     lib/OtShaper/OtLayout.cpp
+    lib/OtShaper/OtContext.cpp
     lib/OtShaper/OtPlan.cpp
+    lib/OtShaper/OtPlanBuild.cpp
     lib/OtShaper/OtBuffer.cpp
     lib/OtShaper/OtGpos.cpp
     lib/OtShaper/OtGsub.cpp

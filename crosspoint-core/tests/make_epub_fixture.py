@@ -21,8 +21,8 @@ opf = '''<?xml version="1.0" encoding="utf-8"?>
 <spine><itemref idref="c1"/><itemref idref="c2"/></spine>
 </package>'''
 chapter1 = '''<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 1</title></head>
-<body><h1>Chapter One</h1><p>Nguyễn — Đà Lạt, 中文, 日本語, 한국어.</p>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 1</title><link rel="stylesheet" href="book.css"/></head>
+<body><h1>Chapter One</h1><p>Nguyễn — Đà Lạt, 中文, 日本語, 한국어.</p>\n<p class="highlight"><strong>Bold text</strong> and <em>italic text</em> styled by book.css.</p>\n<p style="display:none">SECRET_HIDDEN_PARAGRAPH</p>
 <p dir="rtl">مرحبا بالعالم — שלום עולם</p></body></html>'''
 chapter2 = '''<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter 2</title></head>

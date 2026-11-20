@@ -276,3 +276,26 @@ target_include_directories(crosspoint_xhtml_parser_objects PRIVATE
     platform/posix
     platform/q2
 )
+
+# CrossPoint's real section composition logic bridges XHTML parsing,
+# ParsedText and Page. Compile it as an object while the remaining
+# GfxRenderer/ImageBlock implementations are being linked on the renderer PR.
+add_library(crosspoint_section_objects OBJECT
+    lib/Epub/Section.cpp
+)
+target_compile_options(crosspoint_section_objects PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/platform/posix/ArduinoCompat.h)
+set_target_properties(crosspoint_section_objects PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(crosspoint_section_objects PRIVATE
+    lib
+    lib/Epub
+    lib/Epub/parsers
+    lib/Epub/css
+    lib/EpdFont
+    lib/GfxRenderer
+    lib/Utf8
+    lib/MiniBidi
+    lib/Serialization
+    lib/XmlParserUtils
+    platform/posix
+)

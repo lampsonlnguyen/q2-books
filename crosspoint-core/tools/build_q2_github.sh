@@ -24,6 +24,7 @@ clang $flags -c "$work/librespot/contrib/shanlingq2/start.c" -o "$work/start.o"
 clang $flags -c "$work/librespot/contrib/shanlingq2/nonshared.c" -o "$work/nonshared.o"
 llvm-ar rcs "$root/lib/libq2nonshared.a" "$work/nonshared.o"
 clang $flags -c crosspoint-core/platform/q2/q2_glibc_compat.c -o "$work/q2_glibc_compat.o"
+clang++ $flags -c crosspoint-core/platform/q2/q2_from_chars_compat.cpp -o "$work/q2_from_chars_compat.o"
 for name in pthread.so.0 m.so.6 dl.so.2 rt.so.1 util.so.1 gcc_s.so.1; do
   if test -e "$root/lib/lib$name"; then
     short="$(echo "$name" | sed 's/\.[^.]*$//')"
@@ -31,7 +32,7 @@ for name in pthread.so.0 m.so.6 dl.so.2 rt.so.1 util.so.1 gcc_s.so.1; do
   fi
 done
 echo 'GROUP ( libc.so.6 libq2nonshared.a AS_NEEDED ( ld-linux-mipsn8.so.1 ) )' > "$root/lib/libc.so"
-link="--target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mabicalls -fuse-ld=lld -nostartfiles -nodefaultlibs -no-pie -Wl,--dynamic-linker=/lib/ld-linux-mipsn8.so.1 -L$root/lib -L$root/usr/lib $work/start.o $work/q2_glibc_compat.o -lstdc++ -lm -lpthread -ldl -lrt -lc -lgcc_s"
+link="--target=mipsel-linux-gnu -march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008 -mabicalls -fuse-ld=lld -nostartfiles -nodefaultlibs -no-pie -Wl,--dynamic-linker=/lib/ld-linux-mipsn8.so.1 -L$root/lib -L$root/usr/lib $work/start.o $work/q2_glibc_compat.o $work/q2_from_chars_compat.o -lstdc++ -lm -lpthread -ldl -lrt -lc -lgcc_s"
 git clone --quiet --depth 1 --branch v1.3.1 https://github.com/madler/zlib.git "$work/zlib"
 git clone --quiet --depth 1 --branch R_2_6_4 https://github.com/libexpat/libexpat.git "$work/expat"
 prefix="$work/deps"

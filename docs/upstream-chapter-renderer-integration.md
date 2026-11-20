@@ -39,3 +39,20 @@ stand in for the upstream `Epub` implementation.
 
 No firmware changes, and no replacement of the original CrossPoint
 layout algorithms, are part of this work.
+
+## Transitional stylesheet rendering slice (November 2026)
+
+The standalone `crosspod-reader` now resolves external XHTML `<link rel="stylesheet">`
+CSS (bounded to 256 KiB per stylesheet) and inline `style` attributes
+through the original `CssParser` implementation. It carries paragraph
+alignment/direction and bold/italic runs into `ParsedText`. The reader also
+honors `display:none` for omitted paragraphs. The new
+`crosspod_reader_original_css_cascade` test exercises this **active** reader
+path with a multilingual EPUB fixture, rather than only the CSS unit library.
+
+This improves rendered text and validates a reusable CSS integration seam;
+it is **not** the original ChapterHtmlSlimParser page-composition pipeline.
+Complex layouts, images, margins, lists, ruby annotation, chapter footnotes,
+links and CSS font-size variations remain unsupported by this transitional
+adapter. It should be removed as soon as the original parser compiles, links
+and passes the same end-to-end device and MIPS tests.

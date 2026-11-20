@@ -1,4 +1,6 @@
 #include <GfxRenderer.h>
+#include <FontCacheManager.h>
+#include <FontDecompressor.h>
 #include <builtinFonts/notosans_12_regular.h>
 #include <HalDisplay.h>
 #include <cassert>
@@ -30,6 +32,13 @@ int main() {
   assert(noto.hasCodepoint(0x1EBF));  // ế
   assert(noto.hasCodepoint(0x1EEF));  // ữ
   gfx.insertFont(1, EpdFontFamily(12, &noto));
+  // Compressed upstream built-in fonts require the original decompressor;
+  // without it, GfxRenderer correctly skips glyphs (rather than drawing text).
+  FontDecompressor decompressor;
+  assert(decompressor.init());
+  FontCacheManager fontCache(gfx.getFontMap(), gfx.getSdCardFonts(), gfx.getTtfFonts());
+  fontCache.setFontDecompressor(&decompressor);
+  gfx.setFontCacheManager(&fontCache);
   gfx.drawText(1, 20, 60, "Tiếng Việt: chữ ế và ữ");
   unsigned inkPixels = 0;
   for (uint32_t i = 0; i < display.getBufferSize(); ++i) {

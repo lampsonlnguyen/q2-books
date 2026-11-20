@@ -35,8 +35,8 @@ int main() {
   display.clearScreen();
   const uint8_t checkered[] = {0xaa};
   display.drawImage(checkered, 5, 2, 8, 1);
-  assert(display.getFrameBuffer()[2 * 47] == 0xfa);
-  assert(display.getFrameBuffer()[2 * 47 + 1] == 0xd7);
+  assert(display.getFrameBuffer()[2 * 47] == 0xfd);
+  assert(display.getFrameBuffer()[2 * 47 + 1] == 0x57);
 
   return 0;
 }

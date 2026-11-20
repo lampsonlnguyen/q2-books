@@ -298,7 +298,7 @@ class Reader {
     crosspod::Typography savedType;
     if(crosspod::loadTypography(savedType) && !useTypography(savedType))
       typographyNotice_="Selected font file missing";
-    std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
+    std::printf("CrossPod typeface: %s %dpt%s\n",\n        crosspod::typographyFamilyName(typography_.family),typography_.size,\n        typographyNotice_.empty()?"":" (saved font unavailable; fallback)");\n    std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
     return loadSpine(0,1);
   }

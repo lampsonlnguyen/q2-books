@@ -34,3 +34,6 @@ void arc4random_buf(void *buffer, size_t length) {
     }
     close(fd);
 }
+// glibc >=2.32 optimization hook; Q2 glibc 2.28 lacks it.
+// Always use thread-safe atomic reference counts instead of assuming single thread.
+char __libc_single_threaded = 0;

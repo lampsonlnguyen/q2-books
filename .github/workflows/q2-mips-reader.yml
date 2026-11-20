@@ -1,4 +1,4 @@
-name: CrossPod Q2 MIPS reader prototype (text EPUB)
+name: CrossPod Shanling Q2 FP64/NaN-2008 card app
 on:
   push:
     branches: [crosspod-renderer-linux-link]
@@ -23,6 +23,17 @@ jobs:
           sudo apt-get install -y git cmake make python3 zip \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
             binutils-mipsel-linux-gnu qemu-user gdb-multiarch
+      - name: Verify Shanling Q2 cross-compiler supports target ABI
+        run: |
+          set -euo pipefail
+          printf 'int main(void) { return 0; }\n' > /tmp/q2-abi-probe.c
+          mipsel-linux-gnu-gcc -march=mips32r2 -mabi=32 \
+            -mhard-float -mfp64 -mnan=2008 -mabs=2008 \
+            -c /tmp/q2-abi-probe.c -o /tmp/q2-abi-probe.o
+          mipsel-linux-gnu-readelf -h /tmp/q2-abi-probe.o | grep -q nan2008
+          mipsel-linux-gnu-readelf -A /tmp/q2-abi-probe.o \
+            | grep -q 'Hard float.*64-bit FPU'
+
       - name: Build pinned zlib 1.3.1 and Expat 2.6.4 for MIPS
         run: |
           set -euo pipefail
@@ -35,6 +46,7 @@ jobs:
           prefix="$PWD/build/mips-deps"
           cmake -S build/deps-src/zlib -B build/mips-zlib \
             -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
             -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
             -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF \
             -DCMAKE_INSTALL_PREFIX="$prefix"
@@ -43,6 +55,7 @@ jobs:
 
           cmake -S build/deps-src/libexpat/expat -B build/mips-expat \
             -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
             -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
             -DCMAKE_BUILD_TYPE=Release -DEXPAT_SHARED_LIBS=OFF \
             -DEXPAT_BUILD_DOCS=OFF -DEXPAT_BUILD_TOOLS=OFF \
@@ -66,9 +79,9 @@ jobs:
             -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
             -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32" \
-            -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32" \
-            -DCMAKE_EXE_LINKER_FLAGS="-static" \
+            -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32 -mhard-float -mfp64 -mnan=2008 -mabs=2008" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -no-pie" \
             -DZLIB_LIBRARY="$prefix/lib/libz.a" \
             -DZLIB_INCLUDE_DIR="$prefix/include" \
             -DEXPAT_LIBRARY="$prefix/lib/libexpat.a" \
@@ -82,6 +95,17 @@ jobs:
             echo 'Expected a static ELF without PT_INTERP' >&2
             exit 1
           fi
+
+      - name: Strict Q2 ELF compatibility gate (pre-release)
+        run: |
+          set -euo pipefail
+          python3 crosspoint-core/tools/check_q2_elf.py \
+            build/mips-reader/crosspod-reader \
+            mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+          mipsel-linux-gnu-readelf -h build/mips-reader/crosspod-reader \
+            > build/mips-reader/q2-elf-header.txt
+          mipsel-linux-gnu-readelf -A build/mips-reader/crosspod-reader \
+            > build/mips-reader/q2-elf-attributes.txt
 
       - name: QEMU smoke test of original EPUB spine parser and renderer
         run: |
@@ -252,7 +276,15 @@ jobs:
           mkdir -p dist/crosspod-card/.crosspod
           test -s dist/crosspod-card/.crosspod/fonts/sans-12.cpfont
           test -s dist/crosspod-card/.crosspod/fonts/serif-18.cpfont
-          cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/q2-crosspod
+          cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/crosspod-engine
+          cp crosspoint-core/platform/q2/crosspod-launcher.sh \
+            dist/crosspod-card/.crosspod/q2-crosspod
+          chmod 755 dist/crosspod-card/.crosspod/q2-crosspod \
+            dist/crosspod-card/.crosspod/crosspod-engine
+          /bin/sh -n dist/crosspod-card/.crosspod/q2-crosspod
+          python3 crosspoint-core/tools/check_q2_elf.py \
+            dist/crosspod-card/.crosspod/crosspod-engine \
+            mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
           printf 'name=CrossPod\ngame=1\nrow=library\n' > dist/crosspod-card/.crosspod/q2app
           cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt
           cp -r dist/crosspod-q2-reader-alpha/licenses dist/crosspod-card/.crosspod/
@@ -262,7 +294,12 @@ jobs:
           unzip -t dist/crosspod-card-app.zip
           unzip -l dist/crosspod-card-app.zip | grep -F 'Books/vietnamese-prose.epub'
           unzip -p dist/crosspod-card-app.zip .crosspod/q2app | grep -Fx 'game=1'
-          file dist/crosspod-card/.crosspod/q2-crosspod | grep -q 'ELF 32-bit LSB.*MIPS'
+          unzip -p dist/crosspod-card-app.zip .crosspod/q2-crosspod \
+            | head -n 1 | grep -Fx '#!/bin/sh'
+          unzip -l dist/crosspod-card-app.zip \
+            | grep -F '.crosspod/crosspod-engine'
+          file dist/crosspod-card/.crosspod/crosspod-engine \
+            | grep -q 'ELF 32-bit LSB.*MIPS'
 
       - name: Upload installable standalone card app
         uses: actions/upload-artifact@v4
@@ -280,6 +317,8 @@ jobs:
             dist/crosspod-q2-reader-alpha.zip
             dist/crosspod-q2-reader-alpha.zip.sha256
             build/mips-reader/elf-header.txt
+            build/mips-reader/q2-elf-header.txt
+            build/mips-reader/q2-elf-attributes.txt
             build/mips-reader/reader-spine.log
             build/mips-reader/reader-vietnamese.log
             build/mips-reader/reader-walk.log

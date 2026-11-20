@@ -10,7 +10,7 @@
 #include <cstdio>
 #include <string>
 #include <utility>
-class HalFile {
+class HalFile : public Print {
   std::FILE* fp_ = nullptr;
  public:
   HalFile() = default;
@@ -35,6 +35,7 @@ class HalFile {
     return fp_ && off >= LONG_MIN && off <= LONG_MAX &&
            std::fseek(fp_, static_cast<long>(off), SEEK_CUR) == 0;
   }
+  bool flush() { return fp_ && std::fflush(fp_) == 0; }
   size_t position() const {
     if (!fp_) return 0;
     const long at = std::ftell(fp_);
@@ -43,7 +44,8 @@ class HalFile {
   size_t write(const void* data, size_t count) {
     return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
   }
-  size_t write(const uint8_t* data, size_t count) {
+  size_t write(uint8_t byte) override { return fp_ ? std::fwrite(&byte,1,1,fp_) : 0; }
+  size_t write(const uint8_t* data, size_t count) override {
     return fp_ ? std::fwrite(data, 1, count, fp_) : 0;
   }
   int read(void* dst, size_t count) {

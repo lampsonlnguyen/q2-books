@@ -345,8 +345,8 @@ class Reader {
   crosspod::Typography typography() const {return typography_;}
   void showTypographyMenu(int selected) {
     render();
-    renderer_.fillRect(13,55,349,205,false);
-    renderer_.fillRect(15,57,345,201,true);
+    renderer_.fillRect(13,55,349,205,true);
+    renderer_.fillRect(15,57,345,201,false);
     renderer_.drawText(1,30,74,"Reading appearance");
     char row[96];
     std::snprintf(row,sizeof(row),"%s Font: %s",

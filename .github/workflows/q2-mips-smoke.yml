@@ -1,43 +1,36 @@
-name: CrossPod Q2 platform MIPS build (diagnostic only)
+name: CrossPod Q2 hardware page diagnostic
 on:
   push:
     branches: [main, crosspod-renderer-linux-link]
     paths:
       - "crosspoint-core/platform/q2/**"
       - ".github/workflows/q2-mips-smoke.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "crosspoint-core/platform/q2/**"
-      - ".github/workflows/q2-mips-smoke.yml"
+      - "docs/q2-page-demo-hardware-test.md"
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   native-and-mips:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-
       - name: Install compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake g++ gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu qemu-user libexpat1-dev zlib1g-dev
-
-      - name: Native diagnostic build
-        run: |
-          cmake -S crosspoint-core/platform/q2 -B build/q2-host -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/q2-host --parallel 2
-          ./build/q2-host/crosspod-hwcheck --help >/dev/null 2>&1 && exit 1 || test "$?" -eq 2
-          ./build/q2-host/crosspod-engine-smoke
-
-      - name: Render actual Vietnamese EPUB page with CrossPoint host engine
+      - name: Build original CrossPoint Vietnamese EPUB page on Linux host
         run: |
           cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
           cmake --build build/crosspoint-core --target crosspod_epub_page_preview --parallel 2
-          ctest --test-dir build/crosspoint-core --output-on-failure -R '^crosspoint_vietnamese_book_page_preview
+          ctest --test-dir build/crosspoint-core --output-on-failure -R '^crosspoint_vietnamese_book_page_preview$'
+          test -s build/crosspoint-core/crosspod-vietnamese-preview.pgm
+      - name: Native platform smoke
+        run: |
+          cmake -S crosspoint-core/platform/q2 -B build/q2-host -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/q2-host --parallel 2
+          ./build/q2-host/crosspod-engine-smoke
+          ./build/q2-host/crosspod-page-demo --check build/crosspoint-core/crosspod-vietnamese-preview.pgm
+      - name: Compile Q2 MIPS32 little-endian Linux ELF
         run: |
           cmake -S crosspoint-core/platform/q2 -B build/q2-mips \
             -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
@@ -46,46 +39,20 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=mipsel
           cmake --build build/q2-mips --parallel 2
-          file build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke build/q2-mips/crosspod-page-demo
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-engine-smoke | grep -q "Machine:.*MIPS"
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-page-demo | grep -q 'Machine:.*MIPS'
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-hwcheck | tee build/q2-mips/elf-header.txt
+          file build/q2-mips/crosspod-page-demo
+          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-page-demo | tee build/q2-mips/elf-header.txt
           grep -q 'Machine:.*MIPS' build/q2-mips/elf-header.txt
           grep -q 'Data:.*little endian' build/q2-mips/elf-header.txt
-
-      - name: Execute MIPS diagnostic argument check under QEMU
+      - name: Exercise MIPS viewer without hardware under QEMU
         run: |
-          set +e
-          timeout 15s qemu-mipsel -L /usr/mipsel-linux-gnu \
-            build/q2-mips/crosspod-hwcheck --help > build/q2-mips/qemu-smoke.txt 2>&1
-          result=$?
-          set -e
-          cat build/q2-mips/qemu-smoke.txt
-          test "$result" -eq 2
-          grep -q 'Usage: crosspod-hwcheck' build/q2-mips/qemu-smoke.txt
-          timeout 20s qemu-mipsel -L /usr/mipsel-linux-gnu \
-            build/q2-mips/crosspod-engine-smoke | tee build/q2-mips/engine-smoke.txt
-          grep -q "CrossPod upstream text engine.*OK" build/q2-mips/engine-smoke.txt
           timeout 20s qemu-mipsel -L /usr/mipsel-linux-gnu \
             build/q2-mips/crosspod-page-demo --check build/crosspoint-core/crosspod-vietnamese-preview.pgm \
             | tee build/q2-mips/page-smoke.txt
           grep -q 'CrossPod page verified' build/q2-mips/page-smoke.txt
-
-      - name: Mark compatibility not verified
-        run: |
-          cat > build/q2-mips/READ-BEFORE-TESTING.txt <<'NOTE'
-          CROSSPOD Q2 HARDWARE DIAGNOSTIC — NOT AN EBOOK READER.
-          This ELF is compiled for MIPS little-endian Linux using the Ubuntu cross
-          sysroot. Its Linux/GLIBC/libstdc++ runtime compatibility with the Shanling
-          Q2 is NOT verified. Do not replace or flash any Q2 Pod firmware.
-          The diagnostic is intended only for controlled device testing.
-          Page demo: --check never opens /dev/fb0; --display touches the framebuffer
-          ONLY when Q2 Pod has suspended painting, and exits within 20 seconds.
-          Use a Q2-specific sysroot/toolchain for a production-ready binary.
-          NOTE
-          (cd build/q2-mips && sha256sum crosspod-hwcheck crosspod-engine-smoke crosspod-page-demo > crosspod-hwcheck.sha256)
-
-      - name: Assemble reversible Q2 page hardware-test bundle
+          timeout 20s qemu-mipsel -L /usr/mipsel-linux-gnu \
+            build/q2-mips/crosspod-engine-smoke | tee build/q2-mips/engine-smoke.txt
+          grep -q 'CrossPod upstream text engine.*OK' build/q2-mips/engine-smoke.txt
+      - name: Assemble read-only first hardware test bundle
         run: |
           mkdir -p build/q2-hardware-test
           cp build/q2-mips/crosspod-page-demo build/q2-hardware-test/
@@ -93,84 +60,19 @@ jobs:
           cp docs/q2-page-demo-hardware-test.md build/q2-hardware-test/README.md
           (cd build/q2-hardware-test && sha256sum crosspod-page-demo crosspod-vietnamese-preview.pgm > SHA256SUMS)
           (cd build && zip -q -r crosspod-q2-hardware-page-demo.zip q2-hardware-test)
-
-      - name: Upload Q2 Vietnamese EPUB page hardware-test bundle
+      - name: Publish Q2 prototype artifact
         uses: actions/upload-artifact@v4
         with:
           name: crosspod-q2-vietnamese-page-hardware-test
           path: build/crosspod-q2-hardware-page-demo.zip
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload MIPS experiment
+      - name: Publish MIPS inspection logs
         uses: actions/upload-artifact@v4
         with:
-          name: crosspod-q2-mips-hwcheck-unverified
+          name: crosspod-q2-mips-diagnostic-logs
           path: |
-            build/q2-mips/crosspod-hwcheck
-            build/q2-mips/crosspod-engine-smoke
-            build/q2-mips/crosspod-page-demo
+            build/q2-mips/elf-header.txt
             build/q2-mips/page-smoke.txt
             build/q2-mips/engine-smoke.txt
-            build/q2-mips/elf-header.txt
-            build/q2-mips/qemu-smoke.txt
-            build/q2-mips/crosspod-hwcheck.sha256
-            build/q2-mips/READ-BEFORE-TESTING.txt
-          retention-days: 30
-
-          test -s build/crosspoint-core/crosspod-vietnamese-preview.pgm
-
-      - name: Build MIPS32 little-endian Linux diagnostic
-        run: |
-          cmake -S crosspoint-core/platform/q2 -B build/q2-mips \
-            -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
-            -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=mipsel
-          cmake --build build/q2-mips --parallel 2
-          file build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-engine-smoke | grep -q "Machine:.*MIPS"
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-hwcheck | tee build/q2-mips/elf-header.txt
-          grep -q 'Machine:.*MIPS' build/q2-mips/elf-header.txt
-          grep -q 'Data:.*little endian' build/q2-mips/elf-header.txt
-
-      - name: Execute MIPS diagnostic argument check under QEMU
-        run: |
-          set +e
-          timeout 15s qemu-mipsel -L /usr/mipsel-linux-gnu \
-            build/q2-mips/crosspod-hwcheck --help > build/q2-mips/qemu-smoke.txt 2>&1
-          result=$?
-          set -e
-          cat build/q2-mips/qemu-smoke.txt
-          test "$result" -eq 2
-          grep -q 'Usage: crosspod-hwcheck' build/q2-mips/qemu-smoke.txt
-          timeout 20s qemu-mipsel -L /usr/mipsel-linux-gnu \
-            build/q2-mips/crosspod-engine-smoke | tee build/q2-mips/engine-smoke.txt
-          grep -q "CrossPod upstream text engine.*OK" build/q2-mips/engine-smoke.txt
-
-      - name: Mark compatibility not verified
-        run: |
-          cat > build/q2-mips/READ-BEFORE-TESTING.txt <<'NOTE'
-          CROSSPOD Q2 HARDWARE DIAGNOSTIC — NOT AN EBOOK READER.
-          This ELF is compiled for MIPS little-endian Linux using the Ubuntu cross
-          sysroot. Its Linux/GLIBC/libstdc++ runtime compatibility with the Shanling
-          Q2 is NOT verified. Do not replace or flash any Q2 Pod firmware.
-          The diagnostic is intended only for controlled device testing.
-          Use a Q2-specific sysroot/toolchain for a production-ready binary.
-          NOTE
-          (cd build/q2-mips && sha256sum crosspod-hwcheck crosspod-engine-smoke > crosspod-hwcheck.sha256)
-
-      - name: Upload MIPS experiment
-        uses: actions/upload-artifact@v4
-        with:
-          name: crosspod-q2-mips-hwcheck-unverified
-          path: |
-            build/q2-mips/crosspod-hwcheck
-            build/q2-mips/crosspod-engine-smoke
-            build/q2-mips/engine-smoke.txt
-            build/q2-mips/elf-header.txt
-            build/q2-mips/qemu-smoke.txt
-            build/q2-mips/crosspod-hwcheck.sha256
-            build/q2-mips/READ-BEFORE-TESTING.txt
           retention-days: 30

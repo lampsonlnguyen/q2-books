@@ -277,6 +277,7 @@ add_library(crosspoint_renderer_objects OBJECT
     lib/OtShaper/OtGsub.cpp
     lib/OtShaper/OtTable.cpp
     platform/posix/FontAlloc.c
+    platform/posix/FlashBlobCache.cpp
 )
 target_compile_definitions(crosspoint_renderer_objects PRIVATE CROSSPOD_LINUX=1)
 set_target_properties(crosspoint_renderer_objects PROPERTIES

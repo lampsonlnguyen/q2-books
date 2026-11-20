@@ -125,15 +125,15 @@ int main(int argc, char** argv) {
                      cpuSeconds(startMetric.usage.ru_utime) -
                      cpuSeconds(startMetric.usage.ru_stime);
   const double cpuPct = wall > 0 ? 100.0 * cpu / wall : 0.0;
-  std::fprintf(stderr, "CrossPod diagnostic closed normally; events=%u\\n", events);
+  std::fprintf(stderr, "CrossPod diagnostic closed normally; events=%u\n", events);
   // Machine-readable telemetry for later physical Q2 validation. Power
   // capacity is best effort: -1 denotes unavailable, not a failed battery.
   std::fprintf(stderr,
-      "CROSSPOD_METRICS {\\"wall_s\\":%.3f,\\"cpu_s\\":%.3f,"
-      "\\"cpu_pct\\":%.2f,\\"peak_rss_kib\\":%ld,"
-      "\\"input_events\\":%u,\\"wheel_events\\":%u,"
-      "\\"key_events\\":%u,\\"touch_events\\":%u,"
-      "\\"battery_start_pct\\":%d,\\"battery_end_pct\\":%d}\\n",
+      "CROSSPOD_METRICS {\"wall_s\":%.3f,\"cpu_s\":%.3f,"
+      "\"cpu_pct\":%.2f,\"peak_rss_kib\":%ld,"
+      "\"input_events\":%u,\"wheel_events\":%u,"
+      "\"key_events\":%u,\"touch_events\":%u,"
+      "\"battery_start_pct\":%d,\"battery_end_pct\":%d}\n",
       wall,cpu,cpuPct,endMetric.usage.ru_maxrss,events,wheelEvents,
       keyEvents,touchEvents,startMetric.battery,endMetric.battery);
   return 0;

@@ -370,3 +370,15 @@ target_compile_options(crosspod_epub_page_preview PRIVATE -UNDEBUG)
 add_dependencies(crosspod_epub_page_preview epub_fixture)
 add_test(NAME crosspoint_real_epub_text_page_preview
     COMMAND crosspod_epub_page_preview "${EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-epub-preview.pgm")
+
+# Separate self-contained original Vietnamese prose EPUB fixture for native
+# glyph raster QA. Does not change the existing multilingual test's OPF spine.
+set(VIETNAMESE_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/vietnamese-prose.epub")
+add_custom_command(OUTPUT "${VIETNAMESE_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_vietnamese_epub_fixture.py" "${VIETNAMESE_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_vietnamese_epub_fixture.py"
+    VERBATIM)
+add_custom_target(vietnamese_epub_fixture ALL DEPENDS "${VIETNAMESE_EPUB_FIXTURE}")
+add_dependencies(crosspod_epub_page_preview vietnamese_epub_fixture)
+add_test(NAME crosspoint_vietnamese_book_page_preview
+    COMMAND crosspod_epub_page_preview "${VIETNAMESE_EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-vietnamese-preview.pgm" "OEBPS/chapter1.xhtml")

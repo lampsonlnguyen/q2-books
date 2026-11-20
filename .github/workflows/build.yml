@@ -47,6 +47,12 @@ jobs:
           python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-epub-preview.pgm build/crosspoint-core/crosspod-epub-preview.png
           sha256sum build/crosspoint-core/crosspod-epub-preview.{pgm,png}
 
+      - name: Render Vietnamese book sample to PNG
+        if: matrix.compiler == 'gcc'
+        run: |
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-vietnamese-preview.pgm build/crosspoint-core/crosspod-vietnamese-preview.png
+          sha256sum build/crosspoint-core/crosspod-vietnamese-preview.{pgm,png}
+
       - name: Upload rendered EPUB page
         if: matrix.compiler == 'gcc'
         uses: actions/upload-artifact@v4
@@ -55,6 +61,8 @@ jobs:
           path: |
             build/crosspoint-core/crosspod-epub-preview.pgm
             build/crosspoint-core/crosspod-epub-preview.png
+            build/crosspoint-core/crosspod-vietnamese-preview.pgm
+            build/crosspoint-core/crosspod-vietnamese-preview.png
           if-no-files-found: error
           retention-days: 30
 

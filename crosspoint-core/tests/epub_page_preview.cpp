@@ -43,7 +43,9 @@ void XMLCALL onEnd(void* ctx, const XML_Char* tag) {
   }
 }
 int main(int argc, char** argv) {
-  if (argc != 3) return 2;
+  if (argc != 3 && argc != 4) return 2;
+  const bool vietnameseDemo = argc == 4;
+  const char* chapterPath = vietnameseDemo ? argv[3] : "OEBPS/chapter1.xhtml";
   // ZipFile borrows its std::string path; keep the storage alive until exit.
   const std::string epubPath(argv[1]);
   ZipFile epub(epubPath);
@@ -53,7 +55,7 @@ int main(int argc, char** argv) {
     std::fputs("Preview: unable to index EPUB ZIP entries\n", stderr);
     return 3;
   }
-  auto* xml = epub.readFileToMemory("OEBPS/chapter1.xhtml", &len, true);
+  auto* xml = epub.readFileToMemory(chapterPath, &len, true);
   if (!xml || !len) {
     std::fputs("Preview: unable to extract XHTML chapter from EPUB ZIP\n", stderr);
     std::free(xml);
@@ -94,13 +96,14 @@ int main(int argc, char** argv) {
     while (input >> word) layout.addWord(word, EpdFontFamily::REGULAR);
     layout.layoutAndExtractLines(gfx, 1, 345,
         [&](std::unique_ptr<TextBlock> block, uint32_t) {
-          if (y + 22 > 320) return;
+          const int lineHeight = vietnameseDemo ? 18 : 22;
+          if (y + lineHeight > 320) return;
           assert(block && block->valid());
           block->render(gfx, 1, 14, y);
-          y += 22;
+          y += lineHeight;
           ++lines;
         });
-    y += 8;
+    y += vietnameseDemo ? 5 : 8;
   }
   assert(lines >= 3);
   const auto* pixels = display.getFrameBuffer();

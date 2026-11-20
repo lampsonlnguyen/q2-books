@@ -288,5 +288,6 @@ target_include_directories(crosspoint_renderer_link_tests PRIVATE
 target_link_libraries(crosspoint_renderer_link_tests PRIVATE
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
     crosspoint_utf8 crosspoint_layout_foundation ZLIB::ZLIB)
+set_target_properties(crosspoint_renderer_link_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_compile_options(crosspoint_renderer_link_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_renderer_real_link COMMAND crosspoint_renderer_link_tests)

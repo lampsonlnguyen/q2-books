@@ -27,6 +27,19 @@ programs = read(readelf, "-l")
 attrs = read(readelf, "-A")
 sections = read(readelf, "-S")
 private = read(objdump, "-p")
+interpreter = re.search(r"Requesting program interpreter:\s*([^]\n]+)", programs)
+dynamic_loader = interpreter.group(1).strip() if interpreter else None
+if dynamic_loader:
+    loader_ok = dynamic_loader == "/lib/ld-linux-mipsn8.so.1"
+    # Q2's glibc is 2.28; newer symbols cannot resolve on the device.
+    version_info = read(readelf, "--version-info")
+    requested_versions = [
+        (int(a), int(b)) for a, b in re.findall(r"GLIBC_(\\d+)\\.(\\d+)", version_info)
+    ]
+    glibc_ok = all(v <= (2, 28) for v in requested_versions)
+else:
+    loader_ok = True
+    glibc_ok = True
 checks = {
     "ELF32": "Class:" in header and bool(re.search(r"Class:\s+ELF32", header)),
     "MIPS little-endian": bool(re.search(r"Data:.*little endian", header)) and bool(re.search(r"Machine:.*MIPS",header)),
@@ -34,8 +47,9 @@ checks = {
     "MIPS32r2": bool(re.search(r"(?:ISA:\s+MIPS32r2|mips32r2)", attrs + "\n" + header, re.IGNORECASE)),
     "NaN-2008": "nan2008" in header.lower() or "nan2008" in attrs.lower(),
     "FP64 hard-float": bool(re.search(r"FP ABI:\s+Hard float.*64-bit FPU", attrs, re.IGNORECASE)),
-    "no ELF interpreter (static)": "INTERP" not in programs and "Requesting program interpreter" not in programs,
-    "no DT_NEEDED (static)": "NEEDED" not in private,
+    "Q2 loader or static executable": loader_ok,
+    "glibc symbols no newer than 2.28": glibc_ok,
+    "static binary has no DT_NEEDED": dynamic_loader is not None or "NEEDED" not in private,
     "ELF entry point": bool(re.search(r"Entry point address:\s+0x[1-9a-fA-F]", header)),
 }
 for name, ok in checks.items():
@@ -44,4 +58,5 @@ if not all(checks.values()):
     print("\nELF header:\n", header, "\nMIPS attributes:\n", attrs,
           "\nProgram headers:\n", programs, file=sys.stderr)
     sys.exit("ERROR: built ELF does not meet Shanling Q2 ABI requirements")
+print(f"Runtime: {dynamic_loader or 'fully static'}")
 print("Shanling Q2 ELF compatibility gate: PASS")

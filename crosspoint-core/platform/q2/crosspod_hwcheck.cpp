@@ -65,8 +65,9 @@ int main(int argc, char** argv) {
             "Default: check input socket only. --display briefly uses /dev/fb0.\n");
     return 2;
   }
-  const bool card = argc == 2 && std::string_view(argv[1]) == "--card";
-  const bool show = argc == 2;
+  const bool card = (argc == 2 && std::string_view(argv[1]) == "--card") ||
+                    (argc == 1 && std::string_view(argv[0]).find("q2-crosspod-test") != std::string_view::npos);
+  const bool show = argc == 2 || card;
   // Avoid drawing over Q2 Pod by default. Only use --display with Q2 Pod
   // screen painting deliberately suspended by the hardware test operator.
   crosspod::Q2Framebuffer framebuffer;

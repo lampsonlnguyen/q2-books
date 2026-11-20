@@ -61,7 +61,7 @@ jobs:
           mkdir -p dist/.crosspod-test
           cp build/q2-mips/crosspod-hwcheck dist/.crosspod-test/q2-crosspod-test
           chmod 755 dist/.crosspod-test/q2-crosspod-test
-          printf 'name=CrossPod Test\\ngame=1\\nrow=library\\n' > dist/.crosspod-test/q2app
+          printf 'name=CrossPod Test\ngame=1\nrow=library\n' > dist/.crosspod-test/q2app
           cat > dist/.crosspod-test/README.txt <<'EOF'
           CrossPod Q2 hardware diagnostic CARD APP. NOT an EPUB reader.
           This package uses a generic MIPS Linux cross-compiler.

@@ -827,7 +827,9 @@ int main(int argc,char** argv) {
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--inspect-styles")==0) {
-    ZipFile zip(argv[2]);
+    // ZipFile retains a const std::string&: the path must outlive the archive.
+    const std::string epubPath(argv[2]);
+    ZipFile zip(epubPath);
     if(!zip.loadAllFileStatSlims())return 3;
     std::vector<Paragraph> paragraphs;
     if(!parseChapter(zip,argv[3],paragraphs))return 4;

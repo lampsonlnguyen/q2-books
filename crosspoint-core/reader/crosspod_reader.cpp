@@ -134,7 +134,7 @@ struct HtmlCollector {
     scope.stylesheet=false;
     const std::string_view cls=attribute(attrs,"class");
     const std::string_view id=attribute(attrs,"id");
-    if(n=="link" && !scope.hidden) {
+    if(n=="link") {
       const auto rel=attribute(attrs,"rel");
       if(rel=="stylesheet")s.externalCss(attribute(attrs,"href"));
     }
@@ -824,6 +824,25 @@ int main(int argc,char** argv) {
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
+    return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--inspect-styles")==0) {
+    ZipFile zip(argv[2]);
+    if(!zip.loadAllFileStatSlims())return 3;
+    std::vector<Paragraph> paragraphs;
+    if(!parseChapter(zip,argv[3],paragraphs))return 4;
+    for(size_t i=0;i<paragraphs.size();++i) {
+      const auto& p=paragraphs[i];
+      bool bold=false,italic=false;
+      std::string content;
+      for(const auto& run:p.runs) {
+        bold=bold||((run.style&EpdFontFamily::BOLD)!=0);
+        italic=italic||((run.style&EpdFontFamily::ITALIC)!=0);
+        content+=run.text;
+      }
+      std::printf("paragraph=%zu align=%d rtl=%d bold=%d italic=%d text=%s\n",
+        i,static_cast<int>(p.align),p.rtl,bold,italic,content.c_str());
+    }
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--card-preview")==0) {

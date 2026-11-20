@@ -430,6 +430,12 @@ target_include_directories(crosspod_reading_position_tests PRIVATE reader)
 target_compile_options(crosspod_reading_position_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_reading_position_persistence COMMAND crosspod_reading_position_tests)
 
+# Font-family/size preference serialization and input validation.
+add_executable(crosspod_typography_tests tests/typography_test.cpp)
+target_include_directories(crosspod_typography_tests PRIVATE reader)
+target_compile_options(crosspod_typography_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_two_font_preferences COMMAND crosspod_typography_tests)
+
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
 add_test(NAME crosspod_reader_card_empty_library

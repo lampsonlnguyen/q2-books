@@ -436,6 +436,18 @@ target_include_directories(crosspod_typography_tests PRIVATE reader)
 target_compile_options(crosspod_typography_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_two_font_preferences COMMAND crosspod_typography_tests)
 
+# Compile-only interface gate for the exact upstream CrossPoint XHTML parser.
+# Full implementation still needs Epub/Section, images and CSS reader wiring.
+add_executable(crosspoint_chapter_parser_interface_tests
+    tests/original_chapter_parser_interface_test.cpp)
+target_include_directories(crosspoint_chapter_parser_interface_tests PRIVATE
+    lib lib/Epub lib/Epub/Epub lib/EpdFont lib/GfxRenderer
+    lib/Utf8 lib/MiniBidi platform/posix)
+set_target_properties(crosspoint_chapter_parser_interface_tests PROPERTIES
+    CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+add_test(NAME crosspoint_original_chapter_parser_interface
+    COMMAND crosspoint_chapter_parser_interface_tests)
+
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
 add_test(NAME crosspod_reader_card_empty_library

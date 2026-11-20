@@ -276,3 +276,17 @@ target_include_directories(crosspoint_renderer_objects PRIVATE
     platform/posix
     platform/q2
 )
+
+# Link gate: force every reference from the original GfxRenderer object through
+# the linker. Compile-only success is not enough to establish a working engine.
+add_executable(crosspoint_renderer_link_tests
+    tests/renderer_link_test.cpp
+    $<TARGET_OBJECTS:crosspoint_renderer_objects>)
+target_include_directories(crosspoint_renderer_link_tests PRIVATE
+    lib lib/Epub lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
+    lib/Memory platform/posix)
+target_link_libraries(crosspoint_renderer_link_tests PRIVATE
+    crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
+    crosspoint_utf8 crosspoint_layout_foundation ZLIB::ZLIB)
+target_compile_options(crosspoint_renderer_link_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_renderer_real_link COMMAND crosspoint_renderer_link_tests)

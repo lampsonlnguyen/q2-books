@@ -333,7 +333,7 @@ int main(int argc,char** argv) {
     dry=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
     dry=true;render=true;path=argv[2];output=argv[3];
-  } else if (argc==2 && argv[1][0]! '-') {
+  } else if (argc==2 && argv[1][0] != '-') {
     path=argv[1];
   } else { usage();return 2; }
   if (path.size()<5 || path.substr(path.size()-5)!=".epub") {

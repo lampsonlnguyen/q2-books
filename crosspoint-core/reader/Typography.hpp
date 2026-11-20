@@ -17,7 +17,7 @@ struct Typography {
 inline bool validTypography(const Typography& t) {
   return (t.family==Typography::Family::Sans ||
           t.family==Typography::Family::Serif) &&
-         (t.size==12 || t.size==16 || t.size==20);
+         (t.size==12 || t.size==14 || t.size==16 || t.size==18);
 }
 inline const char* typographyFamilyName(Typography::Family f) {
   return f==Typography::Family::Serif?"Serif":"Sans";

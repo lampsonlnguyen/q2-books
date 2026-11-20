@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(crosspod_crosspoint_core LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+# Current upstream CrossPoint uses constexpr standard algorithms (C++20).
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Keep original upstream CrossPoint UTF-8 code unmodified.

@@ -44,7 +44,9 @@ void XMLCALL onEnd(void* ctx, const XML_Char* tag) {
 }
 int main(int argc, char** argv) {
   if (argc != 3) return 2;
-  ZipFile epub(argv[1]);
+  // ZipFile borrows its std::string path; keep the storage alive until exit.
+  const std::string epubPath(argv[1]);
+  ZipFile epub(epubPath);
   size_t len = 0;
   // CrossPoint's original ZIP reader can reuse its bounded file-stat index.
   if (!epub.loadAllFileStatSlims()) {

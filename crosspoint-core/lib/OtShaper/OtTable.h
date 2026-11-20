@@ -45,7 +45,10 @@ class Table {
   // The u16 count stored at `field`, clamped to the `recordSize`-byte records
   // that fit from offset `first` on.
   uint16_t count16(const uint32_t field, const uint32_t first, const uint32_t recordSize) const {
-    const uint32_t fits = first <= length_ ? (length_ - first) / recordSize : 0;
+    // OpenType tables are untrusted. Avoid division by zero for invalid layouts.
+    // Counts on disk are uint16_t, so never wrap the available-record count.
+    if (recordSize == 0 || first > length_) return 0;
+    const uint32_t fits = (length_ - first) / recordSize;
     const uint16_t count = u16(field);
     return count < fits ? count : static_cast<uint16_t>(fits);
   }

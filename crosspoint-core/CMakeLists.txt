@@ -313,3 +313,12 @@ target_link_libraries(crosspoint_renderer_link_tests PRIVATE
 set_target_properties(crosspoint_renderer_link_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_compile_options(crosspoint_renderer_link_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_renderer_real_link COMMAND crosspoint_renderer_link_tests)
+
+# Validate bounds checking for the original OpenType table reader independently
+# of the still-in-progress GfxRenderer full-link integration.
+add_executable(crosspoint_ot_table_tests
+    tests/ot_table_test.cpp
+    lib/OtShaper/OtTable.cpp)
+target_include_directories(crosspoint_ot_table_tests PRIVATE lib/OtShaper)
+target_compile_options(crosspoint_ot_table_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_opentype_table_bounds COMMAND crosspoint_ot_table_tests)

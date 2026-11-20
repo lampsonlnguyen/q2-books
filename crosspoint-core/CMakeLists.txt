@@ -465,3 +465,19 @@ add_test(NAME crosspod_reader_card_empty_library
     COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/empty-books")
 add_test(NAME crosspod_reader_card_list_fixture
     COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/books-test")
+
+# Alpha 2: illustrated EPUB fixture and actual original ZipFile PNG extraction.
+# This is an ingestion gate, not a claim that ImageBlock paints to the LCD.
+set(ILLUSTRATED_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/illustrated.epub")
+add_custom_command(OUTPUT "${ILLUSTRATED_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_illustrated_epub_fixture.py" "${ILLUSTRATED_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_illustrated_epub_fixture.py"
+    VERBATIM)
+add_custom_target(illustrated_epub_fixture ALL DEPENDS "${ILLUSTRATED_EPUB_FIXTURE}")
+add_executable(crosspod_illustrated_epub_resources
+    tests/illustrated_epub_resource_test.cpp)
+target_link_libraries(crosspod_illustrated_epub_resources PRIVATE crosspoint_zip)
+target_compile_options(crosspod_illustrated_epub_resources PRIVATE -UNDEBUG)
+add_dependencies(crosspod_illustrated_epub_resources illustrated_epub_fixture)
+add_test(NAME crosspod_original_zip_illustrated_epub
+    COMMAND crosspod_illustrated_epub_resources "${ILLUSTRATED_EPUB_FIXTURE}")

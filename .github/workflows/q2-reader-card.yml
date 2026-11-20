@@ -1,0 +1,48 @@
+name: CrossPod Q2 reader hardware alpha
+on:
+  workflow_dispatch:
+  push:
+    branches: [crosspod-reader-main-integration]
+    paths:
+      - "crosspoint-core/tools/build_q2_github.sh"
+      - ".github/workflows/q2-reader-card.yml"
+      - "crosspoint-core/reader/**"
+      - "crosspoint-core/CMakeLists.txt"
+permissions:
+  contents: read
+jobs:
+  build-q2-reader:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Q2 cross-build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm cmake git curl zip unzip \
+            squashfs-tools qemu-user binutils-mipsel-linux-gnu \
+            gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
+            libc6-dev-mipsel-cross
+      - name: Provision Q2 runtime, link reader, validate and package
+        shell: bash
+        run: bash crosspoint-core/tools/build_q2_github.sh
+      - name: Upload Q2 alpha card ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-reader-alpha
+          path: |
+            dist/crosspod-q2-reader-alpha.zip
+            dist/crosspod-q2-reader-alpha.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-reader-build-logs
+          path: |
+            build/q2-device/reader/CMakeFiles/CMakeConfigureLog.yaml
+            build/q2-device/reader/CMakeFiles/CMakeError.log
+            build/q2-device/reader/CMakeFiles/CMakeOutput.log
+          if-no-files-found: ignore
+          retention-days: 7

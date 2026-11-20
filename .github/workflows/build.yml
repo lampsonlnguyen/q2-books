@@ -41,6 +41,23 @@ jobs:
       - name: Test
         run: ctest --test-dir build/crosspoint-core --output-on-failure
 
+      - name: Convert EPUB preview to PNG
+        if: matrix.compiler == 'gcc'
+        run: |
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-epub-preview.pgm build/crosspoint-core/crosspod-epub-preview.png
+          sha256sum build/crosspoint-core/crosspod-epub-preview.{pgm,png}
+
+      - name: Upload rendered EPUB page
+        if: matrix.compiler == 'gcc'
+        uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-epub-page-preview-${{ github.sha }}
+          path: |
+            build/crosspoint-core/crosspod-epub-preview.pgm
+            build/crosspoint-core/crosspod-epub-preview.png
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Package tested host components
         if: matrix.compiler == 'gcc'
         run: |

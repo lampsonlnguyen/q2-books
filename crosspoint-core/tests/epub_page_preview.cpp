@@ -46,8 +46,17 @@ int main(int argc, char** argv) {
   if (argc != 3) return 2;
   ZipFile epub(argv[1]);
   size_t len = 0;
+  // CrossPoint's original ZIP reader can reuse its bounded file-stat index.
+  if (!epub.loadAllFileStatSlims()) {
+    std::fputs("Preview: unable to index EPUB ZIP entries\n", stderr);
+    return 3;
+  }
   auto* xml = epub.readFileToMemory("OEBPS/chapter1.xhtml", &len, true);
-  if (!xml || !len) { std::free(xml); return 3; }
+  if (!xml || !len) {
+    std::fputs("Preview: unable to extract XHTML chapter from EPUB ZIP\n", stderr);
+    std::free(xml);
+    return 4;
+  }
   Chapter chapter;
   XML_Parser parser = XML_ParserCreate(nullptr);
   assert(parser);

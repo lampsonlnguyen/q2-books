@@ -417,3 +417,9 @@ add_test(NAME crosspod_reader_real_epub_spine
 add_test(NAME crosspod_reader_vietnamese_epub
     COMMAND crosspod-reader --render "${VIETNAMESE_EPUB_FIXTURE}"
         "${CMAKE_CURRENT_BINARY_DIR}/crosspod-reader-vietnamese.pgm")
+
+# Exercise real page transitions and backwards traversal without Q2 hardware.
+add_test(NAME crosspod_reader_walk_multispine
+    COMMAND crosspod-reader --walk "${EPUB_FIXTURE}")
+add_test(NAME crosspod_reader_walk_vietnamese
+    COMMAND crosspod-reader --walk "${VIETNAMESE_EPUB_FIXTURE}")

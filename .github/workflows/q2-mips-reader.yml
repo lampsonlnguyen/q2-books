@@ -113,6 +113,14 @@ jobs:
             --render build/mips-reader/vietnamese-prose.epub \
               build/mips-reader/vietnamese-on-mips.pgm \
             | tee build/mips-reader/reader-vietnamese.log
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --walk build/mips-reader/multilingual.epub \
+            | tee build/mips-reader/reader-walk.log
+          timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
+            --walk build/mips-reader/vietnamese-prose.epub \
+            | tee build/mips-reader/reader-walk-vietnamese.log
+          grep -q 'CrossPod walked' build/mips-reader/reader-walk.log
+          grep -q 'CrossPod walked' build/mips-reader/reader-walk-vietnamese.log
           grep -q 'CrossPod validated' build/mips-reader/reader-spine.log
           grep -q 'CrossPod validated' build/mips-reader/reader-vietnamese.log
           python3 - <<'PY'
@@ -131,6 +139,17 @@ jobs:
           mkdir -p dist/crosspod-q2-reader-alpha/sample-books
           cp build/mips-reader/crosspod-reader \
             dist/crosspod-q2-reader-alpha/.crosspod/crosspod
+          mipsel-linux-gnu-strip --strip-debug \
+            dist/crosspod-q2-reader-alpha/.crosspod/crosspod
+          mkdir -p dist/crosspod-q2-reader-alpha/licenses
+          cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE \
+             dist/crosspod-q2-reader-alpha/licenses/
+          cp crosspoint-core/licenses/hyphenation.txt \
+             dist/crosspod-q2-reader-alpha/licenses/
+          cp build/deps-src/libexpat/expat/COPYING \
+             dist/crosspod-q2-reader-alpha/licenses/Expat-COPYING.txt
+          cp build/deps-src/zlib/README \
+             dist/crosspod-q2-reader-alpha/licenses/zlib-README.txt
           cp build/mips-reader/vietnamese-prose.epub \
             dist/crosspod-q2-reader-alpha/sample-books/
           cp docs/q2-reader-alpha-hardware.md \
@@ -155,5 +174,7 @@ jobs:
             build/mips-reader/elf-header.txt
             build/mips-reader/reader-spine.log
             build/mips-reader/reader-vietnamese.log
+            build/mips-reader/reader-walk.log
+            build/mips-reader/reader-walk-vietnamese.log
           if-no-files-found: error
           retention-days: 30

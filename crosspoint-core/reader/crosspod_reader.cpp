@@ -336,6 +336,7 @@ void usage() {
   std::fputs(
     "Usage:\n"
     "  crosspod-reader --validate <book.epub>       (no framebuffer)\n"
+    "  crosspod-reader --walk <book.epub>           (test pagination)\n"
     "  crosspod-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
     "  crosspod-reader <book.epub>                  (Q2 Pod Books handoff)\n"
     "On Q2, only run interactively after Q2 Pod yields /dev/fb0.\n",stderr);
@@ -343,10 +344,12 @@ void usage() {
 } // namespace
 
 int main(int argc,char** argv) {
-  bool dry=false,render=false;
+  bool dry=false,render=false,walk=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
+  } else if(argc==3 && std::strcmp(argv[1],"--walk")==0) {
+    dry=true;walk=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
     dry=true;render=true;path=argv[2];output=argv[3];
   } else if (argc==2 && argv[1][0] != '-') {
@@ -362,6 +365,17 @@ int main(int argc,char** argv) {
     return 3;
   }
   if(dry) {
+    if(walk) {
+      // Exercise real page/spine transitions and the backward boundary.
+      // Limit iterations defensively for corrupt EPUBs.
+      size_t forward=0,backward=0;
+      while(forward<65536 && reader.move(1))++forward;
+      if(forward>=65536)return 7;
+      while(backward<65536 && reader.move(-1))++backward;
+      if(backward>=65536||forward!=backward)return 8;
+      std::printf("CrossPod walked %zu pages forward and %zu backward\n",
+          forward,backward);
+    }
     reader.report();
     if (render && !reader.savePgm(output)) return 4;
     return 0;

@@ -414,6 +414,11 @@ target_link_libraries(crosspod-reader PRIVATE
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
+# Active card reader must preserve CrossPoint CSS alignment, emphasis and RTL.
+add_test(NAME crosspod_reader_original_css_cascade
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/css_chapter_reader_test.py"
+        "$<TARGET_FILE:crosspod-reader>" "${EPUB_FIXTURE}")
 add_test(NAME crosspod_reader_vietnamese_epub
     COMMAND crosspod-reader --render "${VIETNAMESE_EPUB_FIXTURE}"
         "${CMAKE_CURRENT_BINARY_DIR}/crosspod-reader-vietnamese.pgm")

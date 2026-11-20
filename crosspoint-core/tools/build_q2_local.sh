@@ -24,11 +24,20 @@ for command in cmake "$cc" "$cxx" "$readelf" "$objdump" "$python" zip; do
 done
 [[ -d "$sysroot/usr/include" ]] || { echo "Q2 sysroot missing: $sysroot" >&2; exit 1; }
 
-# Both XML and compression libraries must be built with the SAME Q2 ABI.
-# Do not silently fall back to host libraries.
+# Build missing zlib/Expat archives with Q2's NaN-2008 ABI, never the
+# Ubuntu mipsel default legacy-NaN libraries.
 zlib="${Q2_ZLIB_A:-$sysroot/usr/lib/libz.a}"
 expat="${Q2_EXPAT_A:-$sysroot/usr/lib/libexpat.a}"
-for file in "$zlib" "$expat" "$sysroot/usr/include/zlib.h" "$sysroot/usr/include/expat.h"; do
+includes="${Q2_DEPS_INCLUDE:-$sysroot/usr/include}"
+if [[ ! -f "$zlib" || ! -f "$expat" ]]; then
+  echo "Q2 zlib/Expat archive missing; compiling from pinned sources..."
+  bash "$repo_root/crosspoint-core/tools/build_q2_dependencies.sh" "$out/deps"
+  deps="$(cd "$out/deps/install" && pwd)"
+  if [[ ! -f "$zlib" ]]; then zlib="$deps/lib/libz.a"; fi
+  if [[ ! -f "$expat" ]]; then expat="$deps/lib/libexpat.a"; fi
+  includes="$deps/include"
+fi
+for file in "$zlib" "$expat" "$includes/zlib.h" "$includes/expat.h"; do
   [[ -f "$file" ]] || { echo "Q2 dependency missing: $file" >&2; exit 1; }
 done
 mkdir -p "$out"
@@ -45,8 +54,8 @@ cmake -S "$repo_root/crosspoint-core" -B "$out/build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS="$flags" -DCMAKE_CXX_FLAGS="$flags" \
   -DCMAKE_EXE_LINKER_FLAGS="$linkflags" \
-  -DZLIB_LIBRARY="$zlib" -DZLIB_INCLUDE_DIR="$sysroot/usr/include" \
-  -DEXPAT_LIBRARY="$expat" -DEXPAT_INCLUDE_DIR="$sysroot/usr/include"
+  -DZLIB_LIBRARY="$zlib" -DZLIB_INCLUDE_DIR="$includes" \
+  -DEXPAT_LIBRARY="$expat" -DEXPAT_INCLUDE_DIR="$includes"
 cmake --build "$out/build" --target crosspod-reader --parallel 2
 
 reader="$out/build/crosspod-reader"

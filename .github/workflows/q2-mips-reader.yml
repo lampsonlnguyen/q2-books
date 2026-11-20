@@ -185,10 +185,55 @@ jobs:
             sha256sum crosspod-q2-reader-alpha.zip > crosspod-q2-reader-alpha.zip.sha256
           )
 
+      - name: Fetch two original CrossPoint font families at four readable sizes
+        run: |
+          set -euo pipefail
+          fonts="dist/crosspod-card/.crosspod/fonts"
+          mkdir -p "$fonts"
+          base="https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4"
+          for size in 12 14 16 18; do
+            for family in NotoSansExtended NotoSerifExtended; do
+              case "$family" in
+                NotoSansExtended) short=sans ;;
+                NotoSerifExtended) short=serif ;;
+              esac
+              curl --fail --location --retry 3 --silent --show-error \
+                "$base/${family}_${size}.cpfont" -o "$fonts/${short}-${size}.cpfont"
+              test "$(stat -c%s "$fonts/${short}-${size}.cpfont")" -gt 200000
+            done
+          done
+          cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt \
+            dist/crosspod-card/.crosspod/NotoSans-OFL.txt
+
+      - name: QEMU verify both font choices and font-size raster
+        run: |
+          set -euo pipefail
+          state="$PWD/dist/crosspod-card/.crosspod"
+          printf 'CROSSPOD-TYPE1 sans 16\n' > "$state/typography.conf"
+          CROSSPOD_STATE_DIR="$state" timeout 90s qemu-mipsel \
+            build/mips-reader/crosspod-reader --render \
+            build/mips-reader/vietnamese-prose.epub build/mips-reader/font-sans.pgm
+          printf 'CROSSPOD-TYPE1 serif 18\n' > "$state/typography.conf"
+          CROSSPOD_STATE_DIR="$state" timeout 90s qemu-mipsel \
+            build/mips-reader/crosspod-reader --render \
+            build/mips-reader/vietnamese-prose.epub build/mips-reader/font-serif.pgm
+          python3 - <<'PY'
+          from pathlib import Path
+          files=[Path("build/mips-reader/font-sans.pgm"),Path("build/mips-reader/font-serif.pgm")]
+          data=[f.read_bytes() for f in files]
+          assert all(d.startswith(b"P5\\n375 320\\n255\\n") for d in data)
+          assert all(len(d)==15+375*320 for d in data)
+          assert data[0]!=data[1], "Changing family/size did not change glyph raster"
+          print("Two font variants produce distinct real MIPS output")
+          PY
+          rm -f "$state/typography.conf"
+
       - name: Package standalone Q2 Pod card app
         run: |
           set -euo pipefail
           mkdir -p dist/crosspod-card/.crosspod
+          test -s dist/crosspod-card/.crosspod/fonts/sans-12.cpfont
+          test -s dist/crosspod-card/.crosspod/fonts/serif-18.cpfont
           cp dist/crosspod-q2-reader-alpha/.crosspod/crosspod dist/crosspod-card/.crosspod/q2-crosspod
           printf 'name=CrossPod\ngame=1\nrow=library\n' > dist/crosspod-card/.crosspod/q2app
           cp docs/q2-crosspod-card-app.md dist/crosspod-card/.crosspod/README.txt

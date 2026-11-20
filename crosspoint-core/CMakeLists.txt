@@ -481,3 +481,11 @@ target_compile_options(crosspod_illustrated_epub_resources PRIVATE -UNDEBUG)
 add_dependencies(crosspod_illustrated_epub_resources illustrated_epub_fixture)
 add_test(NAME crosspod_original_zip_illustrated_epub
     COMMAND crosspod_illustrated_epub_resources "${ILLUSTRATED_EPUB_FIXTURE}")
+# End-to-end illustrated EPUB: PNG extracted, decoded, placed and rasterized
+# into a 375x320 monochrome CrossPod page.
+add_dependencies(crosspod-reader illustrated_epub_fixture)
+add_test(NAME crosspod_reader_renders_epub_png
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_illustrated_render.py"
+      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
+      "${CMAKE_CURRENT_BINARY_DIR}/illustrated-page.pgm")

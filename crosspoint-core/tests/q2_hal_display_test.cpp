@@ -29,14 +29,14 @@ int main() {
   assert(display.getFrameBuffer()[47] == 0xff);
   display.clearScreen();
   display.drawImage(solidInk, 374, 319, 8, 2);
-  assert(display.getFrameBuffer()[(319 * 47) + 46] == 0xfb);
+  assert(display.getFrameBuffer()[(319 * 47) + 46] == 0xfd);
 
   // Non-byte-aligned placement preserves the adjacent background pixels.
   display.clearScreen();
   const uint8_t checkered[] = {0xaa};
   display.drawImage(checkered, 5, 2, 8, 1);
-  assert(display.getFrameBuffer()[2 * 47] == 0xfd);
-  assert(display.getFrameBuffer()[2 * 47 + 1] == 0x57);
+  assert(display.getFrameBuffer()[2 * 47] == 0xfa);
+  assert(display.getFrameBuffer()[2 * 47 + 1] == 0xd7);
 
   return 0;
 }

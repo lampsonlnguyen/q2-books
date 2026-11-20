@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
     while (input >> word) layout.addWord(word, EpdFontFamily::REGULAR);
     layout.layoutAndExtractLines(gfx, 1, 345,
         [&](std::unique_ptr<TextBlock> block, uint32_t) {
-          const int lineHeight = vietnameseDemo ? 18 : 22;
+          const int lineHeight = vietnameseDemo ? 27 : 22;
           if (y + lineHeight > 320) return;
           assert(block && block->valid());
           block->render(gfx, 1, 14, y);

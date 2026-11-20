@@ -259,6 +259,7 @@ add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tes
 add_library(crosspoint_renderer_objects OBJECT
     lib/GfxRenderer/GfxRenderer.cpp
     lib/GfxRenderer/Bitmap.cpp
+    lib/GfxRenderer/BitmapHelpers.cpp
     lib/GfxRenderer/FontCacheManager.cpp
     lib/Memory/BuildScratch.cpp
     lib/EpdFont/FontDecompressor.cpp

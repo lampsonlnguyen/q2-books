@@ -22,7 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git cmake make python3 zip \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            binutils-mipsel-linux-gnu qemu-user
+            binutils-mipsel-linux-gnu qemu-user gdb-multiarch
       - name: Build pinned zlib 1.3.1 and Expat 2.6.4 for MIPS
         run: |
           set -euo pipefail
@@ -65,7 +65,7 @@ jobs:
             -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc \
             -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++ \
             -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_C_FLAGS="-march=mips32r2 -mabi=32" \
             -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32" \
             -DCMAKE_EXE_LINKER_FLAGS="-static" \
@@ -86,9 +86,29 @@ jobs:
       - name: QEMU smoke test of original EPUB spine parser and renderer
         run: |
           set -euo pipefail
+          set +e
           timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
             --validate build/mips-reader/multilingual.epub \
             | tee build/mips-reader/reader-spine.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "MIPS smoke failed (status $status); recording GDB trace"
+            qemu-mipsel -g 12349 build/mips-reader/crosspod-reader \
+              --validate build/mips-reader/multilingual.epub > build/mips-reader/gdb-qemu.log 2>&1 &
+            qemu_pid=$!
+            sleep 1
+            timeout 25s gdb-multiarch -q -batch \
+              -ex "set pagination off" \
+              -ex "file build/mips-reader/crosspod-reader" \
+              -ex "target remote localhost:12349" \
+              -ex "continue" \
+              -ex "info registers" \
+              -ex "bt 30" \
+              | tee build/mips-reader/gdb-backtrace.log || true
+            kill "$qemu_pid" 2>/dev/null || true
+            exit "$status"
+          fi
           timeout 60s qemu-mipsel build/mips-reader/crosspod-reader \
             --render build/mips-reader/vietnamese-prose.epub \
               build/mips-reader/vietnamese-on-mips.pgm \

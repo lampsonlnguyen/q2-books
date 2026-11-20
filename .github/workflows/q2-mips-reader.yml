@@ -221,7 +221,7 @@ jobs:
           from pathlib import Path
           files=[Path("build/mips-reader/font-sans.pgm"),Path("build/mips-reader/font-serif.pgm")]
           data=[f.read_bytes() for f in files]
-          assert all(d.startswith(b"P5\\n375 320\\n255\\n") for d in data)
+          assert all(d.startswith(b"P5"+bytes([10])+b"375 320"+bytes([10])+b"255"+bytes([10])) for d in data)
           assert all(len(d)==15+375*320 for d in data)
           assert data[0]!=data[1], "Changing family/size did not change glyph raster"
           print("Two font variants produce distinct real MIPS output")

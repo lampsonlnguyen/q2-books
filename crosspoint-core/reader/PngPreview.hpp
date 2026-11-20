@@ -5,6 +5,7 @@
 #include <zlib.h>
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <vector>

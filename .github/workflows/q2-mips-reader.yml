@@ -144,7 +144,7 @@ jobs:
           log = Path("build/mips-reader/illustrated-on-mips.log").read_text()
           image = Path("build/mips-reader/illustrated-on-mips.pgm").read_bytes()
           assert "CrossPod rendered PNG images: 1" in log
-          assert image.startswith(b"P5\\n375 320\\n255\\n")
+          assert image.startswith(b"P5" + bytes([10]) + b"375 320" + bytes([10]) + b"255" + bytes([10]))
           assert len(image) == 15 + 375 * 320
           assert image[15:].count(0) > 30
           print("Embedded PNG decoded and rasterized under static MIPS QEMU")

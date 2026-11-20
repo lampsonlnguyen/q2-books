@@ -14,6 +14,8 @@
 #include <HalDisplay.h>
 #include <ParsedText.h>
 #include <Q2Controls.hpp>
+#include <SdCardFont.h>
+#include "Typography.hpp"
 #include "ReadingPosition.hpp"
 #include <Q2SocketInput.hpp>
 #include <ZipFile.h>
@@ -176,10 +178,32 @@ class Reader {
   EpdFont bodyFont_;
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
+  std::unique_ptr<SdCardFont> selectedFont_;
+  crosspod::Typography typography_{};
+  std::string typographyNotice_;
   std::vector<RenderPage> pages_;
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
+  int lineHeight() const { return std::max(27,typography_.size*2); }
+  bool useTypography(crosspod::Typography settings) {
+    if(!crosspod::validTypography(settings))return false;
+    std::unique_ptr<SdCardFont> next;
+    if(settings.family!=crosspod::Typography::Family::Sans || settings.size!=12) {
+      next=std::make_unique<SdCardFont>();
+      if(!next->load(crosspod::typographyFontPath(settings).c_str()) ||
+         !next->getEpdFont())return false;
+    }
+    // Rebind the original CrossPoint font registry, not a Q2 custom renderer.
+    renderer_.removeFont(1);
+    if(next) {
+      renderer_.insertFont(1,EpdFontFamily(settings.size,next->getEpdFont()));
+      renderer_.registerSdCardFont(1,next.get());
+    } else renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
+    selectedFont_=std::move(next);
+    typography_=settings;
+    return true;
+  }
 
   bool beginNextPage(int& y) {
     if (pages_.size() >= MAX_PAGES_PER_SPINE) return false;
@@ -202,12 +226,12 @@ class Reader {
       layout.layoutAndExtractLines(renderer_,1,TEXT_WIDTH,
           [&](std::unique_ptr<TextBlock> line,uint32_t) {
             if (!line || !line->valid() || pages_.size() > MAX_PAGES_PER_SPINE) return;
-            if (y + LINE_HEIGHT > BOTTOM && !beginNextPage(y)) {
+            if (y + lineHeight() > BOTTOM && !beginNextPage(y)) {
               pageLimitReached=true;
               return;
             }
             pages_.back().lines.push_back({std::move(line),y});
-            y+=LINE_HEIGHT;
+            y+=lineHeight();
             ++totalLines;
           });
       if (pageLimitReached) {
@@ -271,6 +295,9 @@ class Reader {
     if (!decompressor_.init()) return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
+    crosspod::Typography savedType;
+    if(crosspod::loadTypography(savedType) && !useTypography(savedType))
+      typographyNotice_="Selected font file missing";
     std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
     return loadSpine(0,1);
@@ -288,6 +315,48 @@ class Reader {
   void persistPosition() const {
     if(resumeEnabled_)
       (void)crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_});
+  }
+  bool configureTypography(crosspod::Typography requested) {
+    if(!crosspod::validTypography(requested))return false;
+    if(requested.family==typography_.family && requested.size==typography_.size)return true;
+    const auto previous=typography_;
+    const int spine=currentSpine_;
+    const size_t page=currentPage_;
+    if(!useTypography(requested)) {
+      typographyNotice_="Font file not installed";
+      return false;
+    }
+    if(spine>=0 && (!loadSpine(spine,1) || currentSpine_!=spine)) {
+      (void)useTypography(previous);
+      (void)loadSpine(spine,1);
+      typographyNotice_="Could not repaginate";
+      return false;
+    }
+    if(spine>=0 && !pages_.empty())currentPage_=std::min(page,pages_.size()-1);
+    if(!crosspod::saveTypography(typography_))
+      typographyNotice_="Settings not saved to SD";
+    else typographyNotice_.clear();
+    persistPosition();
+    return true;
+  }
+  crosspod::Typography typography() const {return typography_;}
+  void showTypographyMenu(int selected) {
+    render();
+    renderer_.fillRect(13,55,349,205,false);
+    renderer_.fillRect(15,57,345,201,true);
+    renderer_.drawText(1,30,74,"Reading appearance");
+    char row[96];
+    std::snprintf(row,sizeof(row),"%s Font: %s",
+      selected==0?">":" ",crosspod::typographyFamilyName(typography_.family));
+    renderer_.drawText(1,31,117,row);
+    std::snprintf(row,sizeof(row),"%s Size: %d",
+      selected==1?">":" ",typography_.size);
+    renderer_.drawText(1,31,152,row);
+    renderer_.drawText(1,31,190,"Wheel: select  Center: change");
+    renderer_.drawText(1,31,220,"Back: return to book");
+    if(!typographyNotice_.empty())
+      renderer_.drawText(1,31,245,typographyNotice_.c_str());
+    display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {
     // Crossing a spine boundary must not destroy the current page if the next
@@ -535,6 +604,8 @@ int runCardApp(const std::string& bookDir) {
   shelf->present();
   crosspod::Q2Controls controls;
   std::unique_ptr<Reader> reader;
+  bool typeMenu=false;
+  int typeSelection=0;
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
@@ -543,6 +614,35 @@ int runCardApp(const std::string& bookDir) {
     }
     const auto action=controls.translate(event).action;
     if(reader) {
+      if(typeMenu) {
+        if(action==crosspod::LogicalAction::Back) {
+          typeMenu=false;
+          reader->present();
+        } else if(action==crosspod::LogicalAction::Previous ||
+                  action==crosspod::LogicalAction::Next) {
+          typeSelection=1-typeSelection;
+          reader->showTypographyMenu(typeSelection);
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(event.kind==crosspod::PhysicalKind::TouchUp)
+            typeSelection=event.y>=143?1:0;
+          auto next=reader->typography();
+          if(typeSelection==0) {
+            next.family=next.family==crosspod::Typography::Family::Sans?
+              crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+          } else next.size=next.size==12?16:(next.size==16?20:12);
+          (void)reader->configureTypography(next);
+          reader->showTypographyMenu(typeSelection);
+        }
+        continue;
+      }
+      if(action==crosspod::LogicalAction::Confirm ||
+         (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
+        typeMenu=true;
+        typeSelection=0;
+        reader->showTypographyMenu(typeSelection);
+        continue;
+      }
       if(action==crosspod::LogicalAction::Back) {
         reader.reset(); // close book/cache BEFORE reopening the card shelf
         shelf.reset(new CardShelf(books,selection));
@@ -551,8 +651,7 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       bool changed=false;
-      if(action==crosspod::LogicalAction::Next ||
-         action==crosspod::LogicalAction::Confirm) changed=reader->move(1);
+      if(action==crosspod::LogicalAction::Next) changed=reader->move(1);
       if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
       if(event.kind==crosspod::PhysicalKind::TouchUp)
         changed=reader->move(event.x>=187?1:-1);
@@ -656,6 +755,8 @@ int main(int argc,char** argv) {
   std::signal(SIGTERM,exitOnSignal);
   reader.enableResume();
   reader.present();
+  bool typeMenu=false;
+  int typeSelection=0;
   crosspod::Q2Controls controls;
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
@@ -665,9 +766,36 @@ int main(int argc,char** argv) {
     }
     auto action=controls.translate(event).action;
     bool changed=false;
+    if(typeMenu) {
+      if(action==crosspod::LogicalAction::Back) {
+        typeMenu=false;
+        reader.present();
+      } else if(action==crosspod::LogicalAction::Previous ||
+                action==crosspod::LogicalAction::Next) {
+        typeSelection=1-typeSelection;
+        reader.showTypographyMenu(typeSelection);
+      } else if(action==crosspod::LogicalAction::Confirm ||
+                event.kind==crosspod::PhysicalKind::TouchUp) {
+        if(event.kind==crosspod::PhysicalKind::TouchUp)
+          typeSelection=event.y>=143?1:0;
+        auto next=reader.typography();
+        if(typeSelection==0)
+          next.family=next.family==crosspod::Typography::Family::Sans?
+            crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+        else next.size=next.size==12?16:(next.size==16?20:12);
+        (void)reader.configureTypography(next);
+        reader.showTypographyMenu(typeSelection);
+      }
+      continue;
+    }
+    if(action==crosspod::LogicalAction::Confirm ||
+       (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
+      typeMenu=true;
+      reader.showTypographyMenu(typeSelection);
+      continue;
+    }
     if(action==crosspod::LogicalAction::Back)break;
-    if(action==crosspod::LogicalAction::Next ||
-       action==crosspod::LogicalAction::Confirm)changed=reader.move(1);
+    if(action==crosspod::LogicalAction::Next)changed=reader.move(1);
     if(action==crosspod::LogicalAction::Previous)changed=reader.move(-1);
     if(event.kind==crosspod::PhysicalKind::TouchUp) {
       changed=reader.move(event.x>=187?1:-1);

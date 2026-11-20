@@ -10,7 +10,12 @@ int main() {
   HalDisplay display;
   display.begin();
   GfxRenderer gfx(display);
+  // Q2PagePresenter consumes a 375x320 logical surface; CrossPoint's default
+  // Portrait orientation would rotate once here and a second time on LCD.
+  gfx.setOrientation(GfxRenderer::LandscapeCounterClockwise);
   gfx.begin();
+  assert(gfx.getScreenWidth() == 375);
+  assert(gfx.getScreenHeight() == 320);
   gfx.clearScreen(0xff);
   gfx.drawPixel(12, 13, true);
   auto* pixels=display.getFrameBuffer();

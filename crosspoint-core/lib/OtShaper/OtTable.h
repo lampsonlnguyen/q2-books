@@ -49,8 +49,9 @@ class Table {
     // Counts on disk are uint16_t, so never wrap the available-record count.
     if (recordSize == 0 || first > length_) return 0;
     const uint32_t fits = (length_ - first) / recordSize;
+    const uint32_t boundedFits = fits < 0xFFFFu ? fits : 0xFFFFu;
     const uint16_t count = u16(field);
-    return count < fits ? count : static_cast<uint16_t>(fits);
+    return count < boundedFits ? count : static_cast<uint16_t>(boundedFits);
   }
 
   // The subtable `offset` bytes in; empty for a null (zero) or out-of-range offset.

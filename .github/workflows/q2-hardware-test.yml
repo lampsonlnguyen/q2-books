@@ -55,8 +55,34 @@ jobs:
           See docs/q2-mips-hardware-validation.md for details.
           EOF
           (cd dist/crosspod-q2-hardware-test && sha256sum crosspod-* > SHA256SUMS)
+      - name: Build Q2 Pod Library card-app ZIP
+        run: |
+          set -eu
+          mkdir -p dist/.crosspod-test
+          cp build/q2-mips/crosspod-hwcheck dist/.crosspod-test/q2-crosspod-test
+          chmod 755 dist/.crosspod-test/q2-crosspod-test
+          printf 'name=CrossPod Test\\ngame=1\\nrow=library\\n' > dist/.crosspod-test/q2app
+          cat > dist/.crosspod-test/README.txt <<'EOF'
+          CrossPod Q2 hardware diagnostic CARD APP. NOT an EPUB reader.
+          This package uses a generic MIPS Linux cross-compiler.
+          Its glibc/libstdc++ requirements MAY NOT match your firmware.
+          The display opens automatically, shows color bars, and exits within 30s
+          or when Return is released. It logs metrics to stderr (remote shell).
+          Extract the .crosspod-test folder at the microSD root, not nested.
+          Launch via Library > CrossPod Test, not Library > Books.
+          Do not replace Q2 firmware, the stock reader or /usr/bin/demo.
+          EOF
+          (cd dist && zip -qr crosspod-q2-card-test.zip .crosspod-test)
+          (cd dist && sha256sum crosspod-q2-card-test.zip > crosspod-q2-card-test.zip.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: crosspod-q2-mips-hardware-test-NOT-READER
           path: dist/crosspod-q2-hardware-test/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-card-test-NOT-EPUB-READER
+          path: |
+            dist/crosspod-q2-card-test.zip
+            dist/crosspod-q2-card-test.zip.sha256
           if-no-files-found: error

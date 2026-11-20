@@ -424,6 +424,12 @@ add_test(NAME crosspod_reader_walk_multispine
 add_test(NAME crosspod_reader_walk_vietnamese
     COMMAND crosspod-reader --walk "${VIETNAMESE_EPUB_FIXTURE}")
 
+# Bounded, atomic per-book reading-position persistence (POSIX Q2 adapter).
+add_executable(crosspod_reading_position_tests tests/reading_position_test.cpp)
+target_include_directories(crosspod_reading_position_tests PRIVATE reader)
+target_compile_options(crosspod_reading_position_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_reading_position_persistence COMMAND crosspod_reading_position_tests)
+
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
 add_test(NAME crosspod_reader_card_empty_library

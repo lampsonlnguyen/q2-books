@@ -13,10 +13,11 @@
 unsigned long __isoc23_strtoul(const char *s, char **end, int base) {
     return strtoul(s, end, base);
 }
+extern int q2_legacy_vfscanf(FILE *, const char *, va_list) __asm__("vfscanf");
 int __isoc23_fscanf(FILE *stream, const char *format, ...) {
     va_list ap;
     va_start(ap, format);
-    int rc = vfscanf(stream, format, ap);
+    int rc = q2_legacy_vfscanf(stream, format, ap);
     va_end(ap);
     return rc;
 }

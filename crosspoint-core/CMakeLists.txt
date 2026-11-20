@@ -259,6 +259,7 @@ add_test(NAME crosspoint_q2_monochrome_hal COMMAND crosspoint_q2_hal_display_tes
 add_library(crosspoint_xhtml_parser_objects OBJECT
     lib/Epub/parsers/ChapterHtmlSlimParser.cpp
 )
+target_compile_options(crosspoint_xhtml_parser_objects PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/platform/posix/ArduinoCompat.h)
 set_target_properties(crosspoint_xhtml_parser_objects PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_xhtml_parser_objects PRIVATE

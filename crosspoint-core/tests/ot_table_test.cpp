@@ -15,6 +15,12 @@ int main() {
   assert(table.count16(0, 2, 3) == 2);
   assert(table.count16(0, 2, 0) == 0);
   assert(table.count16(0, 20, 2) == 0);
+  // A 16-bit count cannot overflow when more than 65535 records fit.
+  // Untrusted font record counts still clamp to the actual available records.
+  const uint8_t largeHeader[] = {0xff, 0xff};
+  const ot::Table large(largeHeader, sizeof(largeHeader));
+  assert(large.count16(0, 2, 1) == 0);
+
   assert(table.at(0).empty());
   assert(table.at(8).empty());
   assert(table.at(2).length() == 6);

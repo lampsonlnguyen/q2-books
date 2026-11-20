@@ -60,11 +60,12 @@ double cpuSeconds(const timeval& value) {
 }
 
 int main(int argc, char** argv) {
-  if (argc > 2 || (argc == 2 && std::string_view(argv[1]) != "--display")) {
-    std::fprintf(stderr, "Usage: crosspod-hwcheck [--display]\n"
+  if (argc > 2 || (argc == 2 && std::string_view(argv[1]) != "--display" && std::string_view(argv[1]) != "--card")) {
+    std::fprintf(stderr, "Usage: crosspod-hwcheck [--display|--card]\n"
             "Default: check input socket only. --display briefly uses /dev/fb0.\n");
     return 2;
   }
+  const bool card = argc == 2 && std::string_view(argv[1]) == "--card";
   const bool show = argc == 2;
   // Avoid drawing over Q2 Pod by default. Only use --display with Q2 Pod
   // screen painting deliberately suspended by the hardware test operator.
@@ -88,7 +89,7 @@ int main(int argc, char** argv) {
     }
   }
   crosspod::Q2SocketInput input;
-  if (!input.open()) {
+  if (!input.open(card ? "/tmp/q2-crosspod-test.input.sock" : "/tmp/q2-crosspod.input.sock")) {
     std::fprintf(stderr, "Input socket creation failed\n");
     return 5;
   }
@@ -98,6 +99,7 @@ int main(int argc, char** argv) {
            "timeout %u s; exit on Return key up (170).\n", MaxSeconds);
   const Metrics startMetric = snapshot();
   const auto start = startMetric.time;
+  if (card) std::fprintf(stderr, "CrossPod card diagnostic: press Return to exit, or wait 30 seconds.\\n");
   unsigned events = 0;
   unsigned wheelEvents=0, keyEvents=0, touchEvents=0;
   while (!stopped && std::chrono::steady_clock::now()-start < std::chrono::seconds(MaxSeconds)) {

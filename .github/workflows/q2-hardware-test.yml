@@ -1,0 +1,62 @@
+name: Q2 hardware diagnostic test package
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crosspoint-core/platform/q2/**'
+      - 'crosspoint-core/lib/**'
+      - '.github/workflows/q2-hardware-test.yml'
+permissions:
+  contents: read
+jobs:
+  q2-mips-hw-diagnostic:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross compiler, QEMU and ELF utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake make g++-mipsel-linux-gnu binutils-mipsel-linux-gnu qemu-user zip
+      - name: Cross-compile MIPS32 Linux diagnostics
+        run: |
+          cmake -S crosspoint-core/platform/q2 -B build/q2-mips -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=mipsel -DCMAKE_C_COMPILER=mipsel-linux-gnu-gcc -DCMAKE_CXX_COMPILER=mipsel-linux-gnu-g++
+          cmake --build build/q2-mips --parallel 2
+      - name: Verify ELF target and smoke-test engine in QEMU
+        run: |
+          set -eux
+          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-hwcheck
+          mipsel-linux-gnu-readelf -l build/q2-mips/crosspod-hwcheck
+          mipsel-linux-gnu-readelf -V build/q2-mips/crosspod-hwcheck
+          file build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke
+          qemu-mipsel -L /usr/mipsel-linux-gnu build/q2-mips/crosspod-engine-smoke
+      - name: Package non-flashable hardware test
+        run: |
+          set -eu
+          mkdir -p dist/crosspod-q2-hardware-test
+          cp build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke dist/crosspod-q2-hardware-test/
+          mipsel-linux-gnu-readelf -l build/q2-mips/crosspod-hwcheck > dist/crosspod-q2-hardware-test/elf-interpreter.txt
+          mipsel-linux-gnu-readelf -V build/q2-mips/crosspod-hwcheck > dist/crosspod-q2-hardware-test/elf-versions.txt
+          cat > dist/crosspod-q2-hardware-test/README.txt <<'EOF'
+          CrossPod Q2 HARDWARE DIAGNOSTIC — NOT AN EBOOK READER / NOT FIRMWARE
+          Cross-compiled on Ubuntu using generic MIPS Linux libc. Q2 runtime compatibility is UNVERIFIED.
+          No update.tar is produced. NEVER flash these files or overwrite the stock player.
+          
+          FIRST verify the required ELF interpreter and GLIBC/GLIBCXX versions in the
+          accompanying elf-*.txt against your Q2 system. For incompatible libraries,
+          rebuild with the actual Q2 Pod sysroot before running.
+          
+          Copy these files to /mnt/mmc/.crosspod-test/ with a remote shell.
+          Run ./crosspod-engine-smoke first (no framebuffer or input).
+          Run ./crosspod-hwcheck next to test the input socket for up to 30 seconds.
+          Q2 Pod must forward input to /tmp/q2-crosspod.input.sock for physical events to appear.
+          ONLY with Q2 Pod framebuffer painting suspended and remote shell recovery
+          ready, run ./crosspod-hwcheck --display (brief test color bars).
+          See docs/q2-mips-hardware-validation.md for details.
+          EOF
+          (cd dist/crosspod-q2-hardware-test && sha256sum crosspod-* > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crosspod-q2-mips-hardware-test-NOT-READER
+          path: dist/crosspod-q2-hardware-test/
+          if-no-files-found: error

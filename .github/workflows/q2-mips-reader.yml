@@ -270,6 +270,12 @@ jobs:
           PY
           rm -f "$state/typography.conf"
 
+      - name: Test Q2 card launcher before package
+        run: |
+          set -euo pipefail
+          python3 crosspoint-core/tests/card_launcher_test.py \
+            crosspoint-core/platform/q2/crosspod-launcher.sh
+
       - name: Package standalone Q2 Pod card app
         run: |
           set -euo pipefail

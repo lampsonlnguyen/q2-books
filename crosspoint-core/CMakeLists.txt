@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(crosspod_crosspoint_core LANGUAGES C CXX)
-set(CMAKE_CXX_STANDARD 20)
-# Current upstream CrossPoint uses constexpr standard algorithms (C++20).
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Keep original upstream CrossPoint UTF-8 code unmodified.
@@ -206,6 +205,10 @@ add_library(crosspoint_hyphenation STATIC
     lib/Epub/hyphenation/LanguageRegistry.cpp
     lib/Epub/hyphenation/LiangHyphenation.cpp
 )
+# Original IndicScripts.h uses std::any_of in constexpr helpers.
+# Apply C++20 to this target rather than changing u8 literal semantics in tests.
+set_property(TARGET crosspoint_hyphenation PROPERTY CXX_STANDARD 20)
+set_property(TARGET crosspoint_hyphenation PROPERTY CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_hyphenation PUBLIC
     lib
     lib/Epub

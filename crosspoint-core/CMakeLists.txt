@@ -192,6 +192,27 @@ target_link_libraries(crosspoint_linebreak_tests PRIVATE crosspoint_linebreak)
 target_compile_options(crosspoint_linebreak_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_cjk_linebreak COMMAND crosspoint_linebreak_tests)
 
+
+# Full original CrossPoint multilingual Liang hyphenator, including its
+# generated language tries. The dictionary data is compiled into this target
+# rather than replaced by an ASCII-only or Q2 native word splitter.
+add_library(crosspoint_hyphenation STATIC
+    lib/Epub/hyphenation/Hyphenator.cpp
+    lib/Epub/hyphenation/LanguageRegistry.cpp
+    lib/Epub/hyphenation/LiangHyphenation.cpp
+)
+target_include_directories(crosspoint_hyphenation PUBLIC
+    lib
+    lib/Epub
+    lib/Epub/hyphenation
+    lib/Utf8
+)
+target_link_libraries(crosspoint_hyphenation PUBLIC crosspoint_linebreak crosspoint_utf8)
+add_executable(crosspoint_hyphenator_tests tests/hyphenator_test.cpp)
+target_link_libraries(crosspoint_hyphenator_tests PRIVATE crosspoint_hyphenation)
+target_compile_options(crosspoint_hyphenator_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspoint_real_liang_hyphenation COMMAND crosspoint_hyphenator_tests)
+
 # End-to-end EPUB ZIP stylesheet stream into CrossPoint's original CSS cascade.
 add_executable(crosspoint_epub_css_pipeline_tests tests/epub_css_pipeline_test.cpp)
 target_link_libraries(crosspoint_epub_css_pipeline_tests PRIVATE

@@ -7,6 +7,8 @@
 #include <BookMetadataCache.h>
 #include <ContainerParser.h>
 #include <ContentOpfParser.h>
+#include <CssParser.h>
+#include <HalStorage.h>
 #include <Epub.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -62,80 +64,175 @@ bool isParagraph(std::string_view n) {
 bool skipTag(std::string_view n) {
   return n == "script" || n == "style" || n == "svg" || n == "nav";
 }
+struct StyledRun {
+  std::string text;
+  EpdFontFamily::Style style = EpdFontFamily::REGULAR;
+};
 struct Paragraph {
-  std::string value;
+  std::vector<StyledRun> runs;
+  CssTextAlign align = CssTextAlign::Justify;
+  bool rtl = false;
   bool heading = false;
 };
 struct HtmlCollector {
+  // The full upstream ChapterHtmlSlimParser is being integrated separately.
+  // This transitional adapter uses the ORIGINAL CrossPoint CSS cascade,
+  // rather than interpreting CSS with a Q2-specific parser.
+  ZipFile& archive;
+  std::string chapterDir;
+  CssParser stylesheet{""};
   std::vector<Paragraph> items;
-  std::string current;
-  int depth = 0;
-  int collectingDepth = 0;
-  int skipDepth = 0;
-  bool heading = false;
-  size_t collectedBytes = 0;
-  bool limitHit = false;
+  std::array<CssAncestor, 16> ancestors{};
+  struct Scope {
+    bool hidden=false, bold=false, italic=false, rtl=false;
+    CssTextAlign align=CssTextAlign::Justify;
+    bool paragraph=false;
+    bool stylesheet=false;
+  };
+  std::vector<Scope> scopes;
+  Paragraph current;
+  std::string cssText;
+  int collectingDepth=0;
+  size_t collectedBytes=0;
+  bool limitHit=false;
 
-  static void XMLCALL start(void* user, const XML_Char* name, const XML_Char**) {
-    auto& s = *static_cast<HtmlCollector*>(user);
-    ++s.depth;
-    const auto n = localName(name);
-    if (s.skipDepth) return;
-    if (skipTag(n)) { s.skipDepth = s.depth; return; }
-    if (s.collectingDepth) {
-      if (n == "br") s.current.append(" ");
-    } else if (isParagraph(n)) {
-      s.collectingDepth = s.depth;
-      s.heading = n[0] == 'h' && n.size() == 2;
-      s.current.clear();
-    }
+  HtmlCollector(ZipFile& zip, const std::string& chapter) : archive(zip) {
+    const size_t slash=chapter.find_last_of('/');
+    if(slash!=std::string::npos) chapterDir=chapter.substr(0,slash+1);
+    scopes.push_back({});
   }
-  static void XMLCALL data(void* user, const XML_Char* text, int len) {
-    auto& s = *static_cast<HtmlCollector*>(user);
-    if (!s.collectingDepth || s.skipDepth || len <= 0 || s.limitHit) return;
-    if (s.collectedBytes + static_cast<size_t>(len) > MAX_TEXT_BYTES) {
-      s.limitHit = true;
-      return;
+  static std::string_view attribute(const XML_Char** attrs, std::string_view key) {
+    if(!attrs)return {};
+    for(size_t i=0;attrs[i];i+=2)
+      if(attrs[i]==key)return attrs[i+1];
+    return {};
+  }
+  bool addCss(std::string_view content) {
+    if(content.empty() || content.size()>256*1024)return false;
+    HalFile file(std::tmpfile());
+    if(!file || file.write(content.data(),content.size())!=content.size() || !file.seek(0))
+      return false;
+    return stylesheet.loadFromStream(file)!=CssParser::ParseResult::Error;
+  }
+  void externalCss(std::string_view uri) {
+    if(uri.empty() || uri[0]=='/' || uri.find("..")!=std::string_view::npos ||
+       uri.find(':')!=std::string_view::npos || uri.find('?')!=std::string_view::npos ||
+       uri.find('#')!=std::string_view::npos)return;
+    const std::string path=chapterDir+std::string(uri);
+    size_t len=0;
+    if(!archive.getInflatedFileSize(path.c_str(),&len)||len==0||len>256*1024)return;
+    std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
+      archive.readFileToMemory(path.c_str(),&len,true),&std::free);
+    if(bytes)(void)addCss(std::string_view(reinterpret_cast<const char*>(bytes.get()),len));
+  }
+  static void XMLCALL start(void* user, const XML_Char* name, const XML_Char** attrs) {
+    auto& s=*static_cast<HtmlCollector*>(user);
+    const auto n=localName(name);
+    const auto& parent=s.scopes.back();
+    Scope scope=parent;
+    scope.paragraph=false;
+    scope.stylesheet=false;
+    const std::string_view cls=attribute(attrs,"class");
+    const std::string_view id=attribute(attrs,"id");
+    if(n=="link" && !scope.hidden) {
+      const auto rel=attribute(attrs,"rel");
+      if(rel=="stylesheet")s.externalCss(attribute(attrs,"href"));
     }
-    s.current.append(text,static_cast<size_t>(len));
-    s.collectedBytes += static_cast<size_t>(len);
+    CssStyle style;
+    if(!scope.hidden) {
+      const size_t depth=s.scopes.size()-1;
+      style=s.stylesheet.resolveStyle(n,cls,id,s.ancestors.data(),
+          std::min(depth,s.ancestors.size()));
+      const auto inlineCss=attribute(attrs,"style");
+      if(!inlineCss.empty())style.applyOver(CssParser::parseInlineStyle(inlineCss));
+      if(depth<s.ancestors.size())
+        s.ancestors[depth]=CssParser::makeAncestor(n,cls,id);
+    }
+    scope.hidden=scope.hidden || skipTag(n) || n=="head" || n=="title" ||
+      n=="rp" || !attribute(attrs,"hidden").empty() ||
+      (style.hasDisplay() && style.display==CssDisplay::None);
+    // A stylesheet is captured in head even though head is not visible content.
+    scope.stylesheet=(n=="style");
+    if(n=="b" || n=="strong")scope.bold=true;
+    if(n=="i" || n=="em")scope.italic=true;
+    if(style.hasFontWeight())scope.bold=style.fontWeight==CssFontWeight::Bold;
+    if(style.hasFontStyle())scope.italic=style.fontStyle==CssFontStyle::Italic;
+    if(style.hasTextAlign())scope.align=style.textAlign;
+    if(style.hasDirection())scope.rtl=style.direction==CssTextDirection::Rtl;
+    const auto dir=attribute(attrs,"dir");
+    if(dir=="rtl")scope.rtl=true;
+    else if(dir=="ltr")scope.rtl=false;
+    if(!scope.hidden && isParagraph(n) && !s.collectingDepth) {
+      scope.paragraph=true;
+      s.collectingDepth=static_cast<int>(s.scopes.size());
+      s.current=Paragraph{};
+      s.current.align=scope.align;
+      s.current.rtl=scope.rtl;
+      s.current.heading=n.size()==2 && n[0]=='h';
+    }
+    s.scopes.push_back(scope);
+    if(n=="br" && s.collectingDepth && !scope.hidden)
+      s.current.runs.push_back({" ",EpdFontFamily::REGULAR});
+  }
+  static void XMLCALL data(void* user, const XML_Char* bytes, int len) {
+    auto& s=*static_cast<HtmlCollector*>(user);
+    if(len<=0 || s.limitHit)return;
+    const Scope& scope=s.scopes.back();
+    if(scope.stylesheet && s.cssText.size()+static_cast<size_t>(len)<=256*1024)
+      s.cssText.append(bytes,static_cast<size_t>(len));
+    if(!s.collectingDepth || scope.hidden)return;
+    if(s.collectedBytes+static_cast<size_t>(len)>MAX_TEXT_BYTES) {
+      s.limitHit=true;return;
+    }
+    auto style=EpdFontFamily::REGULAR;
+    if(scope.bold)style=static_cast<EpdFontFamily::Style>(style|EpdFontFamily::BOLD);
+    if(scope.italic)style=static_cast<EpdFontFamily::Style>(style|EpdFontFamily::ITALIC);
+    if(!s.current.runs.empty() && s.current.runs.back().style==style)
+      s.current.runs.back().text.append(bytes,static_cast<size_t>(len));
+    else s.current.runs.push_back({std::string(bytes,static_cast<size_t>(len)),style});
+    s.collectedBytes+=static_cast<size_t>(len);
   }
   static void XMLCALL end(void* user, const XML_Char* name) {
-    auto& s = *static_cast<HtmlCollector*>(user);
-    if (s.skipDepth == s.depth) s.skipDepth = 0;
-    if (!s.skipDepth && s.collectingDepth == s.depth && isParagraph(localName(name))) {
-      auto front = s.current.find_first_not_of(" \t\r\n");
-      if (front != std::string::npos && s.items.size() < MAX_BLOCKS) {
-        auto tail = s.current.find_last_not_of(" \t\r\n");
-        s.items.push_back({s.current.substr(front,tail-front+1),s.heading});
-      } else if (s.items.size() >= MAX_BLOCKS) s.limitHit = true;
-      s.current.clear();
-      s.collectingDepth = 0;
+    auto& s=*static_cast<HtmlCollector*>(user);
+    if(s.scopes.size()<=1)return;
+    const auto scope=s.scopes.back();
+    if(localName(name)=="style" && !s.cssText.empty()) {
+      (void)s.addCss(s.cssText);
+      s.cssText.clear();
     }
-    --s.depth;
+    if(scope.paragraph && static_cast<int>(s.scopes.size())-1==s.collectingDepth) {
+      bool nonempty=false;
+      for(const auto& run:s.current.runs)
+        if(run.text.find_first_not_of(" \t\r\n")!=std::string::npos)nonempty=true;
+      if(nonempty && s.items.size()<MAX_BLOCKS)
+        s.items.push_back(std::move(s.current));
+      else if(s.items.size()>=MAX_BLOCKS)s.limitHit=true;
+      s.collectingDepth=0;
+    }
+    s.scopes.pop_back();
   }
 };
 bool parseChapter(ZipFile& archive,const std::string& name,std::vector<Paragraph>& out) {
-  size_t size = 0;
-  if (!archive.getInflatedFileSize(name.c_str(),&size) || !size || size > MAX_XML_BYTES) {
+  size_t size=0;
+  if(!archive.getInflatedFileSize(name.c_str(),&size)||!size||size>MAX_XML_BYTES) {
     std::fprintf(stderr,"CrossPod: unsupported XHTML chapter length: %s (%zu)\n",name.c_str(),size);
     return false;
   }
   std::unique_ptr<uint8_t,decltype(&std::free)> xml(
       archive.readFileToMemory(name.c_str(),&size,true),&std::free);
-  if (!xml) return false;
+  if(!xml)return false;
   XML_Parser parser=XML_ParserCreateNS(nullptr,'|');
-  if (!parser) return false;
-  HtmlCollector s;
+  if(!parser)return false;
+  HtmlCollector s(archive,name);
   XML_SetUserData(parser,&s);
   XML_SetElementHandler(parser,HtmlCollector::start,HtmlCollector::end);
   XML_SetCharacterDataHandler(parser,HtmlCollector::data);
-  bool ok=XML_Parse(parser,reinterpret_cast<char*>(xml.get()),
-                   static_cast<int>(size),XML_TRUE)==XML_STATUS_OK;
-  if (!ok) std::fprintf(stderr,"CrossPod: XHTML parse error %s: %s\n",
+  const bool ok=XML_Parse(parser,reinterpret_cast<char*>(xml.get()),
+                static_cast<int>(size),XML_TRUE)==XML_STATUS_OK;
+  if(!ok)std::fprintf(stderr,"CrossPod: XHTML parse error %s: %s\n",
       name.c_str(),XML_ErrorString(XML_GetErrorCode(parser)));
   XML_ParserFree(parser);
-  if (!ok || s.limitHit || s.items.empty()) return false;
+  if(!ok||s.limitHit||s.items.empty())return false;
   out=std::move(s.items);
   return true;
 }
@@ -218,10 +315,31 @@ class Reader {
     size_t totalLines=0;
     bool pageLimitReached=false;
     for (const auto& p:paragraphs) {
-      ParsedText layout(false,false,BlockStyle(),0);
-      std::istringstream words(p.value);
-      std::string word;
-      while(words >> word) layout.addWord(word,EpdFontFamily::REGULAR);
+      BlockStyle block;
+      block.alignment=p.align;
+      block.textAlignDefined=true;
+      block.directionDefined=p.rtl;
+      block.isRtl=p.rtl;
+      ParsedText layout(false,false,block,0);
+      std::string pending;
+      EpdFontFamily::Style pendingStyle=EpdFontFamily::REGULAR;
+      // One word may cross inline span boundaries: preserve style runs without
+      // converting any UTF-8 bytes or collapsing the whole chapter to ASCII.
+      const auto flush=[&]() {
+        if(!pending.empty())layout.addWord(std::move(pending),pendingStyle);
+        pending.clear();
+      };
+      for(const auto& run:p.runs) {
+        for(const unsigned char ch:run.text) {
+          if(ch==' '||ch=='\t'||ch=='\r'||ch=='\n')flush();
+          else {
+            if(!pending.empty()&&run.style!=pendingStyle)flush();
+            pendingStyle=run.style;
+            pending.push_back(static_cast<char>(ch));
+          }
+        }
+      }
+      flush();
       if (layout.hadDroppedWords()) return false;
       layout.layoutAndExtractLines(renderer_,1,TEXT_WIDTH,
           [&](std::unique_ptr<TextBlock> line,uint32_t) {

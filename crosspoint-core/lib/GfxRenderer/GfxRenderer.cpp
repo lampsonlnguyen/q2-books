@@ -25,14 +25,7 @@
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"
 
-#if defined(CROSSPOD_LINUX)
-// Monotonic elapsed time used by upstream CrossPoint rendering diagnostics.
-static unsigned long millis() {
-  using namespace std::chrono;
-  return static_cast<unsigned long>(
-      duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
-}
-#endif
+// POSIX Arduino.h supplies millis() on Q2 Linux; avoid duplicate definitions.
 namespace {
 // Synthesized small caps: lowercase letters draw as capitals at roughly x-height.
 constexpr int SMALL_CAPS_SCALE_NUM = 3;

@@ -265,6 +265,16 @@ add_library(crosspoint_renderer_objects OBJECT
     lib/EpdFont/ComplexShaper.cpp
     lib/EpdFont/SdCardFont.cpp
     lib/Utf8/IndicReorder.cpp
+    lib/OtShaper/OtShaper.cpp
+    lib/OtShaper/OtIndic.cpp
+    lib/OtShaper/OtNormalize.cpp
+    lib/OtShaper/OtUse.cpp
+    lib/OtShaper/OtFace.cpp
+    lib/OtShaper/OtLayout.cpp
+    lib/OtShaper/OtPlan.cpp
+    lib/OtShaper/OtBuffer.cpp
+    lib/OtShaper/OtGpos.cpp
+    lib/OtShaper/OtGsub.cpp
     platform/posix/FontAlloc.c
 )
 target_compile_definitions(crosspoint_renderer_objects PRIVATE CROSSPOD_LINUX=1)
@@ -272,6 +282,7 @@ set_target_properties(crosspoint_renderer_objects PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_renderer_objects PRIVATE
     lib/EpdFont/scripts
+    lib/OtShaper
     lib
     lib/Epub
     lib/Epub/css

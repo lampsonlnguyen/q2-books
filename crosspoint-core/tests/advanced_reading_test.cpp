@@ -45,12 +45,14 @@ int main() {
   assert(crosspod::lookupDefinition("missing").empty());
   const std::string xhtml=R"xml(<?xml version="1.0"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><body>
-<p>Outside text</p>
-<aside id="note-1"><p>Note with <em>nested</em> content &amp; entities.</p></aside>
+<p id="plain-target">Outside text</p>
+<aside epub:type="footnote" xmlns:epub="http://www.idpf.org/2007/ops"
+ id="note-1"><p>Note with <em>nested</em> content &amp; entities.</p></aside>
 </body></html>)xml";
   assert(crosspod::extractFootnoteText(xhtml,"note-1")==
          "Note with nested content & entities.");
   assert(crosspod::extractFootnoteText(xhtml,"missing").empty());
+  assert(crosspod::extractFootnoteText(xhtml,"plain-target").empty());
   assert(crosspod::extractFootnoteText(
          "<html><aside id=\"note-1\">broken","note-1").empty());
   struct stat st{};

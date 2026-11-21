@@ -801,7 +801,7 @@ class Reader {
   size_t chapterCount() const {return static_cast<size_t>(metadata_.getSpineCount());}
   int currentChapter() const {return currentSpine_;}
   size_t currentPage() const {return currentPage_;}
-  std::string chapterName(size_t index) const {
+  std::string chapterName(size_t index) {
     if(index>=chapterCount())return {};
     const auto entry=metadata_.getSpineEntry(static_cast<int>(index));
     std::string title=entry.href;

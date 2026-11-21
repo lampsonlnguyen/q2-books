@@ -196,7 +196,7 @@ from pathlib import Path
 import sys
 home,search=(Path(p).read_bytes() for p in sys.argv[1:])
 assert len(home)==len(search)==120015
-assert home[:15]==search[:15]==b"P5\\n375 320\\n255\\n"
+assert home[:15]==search[:15]==b"P5\n375 320\n255\n"
 assert sum(a!=b for a,b in zip(home[15:],search[15:]))>500
 print("Q2 searchable library screen: PASS")
 PY

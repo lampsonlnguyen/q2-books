@@ -2015,6 +2015,7 @@ void usage() {
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
+    "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
     "  crosspod-reader (no args)                    (Q2 card app)\n"
     "  crosspod-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
     "  crosspod-reader <book.epub>                  (Q2 Pod Books handoff)\n"
@@ -2071,6 +2072,14 @@ int main(int argc,char** argv) {
     const auto books=scanCardBooks(argv[2]);
     CardShelf shelf(books);
     return shelf.open() && shelf.savePgm(argv[3])?0:4;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--card-search-preview")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    CardShelf shelf(books);
+    if(!shelf.open())return 4;
+    shelf.enterBrowser();
+    shelf.enterSearch();
+    return shelf.savePgm(argv[3])?0:4;
   }
   bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false;
   std::string path,output;

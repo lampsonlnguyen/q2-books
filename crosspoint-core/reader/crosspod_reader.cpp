@@ -2071,7 +2071,7 @@ int main(int argc,char** argv) {
         if(reader.move(1)) {
           reader.render();
           if(!reader.pageHasVisibleInk()) {
-            std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\\n",
+            std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\n",
                          forward+1);
             return 9;
           }
@@ -2091,7 +2091,7 @@ int main(int argc,char** argv) {
         ++backward;
       }
       if(backward!=forward)return 8;
-      std::printf("CrossPod rendered %zu pages forward and %zu backward without blank text\\n",
+      std::printf("CrossPod rendered %zu pages forward and %zu backward without blank text\n",
                   forward,backward);
       return forward>=10?0:8;
     }

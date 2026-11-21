@@ -8,7 +8,7 @@ result = subprocess.run([reader, "--render-images", epub, output],
                         capture_output=True, text=True, timeout=60, check=True)
 assert "CrossPod rendered images: 2" in result.stdout, result.stdout
 data = Path(output).read_bytes()
-assert data.startswith(b"P5\\n375 320\\n255\\n"), data[:32]
+assert data.startswith(b"P5\n375 320\n255\n"), data[:32]
 assert len(data) == 120015, len(data)
 assert data[15:].count(0) > 30
 print("Active EPUB reader PNG and JPEG decode: PASS")

@@ -48,7 +48,7 @@ jobs:
           cd dist
           sha256sum -c crosspod-q2-reader-alpha.zip.sha256
           unzip -t crosspod-q2-reader-alpha.zip
-          unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx '.crosspod/crosspod'
+          unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx '.crosspod/crosspod-engine'
           unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx '.crosspod/q2-crosspod'
           mv crosspod-q2-reader-alpha.zip crosspod-q2-reader-v0.3.0-beta.zip
           sha256sum crosspod-q2-reader-v0.3.0-beta.zip > crosspod-q2-reader-v0.3.0-beta.zip.sha256

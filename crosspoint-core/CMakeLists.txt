@@ -573,7 +573,7 @@ target_include_directories(crosspoint_section_objects PRIVATE
 # ChapterHtmlSlimParser, Section and Page. It must pass before switching the
 # Q2 user-facing reader to the original section engine.
 add_executable(crosspoint_original_engine_link_tests
-    tests/original_chapter_parser_interface_test.cpp
+    tests/original_section_runtime_test.cpp
     lib/Epub/blocks/ImageBlock.cpp
     platform/posix/EpubRuntime.cpp
     platform/posix/ImageDecoderFactory.cpp
@@ -595,5 +595,6 @@ target_link_libraries(crosspoint_original_engine_link_tests PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
-add_test(NAME crosspoint_original_engine_real_link
-    COMMAND crosspoint_original_engine_link_tests)
+add_dependencies(crosspoint_original_engine_link_tests epub_fixture illustrated_epub_fixture)
+add_test(NAME crosspoint_original_engine_real_layout
+    COMMAND crosspoint_original_engine_link_tests "${EPUB_FIXTURE}")

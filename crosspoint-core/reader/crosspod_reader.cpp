@@ -1102,10 +1102,11 @@ class Reader {
     selectionFocus_=picked;
     return true;
   }
-  bool stepSelection(int direction) {
+  bool stepSelection(int direction,bool extend=false) {
     if(selectedWords_.empty() && !beginTextSelection())return false;
     selectionFocus_=std::clamp(selectionFocus_+direction,0,
                               static_cast<int>(selectedWords_.size())-1);
+    if(!extend)selectionAnchor_=selectionFocus_;
     return true;
   }
   void discardSelection() {
@@ -1175,11 +1176,13 @@ class Reader {
                               std::max(8,word.height-7));
     }
   }
-  void showSelectionPreview() {
+  void showSelectionPreview(bool extending=false) {
     render();
     renderer_.fillRect(10,254,355,47,true);
     renderer_.fillRect(12,256,351,43,false);
-    drawMenuText(20,265,"Wheel: word  Center: actions");
+    drawMenuText(20,265,extending?
+        "Wheel: extend  Center: actions":
+        "Wheel: word   Center: start");
     display_.displayBuffer();
   }
   void showTextSelectionMenu(int option) {
@@ -2140,6 +2143,7 @@ int runCardApp(const std::string& bookDir) {
   bool navigationMenu=false;
   bool linkMenu=false;
   bool selectionChoosing=false;
+  bool selectionExtending=false;
   bool selectionActions=false;
   bool dictionaryOverlay=false;
   bool footnoteOverlay=false;
@@ -2244,18 +2248,26 @@ int runCardApp(const std::string& bookDir) {
       }
       if(selectionChoosing) {
         if(action==crosspod::LogicalAction::Back) {
-          selectionChoosing=false;reader->discardSelection();reader->present();
+          selectionChoosing=false;selectionExtending=false;
+          reader->discardSelection();reader->present();
         } else if(action==crosspod::LogicalAction::Next ||
                   action==crosspod::LogicalAction::Previous) {
           (void)reader->stepSelection(
-              action==crosspod::LogicalAction::Next?1:-1);
-          reader->showSelectionPreview();
+              action==crosspod::LogicalAction::Next?1:-1,
+              selectionExtending);
+          reader->showSelectionPreview(selectionExtending);
         } else if(action==crosspod::LogicalAction::Confirm) {
-          selectionChoosing=false;selectionActions=true;selectionAction=0;
-          reader->showTextSelectionMenu(0);
+          if(!selectionExtending) {
+            selectionExtending=true;
+            reader->showSelectionPreview(true);
+          } else {
+            selectionChoosing=false;selectionExtending=false;
+            selectionActions=true;selectionAction=0;
+            reader->showTextSelectionMenu(0);
+          }
         } else if(event.kind==crosspod::PhysicalKind::TouchUp) {
-          if(reader->selectTouchWord(event.x,event.y,true))
-            reader->showSelectionPreview();
+          if(reader->selectTouchWord(event.x,event.y,selectionExtending))
+            reader->showSelectionPreview(selectionExtending);
         }
         continue;
       }
@@ -2345,7 +2357,7 @@ int runCardApp(const std::string& bookDir) {
             navigationSelection=0;
           } else if(typeSelection==13) {
             if(reader->beginTextSelection()) {
-              selectionChoosing=true;
+              selectionChoosing=true;selectionExtending=false;
               typeMenu=false;
               reader->showSelectionPreview();
               continue;

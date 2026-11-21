@@ -31,6 +31,7 @@
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "ShelfIndexer.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -1660,6 +1661,21 @@ class CardShelf {
            (0x80u>>(px&7)))
           renderer_.drawPixel(x+px,y+py,true);
   }
+  void onIndexedBook(const std::string& path) {
+    // A new cache file may have appeared since this shelf object was made.
+    // Refresh only that book's lazy metadata (and current cover, if any).
+    for(size_t i=0;i<books_.size();++i) {
+      if(books_[i].path!=path)continue;
+      detailsChecked_[i]=false;
+      cachedDetails_[i]={};
+      if(i==current_) {
+        currentCoverChecked_=false;
+        currentCoverAvailable_=false;
+      }
+      if(!searchQuery_.empty())refreshVisible();
+      break;
+    }
+  }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
@@ -1827,11 +1843,27 @@ int runCardApp(const std::string& bookDir) {
   int navigationSelection=0;
   int typeSelection=0;
   auto nextBuildTick=std::chrono::steady_clock::now();
+  size_t nextShelfIndex=0;
+  auto nextShelfIndexTick=std::chrono::steady_clock::now()+
+      std::chrono::milliseconds(800);
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
       if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
+      // Work only while idle on the bookshelf, not when reading or during
+      // input handling. One bounded OPF/thumbnail attempt per idle tick;
+      // never parse chapter pages or write an index on every wheel turn.
+      if(shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+        const std::string& book=books[nextShelfIndex++].path;
+        const auto result=crosspod::indexShelfBook(book);
+        if(result.metadata || result.cover) {
+          shelf->onIndexedBook(book);
+          shelf->present();
+        }
+        nextShelfIndexTick=std::chrono::steady_clock::now()+
+            std::chrono::milliseconds(800);
+      }
       if(reader && !typeMenu && !navigationMenu &&
          reader->needsPagePrefetch() && now>=nextBuildTick) {
         // Layout a bounded lookahead only when needed. Stop unnecessary
@@ -1845,6 +1877,8 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     const auto action=controls.translate(event).action;
+    nextShelfIndexTick=std::chrono::steady_clock::now()+
+        std::chrono::milliseconds(800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {

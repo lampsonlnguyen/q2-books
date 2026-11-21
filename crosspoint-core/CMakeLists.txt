@@ -412,7 +412,7 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspod_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

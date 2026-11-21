@@ -31,6 +31,8 @@
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "ShelfLibrary.hpp"
+#include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -1473,63 +1475,8 @@ class Reader {
 // Q2 Pod card-app launcher: the card executable receives no book-path argv.
 // The Books shelf is intentionally independent of the stock reader and only
 // discovers regular, non-hidden EPUB files from the SD card (one subdir deep).
-struct ShelfEntry {
-  std::string path;
-  std::string label;
-  std::time_t modified=0;
-};
-std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
-  std::vector<ShelfEntry> books;
-  constexpr size_t MAX_CARD_BOOKS = 512;
-  const auto visit = [&](const std::string& dir, bool nested) {
-    // Iterative one-level walk: avoid recursion through attacker-controlled
-    // directory trees on removable media.
-    DIR* d = opendir(dir.c_str());
-    if (!d) return std::vector<std::string>{};
-    std::vector<std::string> subfolders;
-    for (dirent* entry; (entry=readdir(d)) != nullptr;) {
-      if (entry->d_name[0] == '.') continue;
-      const std::string name(entry->d_name);
-      if (name.size() > 240) continue;
-      const std::string path=dir+"/"+name;
-      if (path.size()>1000) continue;
-      struct stat st{};
-      if (lstat(path.c_str(),&st) != 0) continue;
-      if (S_ISDIR(st.st_mode)) {
-        if (!nested && subfolders.size()<128) subfolders.push_back(path);
-        continue;
-      }
-      if (!S_ISREG(st.st_mode) || books.size()>=MAX_CARD_BOOKS) continue;
-      if (name.size()<6)continue;
-      const std::string_view ending(name.data()+name.size()-5,5);
-      if (!(ending==".epub"||ending==".EPUB"||ending==".Epub")) continue;
-      books.push_back({path,name.substr(0,name.size()-5),st.st_mtime});
-    }
-    closedir(d);
-    return subfolders;
-  };
-  const auto folders=visit(root,false);
-  for(const auto& dir:folders) {
-    if(books.size()>=MAX_CARD_BOOKS)break;
-    (void)visit(dir,true);
-  }
-  const auto less=[](const ShelfEntry& a,const ShelfEntry& b){
-    // ASCII case-fold only for stable sort; retain Unicode bytes intact.
-    const std::string& x=a.label;
-    const std::string& y=b.label;
-    const size_t n=std::min(x.size(),y.size());
-    for(size_t i=0;i<n;++i) {
-      const unsigned char cx=static_cast<unsigned char>(x[i]);
-      const unsigned char cy=static_cast<unsigned char>(y[i]);
-      const auto lx=static_cast<unsigned char>(std::tolower(cx));
-      const auto ly=static_cast<unsigned char>(std::tolower(cy));
-      if(lx!=ly)return lx<ly;
-    }
-    return x.size()<y.size() || (x.size()==y.size() && a.path<b.path);
-  };
-  std::sort(books.begin(),books.end(),less);
-  return books;
-}
+using crosspod::ShelfEntry;
+using crosspod::scanCardBooks;
 std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
   return crosspod::clippedUiLabel(label,maxCodepoints);
 }
@@ -1542,8 +1489,12 @@ class CardShelf {
   crosspod::ScriptFontFallback scriptFonts_;
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
-  size_t selected_ = 0;
-  size_t current_ = 0;
+  size_t selected_ = 0;  // index within filtered browsing rows
+  size_t current_ = 0;   // index within the unfiltered library
+  std::vector<size_t> visible_;
+  std::string searchQuery_;
+  bool searchEditing_=false;
+  size_t searchKey_=0;
   crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
   std::vector<crosspod::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
@@ -1564,6 +1515,7 @@ class CardShelf {
     sortMode_=sortMode;
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
+    refreshVisible();
     if(!books_.empty()) {
       selected_=std::min(selection,books_.size()-1);
       current_=std::min(current,books_.size()-1);
@@ -1581,30 +1533,89 @@ class CardShelf {
     renderer_.setFontCacheManager(&fontCache_);
     return true;
   }
-  size_t selected() const {return browsing_?selected_:current_;}
+  size_t selected() const {
+    return browsing_ && !visible_.empty()?visible_[selected_]:current_;
+  }
   bool empty() const {return books_.empty();}
+  bool hasMatches() const {return !visible_.empty();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
-  void enterBrowser() {browsing_=true;notice_.clear();}
-  void goHome() {browsing_=false;homeSelection_=0;notice_.clear();}
+  bool searching() const {return browsing_ && searchEditing_;}
+  void enterBrowser() {browsing_=true;searchEditing_=false;notice_.clear();}
+  void goHome() {
+    browsing_=false;searchEditing_=false;homeSelection_=0;
+    searchQuery_.clear();refreshVisible();notice_.clear();
+  }
+  void enterSearch() {
+    browsing_=true;searchEditing_=true;searchKey_=0;
+    notice_.clear();
+  }
+  void endSearch() {searchEditing_=false;notice_.clear();}
+  static constexpr size_t SEARCH_KEY_COUNT=40;
+  static constexpr const char* SEARCH_LETTERS=
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  bool applySearchChoice() {
+    if(searchKey_<36) {
+      if(searchQuery_.size()<24)searchQuery_.push_back(SEARCH_LETTERS[searchKey_]);
+    } else if(searchKey_==36) {
+      if(searchQuery_.size()<24)searchQuery_+=' ';
+    } else if(searchKey_==37) {
+      if(!searchQuery_.empty())searchQuery_.pop_back();
+    } else if(searchKey_==38) {
+      endSearch();return true;
+    } else {
+      searchQuery_.clear();
+    }
+    refreshVisible();
+    selected_=0;
+    return true;
+  }
+  void refreshVisible() {
+    visible_.clear();
+    for(size_t i=0;i<books_.size();++i) {
+      if(searchQuery_.empty()) {visible_.push_back(i);continue;}
+      const auto& info=details(i);
+      if(crosspod::shelfSearchMatches(
+          searchQuery_,books_[i].label,info.title,info.author))
+        visible_.push_back(i);
+    }
+    if(visible_.empty() || selected_>=visible_.size())selected_=0;
+  }
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
+    if(searchEditing_) {
+      const auto before=searchKey_;
+      searchKey_=static_cast<size_t>((
+        static_cast<int>(searchKey_)+direction+
+        static_cast<int>(SEARCH_KEY_COUNT))%static_cast<int>(SEARCH_KEY_COUNT));
+      return searchKey_!=before;
+    }
     if(!browsing_) {
       const int next=std::clamp(homeSelection_+direction,0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
     }
-    if(books_.empty())return false;
+    if(visible_.empty())return false;
     const auto before=selected_;
-    if(direction>0 && selected_+1<books_.size())++selected_;
+    if(direction>0 && selected_+1<visible_.size())++selected_;
     else if(direction<0 && selected_>0)--selected_;
     return selected_!=before;
   }
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
+    if(searchEditing_) {
+      if(y>=269){endSearch();return true;}
+      if(y<88||y>=250||x<12||x>=362)return false;
+      const size_t column=static_cast<size_t>((x-12)/50);
+      const size_t row=static_cast<size_t>((y-88)/27);
+      const size_t option=row*7+column;
+      if(option>=SEARCH_KEY_COUNT)return false;
+      searchKey_=option;
+      return applySearchChoice();
+    }
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
@@ -1612,10 +1623,11 @@ class CardShelf {
       else return false;
       return true;
     }
-    if(books_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+    if(y>=39 && y<74) {enterSearch();return true;}
+    if(visible_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
     const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
-    if(index>=books_.size())return false;
+    if(index>=visible_.size())return false;
     selected_=index;
     return true;
   }
@@ -1711,20 +1723,47 @@ class CardShelf {
             pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
                 static_cast<uint8_t>(0x80u>>(x&7));
       }
+    } else if(searchEditing_) {
+      drawCompactLabel(16,59,"Search library",190);
+      const std::string query="Find: "+searchQuery_;
+      drawCompactLabel(16,77,clippedLabel(query,34).c_str(),175);
+      for(size_t key=0;key<SEARCH_KEY_COUNT;++key) {
+        const int column=static_cast<int>(key%7);
+        const int row=static_cast<int>(key/7);
+        const int x=12+column*50, y=88+row*27;
+        const bool active=key==searchKey_;
+        if(active)renderer_.fillRect(x,y,48,25,true);
+        else renderer_.drawLine(x,y+24,x+47,y+24,true);
+        char single[2]={0,0};
+        const char* label=nullptr;
+        if(key<36) {single[0]=SEARCH_LETTERS[key];label=single;}
+        else if(key==36)label="SP";
+        else if(key==37)label="DEL";
+        else if(key==38)label="DONE";
+        else label="CLR";
+        renderer_.drawText(1,x+3,y+2,label,!active);
+      }
+      char count[72];
+      std::snprintf(count,sizeof(count),"%zu matching / %zu books",
+                    visible_.size(),books_.size());
+      drawCompactLabel(16,262,count,165);
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());
+      std::snprintf(count,sizeof(count),"Books: %zu/%zu",visible_.size(),books_.size());
       drawCompactLabel(16,61,count);
+      drawCompactLabel(216,61,"Tap: search",140);
       renderer_.drawLine(15,72,359,72,true);
-      if(books_.empty()) {
-        renderer_.drawText(1,16,102,"No EPUB books found");
-        renderer_.drawText(1,16,144,"Copy EPUBs to /Books");
+      if(visible_.empty()) {
+        renderer_.drawText(1,16,102,books_.empty()?"No EPUB books found":"No matching books");
+        renderer_.drawText(1,16,144,
+            books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
       } else {
         const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
-        for(size_t row=0;row<VISIBLE_ROWS && start+row<books_.size();++row) {
-          const size_t index=start+row;
+        for(size_t row=0;row<VISIBLE_ROWS && start+row<visible_.size();++row) {
+          const size_t filtered=start+row;
+          const size_t index=visible_[filtered];
           const int y=TOP_Y+static_cast<int>(row)*ROW_H;
-          const bool active=index==selected_;
+          const bool active=filtered==selected_;
           if(active)renderer_.fillRect(12,y,350,36,true);
           else renderer_.drawLine(15,y+36,359,y+36,true);
           const auto& info=details(index);
@@ -1742,7 +1781,8 @@ class CardShelf {
     renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
-      :browsing_?"OK: open   Back: home":"OK: open   Back: exit";
+      :searchEditing_?"Wheel: letters   OK: add   Back: results":
+        browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     renderer_.drawText(1,22,280,footer.c_str(),false);
   }
   void present() {paint();display_.displayBuffer();}
@@ -1900,6 +1940,20 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
+    if(shelf->searching()) {
+      if(action==crosspod::LogicalAction::Back)
+        shelf->endSearch();
+      else if(action==crosspod::LogicalAction::Previous)
+        (void)shelf->change(-1);
+      else if(action==crosspod::LogicalAction::Next)
+        (void)shelf->change(1);
+      else if(action==crosspod::LogicalAction::Confirm)
+        (void)shelf->applySearchChoice();
+      else if(event.kind==crosspod::PhysicalKind::TouchUp)
+        (void)shelf->tap(event.x,event.y);
+      shelf->present();
+      continue;
+    }
     if(action==crosspod::LogicalAction::Back) {
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
@@ -1909,6 +1963,7 @@ int runCardApp(const std::string& bookDir) {
     bool activate=action==crosspod::LogicalAction::Confirm;
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
+    if(shelf->searching()) {shelf->present();continue;}
     if(shelf->sortChosen()) {
       sortMode=sortMode==crosspod::ShelfSortMode::Title?
           crosspod::ShelfSortMode::Recent:
@@ -1927,7 +1982,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
-    if(shelf->empty())continue;
+    if(!shelf->hasMatches())continue;
     selection=shelf->selected();
     const std::string chosen=shelf->bookPath();
     shelf->setNotice("Opening EPUB...");
@@ -1960,6 +2015,7 @@ void usage() {
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
+    "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
     "  crosspod-reader (no args)                    (Q2 card app)\n"
     "  crosspod-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
     "  crosspod-reader <book.epub>                  (Q2 Pod Books handoff)\n"
@@ -2016,6 +2072,14 @@ int main(int argc,char** argv) {
     const auto books=scanCardBooks(argv[2]);
     CardShelf shelf(books);
     return shelf.open() && shelf.savePgm(argv[3])?0:4;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--card-search-preview")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    CardShelf shelf(books);
+    if(!shelf.open())return 4;
+    shelf.enterBrowser();
+    shelf.enterSearch();
+    return shelf.savePgm(argv[3])?0:4;
   }
   bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false;
   std::string path,output;

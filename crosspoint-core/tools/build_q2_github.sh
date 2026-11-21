@@ -181,6 +181,25 @@ mkdir -p "$work/books"
 cp "$work/reader/vietnamese-prose.epub" "$work/books/"
 timeout 30s qemu-mipsel -L "$root" "$elf" --card-preview "$work/books" "$work/menu.pgm"
 test -s "$work/menu.pgm"
+# The Q2 search screen must render under the real MIPS ABI, and the
+# recursive scanner must find books below the old one-folder limit.
+mkdir -p "$work/books/Deep/Level/Three"
+cp "$work/reader/vietnamese-prose.epub" \
+  "$work/books/Deep/Level/Three/Nested.EPUB"
+timeout 30s qemu-mipsel -L "$root" "$elf" --list-books "$work/books" \
+  | tee "$work/library-discovery.log"
+grep -q '/Deep/Level/Three/Nested.EPUB' "$work/library-discovery.log"
+timeout 30s qemu-mipsel -L "$root" "$elf" \
+  --card-search-preview "$work/books" "$work/search.pgm"
+python3 - "$work/menu.pgm" "$work/search.pgm" <<'PY'
+from pathlib import Path
+import sys
+home,search=(Path(p).read_bytes() for p in sys.argv[1:])
+assert len(home)==len(search)==120015
+assert home[:15]==search[:15]==b"P5\n375 320\n255\n"
+assert sum(a!=b for a,b in zip(home[15:],search[15:]))>500
+print("Q2 searchable library screen: PASS")
+PY
 card="$base/dist/card"
 mkdir -p "$card/.crosspod" "$card/Books"
 cp "$elf" "$card/.crosspod/crosspod-engine"

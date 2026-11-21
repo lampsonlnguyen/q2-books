@@ -1362,7 +1362,7 @@ class Reader {
         // successful blank page. Preserve the previous framebuffer and retry
         // on the next draw instead of permanently caching an empty raster.
         std::fprintf(stderr,
-            "CrossPod: page %zu in spine %d unavailable; refusing blank cache\\n",
+            "CrossPod: page %zu in spine %d unavailable; refusing blank cache\n",
             currentPage_,currentSpine_);
         return;
       }
@@ -1374,7 +1374,7 @@ class Reader {
       return;
     }
     if(currentPage_>=pages_.size()) {
-      std::fputs("CrossPod: legacy page unavailable; preserving current framebuffer\\n",stderr);
+      std::fputs("CrossPod: legacy page unavailable; preserving current framebuffer\n",stderr);
       return;
     }
     renderer_.clearScreen(0xff);

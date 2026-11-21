@@ -7,6 +7,7 @@ on:
       - "crosspoint-core/tools/build_q2_github.sh"
       - ".github/workflows/q2-reader-card.yml"
       - "crosspoint-core/reader/**"
+      - "crosspoint-core/tests/**"
       - "crosspoint-core/platform/q2/**"
       - "crosspoint-core/CMakeLists.txt"
 permissions:

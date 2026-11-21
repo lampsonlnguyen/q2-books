@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, v0.6.0-links-footnotes]
+    branches: [main, v0.6.0-selection-highlights-dictionary]
   pull_request:
     branches: [main]
   workflow_dispatch:

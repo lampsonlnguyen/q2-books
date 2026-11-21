@@ -498,6 +498,13 @@ add_test(NAME crosspod_reader_relative_css_and_inline_image
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/relative_epub_resource_test.py"
       "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
 
+# Streaming parser regression: 3 MiB well-formed XHTML, malformed markup,
+# and the 4 MiB safety limit. The active reader must process XML incrementally.
+add_test(NAME crosspod_reader_bounded_xhtml_streaming
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/xhtml_streaming_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+
 # End-to-end illustrated EPUB: PNG extracted, decoded, placed and rasterized
 # into a 375x320 monochrome CrossPod page.
 add_dependencies(crosspod-reader illustrated_epub_fixture)

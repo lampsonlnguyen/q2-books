@@ -1419,6 +1419,16 @@ class Reader {
     if(std::fclose(file)!=0)ok=false;
     return ok;
   }
+  bool pageHasVisibleInk() const {
+    const uint8_t* pixels=display_.getFrameBuffer();
+    if(!pixels)return false;
+    // Ignore progress and UI footer: only count actual rendered book area.
+    for(int y=TOP;y<BOTTOM;++y)
+      for(int xByte=2;xByte<44;++xByte)
+        if(pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+xByte]!=0xff)
+          return true;
+    return false;
+  }
   size_t imageCount() {
     if(upstreamSection_) {
       size_t result=0;
@@ -1987,12 +1997,15 @@ int main(int argc,char** argv) {
     CardShelf shelf(books);
     return shelf.open() && shelf.savePgm(argv[3])?0:4;
   }
-  bool dry=false,render=false,walk=false,benchmark=false;
+  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
   } else if(argc==3 && std::strcmp(argv[1],"--walk")==0) {
     dry=true;walk=true;path=argv[2];
+  }
+  else if(argc==3 && std::strcmp(argv[1],"--render-walk")==0) {
+    dry=true;renderWalk=true;path=argv[2];
   } else if(argc==3 && std::strcmp(argv[1],"--bench")==0) {
     dry=true;benchmark=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
@@ -2047,6 +2060,40 @@ int main(int argc,char** argv) {
         advanced,static_cast<long long>(turnMs),
         usage.ru_maxrss,usage.ru_inblock,usage.ru_oublock);
       return 0;
+    }
+    if(renderWalk) {
+      // Exercise the actual font/glyph/page rasterizer, not just page indexes.
+      // This catches the blank-reader regression after prolonged wheel turns.
+      size_t forward=0,backward=0;
+      reader.render();
+      if(!reader.pageHasVisibleInk())return 9;
+      while(forward<2048) {
+        if(reader.move(1)) {
+          reader.render();
+          if(!reader.pageHasVisibleInk()) {
+            std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\\n",
+                         forward+1);
+            return 9;
+          }
+          ++forward;
+          continue;
+        }
+        if(reader.isBuilding()) {
+          (void)reader.buildNextPages(4);
+          continue;
+        }
+        break;
+      }
+      if(forward>=2048)return 7;
+      while(backward<2048 && reader.move(-1)) {
+        reader.render();
+        if(!reader.pageHasVisibleInk())return 9;
+        ++backward;
+      }
+      if(backward!=forward)return 8;
+      std::printf("CrossPod rendered %zu pages forward and %zu backward without blank text\\n",
+                  forward,backward);
+      return forward>=10?0:8;
     }
     if(walk) {
       // Exercise real page/spine transitions and the backward boundary.

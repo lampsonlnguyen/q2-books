@@ -2048,6 +2048,7 @@ void usage() {
     "  crosspod-reader --walk <book.epub>           (test pagination)\n"
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
+    "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
     "  crosspod-reader (no args)                    (Q2 card app)\n"
@@ -2068,7 +2069,7 @@ int main(int argc,char** argv) {
     crosspod::ShelfCover cover;
     const bool haveMetadata=crosspod::loadShelfDetails(argv[2],details);
     const bool haveCover=crosspod::loadShelfCover(argv[2],cover);
-    std::printf("CrossPod shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\\n",
+    std::printf("CrossPod shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\n",
        haveMetadata,haveCover,result.updated,
        haveMetadata?details.title.c_str():"",
        haveMetadata?details.author.c_str():"");

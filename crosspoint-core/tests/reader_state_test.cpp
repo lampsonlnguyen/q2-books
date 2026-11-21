@@ -40,7 +40,7 @@ int main() {
   assert(marks[0].spine==0&&marks[0].page==3&&marks[0].textOffset==100);
   assert(marks[1].spine==2&&marks[1].page==5&&marks[1].textOffset==890);
   for(int i=3;i<=32;++i)
-    assert(crosspod::addBookmark(book,{i,i,static_cast<uint32_t>(i*200)}));
+    assert(crosspod::addBookmark(book,{i,static_cast<size_t>(i),static_cast<uint32_t>(i*200)}));
   assert(crosspod::loadBookmarks(book).size()==32);
   assert(!crosspod::addBookmark(book,{33,33,3333})); // fixed limit
 

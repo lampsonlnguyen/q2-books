@@ -13,4 +13,8 @@ assert caption is not None, output
 assert "align=2" in caption, caption  # original CrossPoint centered CSS
 assert "italic=1" in caption, caption
 assert "After the image." in output
+assert "1. First item" in output, output
+assert "2. Second item" in output, output
+assert "Before break" in output and "After break" in output, output
+assert not any("Before breakAfter break" in line for line in output.splitlines()), output
 print("Sibling-directory CSS applied in active XHTML reader: PASS")

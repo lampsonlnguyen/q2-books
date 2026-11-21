@@ -2560,6 +2560,8 @@ int main(int argc,char** argv) {
     for(const auto& link:reader.pageLinks()) {
       if(!reader.isFootnoteLink(link))continue;
       const auto preview=reader.footnotePreview(link);
+      std::fprintf(stderr,"CrossPod footnote debug: href='%s' preview='%s'\n",
+                   link.c_str(),preview.c_str());
       if(preview.find("This footnote is a short note")==std::string::npos)
         return 8;
       reader.showFootnotePopup(link);

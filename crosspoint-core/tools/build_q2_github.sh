@@ -65,7 +65,13 @@ cmake -S "$work/libjpeg" -B "$work/jpeg-build" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_INSTALL_LIBDIR=lib -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
   -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF -DWITH_JPEG8=ON
 cmake --build "$work/jpeg-build" --target jpeg-static --parallel 2
-cmake --install "$work/jpeg-build"
+# Only jpeg-static was built. Installing the entire CMake project expects
+# unbuilt CLI tools such as cjpeg-static; copy precisely the verified library
+# and its API headers, as with our zlibstatic build.
+mkdir -p "$prefix/lib" "$prefix/include"
+cp "$work/jpeg-build/libjpeg.a" "$prefix/lib/libjpeg.a"
+cp "$work/libjpeg/jpeglib.h" "$work/libjpeg/jmorecfg.h" "$work/libjpeg/jerror.h" "$prefix/include/"
+cp "$work/jpeg-build/jconfig.h" "$prefix/include/jconfig.h"
 test -s "$prefix/lib/libjpeg.a"
 printf '#include <vector>\nint main(){std::vector<int> x(2);return x[0];}\n' > "$work/probe.cpp"
 clang++ $flags "$work/probe.cpp" $link -o "$work/probe"

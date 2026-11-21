@@ -1722,20 +1722,47 @@ class CardShelf {
             pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
                 static_cast<uint8_t>(0x80u>>(x&7));
       }
+    } else if(searchEditing_) {
+      drawCompactLabel(16,59,"Search library",190);
+      const std::string query="Find: "+searchQuery_;
+      drawCompactLabel(16,77,clippedLabel(query,34).c_str(),175);
+      for(size_t key=0;key<SEARCH_KEY_COUNT;++key) {
+        const int column=static_cast<int>(key%7);
+        const int row=static_cast<int>(key/7);
+        const int x=12+column*50, y=88+row*27;
+        const bool active=key==searchKey_;
+        if(active)renderer_.fillRect(x,y,48,25,true);
+        else renderer_.drawLine(x,y+24,x+47,y+24,true);
+        char single[2]={0,0};
+        const char* label=nullptr;
+        if(key<36) {single[0]=SEARCH_LETTERS[key];label=single;}
+        else if(key==36)label="SP";
+        else if(key==37)label="DEL";
+        else if(key==38)label="DONE";
+        else label="CLR";
+        renderer_.drawText(1,x+3,y+2,label,!active);
+      }
+      char count[72];
+      std::snprintf(count,sizeof(count),"%zu matching / %zu books",
+                    visible_.size(),books_.size());
+      drawCompactLabel(16,262,count,165);
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());
+      std::snprintf(count,sizeof(count),"Books: %zu/%zu",visible_.size(),books_.size());
       drawCompactLabel(16,61,count);
+      drawCompactLabel(216,61,"Tap: search",140);
       renderer_.drawLine(15,72,359,72,true);
-      if(books_.empty()) {
-        renderer_.drawText(1,16,102,"No EPUB books found");
-        renderer_.drawText(1,16,144,"Copy EPUBs to /Books");
+      if(visible_.empty()) {
+        renderer_.drawText(1,16,102,books_.empty()?"No EPUB books found":"No matching books");
+        renderer_.drawText(1,16,144,
+            books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
       } else {
         const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
-        for(size_t row=0;row<VISIBLE_ROWS && start+row<books_.size();++row) {
-          const size_t index=start+row;
+        for(size_t row=0;row<VISIBLE_ROWS && start+row<visible_.size();++row) {
+          const size_t filtered=start+row;
+          const size_t index=visible_[filtered];
           const int y=TOP_Y+static_cast<int>(row)*ROW_H;
-          const bool active=index==selected_;
+          const bool active=filtered==selected_;
           if(active)renderer_.fillRect(12,y,350,36,true);
           else renderer_.drawLine(15,y+36,359,y+36,true);
           const auto& info=details(index);
@@ -1753,7 +1780,8 @@ class CardShelf {
     renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
-      :browsing_?"OK: open   Back: home":"OK: open   Back: exit";
+      :searchEditing_?"Wheel: letters   OK: add   Back: results":
+        browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     renderer_.drawText(1,22,280,footer.c_str(),false);
   }
   void present() {paint();display_.displayBuffer();}

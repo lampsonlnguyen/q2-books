@@ -17,6 +17,15 @@ struct TestBook {
   long modified;
 };
 int main() {
+  unsigned long long bytes=0,modified=0;
+  assert(crosspod::parseShelfIdentityHeader(
+      "CROSSPOD-SHELF1 4 6\n","CROSSPOD-SHELF1",bytes,modified));
+  assert(bytes==4 && modified==6);
+  assert(!crosspod::parseShelfIdentityHeader(
+      "CROSSPOD-SHELF1 184467440737095516160 6\n",
+      "CROSSPOD-SHELF1",bytes,modified));
+  assert(!crosspod::parseShelfIdentityHeader(
+      "CROSSPOD-SHELF1 -1 2\n","CROSSPOD-SHELF1",bytes,modified));
   char dir[]="/tmp/crosspod-shelf-XXXXXX";
   assert(mkdtemp(dir));
   assert(setenv("CROSSPOD_STATE_DIR",dir,1)==0);

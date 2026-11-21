@@ -30,6 +30,7 @@
 #include "ShelfHistory.hpp"
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
+#include "ShelfCover.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -843,6 +844,31 @@ class Reader {
   crosspod::ShelfDetails shelfDetails() const {
     return {metadata_.coreMetadata.title,metadata_.coreMetadata.author};
   }
+  // Generate a tiny cover once, only after the user has already opened
+  // the EPUB. Never inflate cover JPEG/PNG for every bookshelf row or turn.
+  bool cacheShelfCover() {
+    crosspod::ShelfCover existing;
+    if(crosspod::loadShelfCover(bookPath_,existing))return true;
+    const std::string& coverPath=metadata_.coreMetadata.coverItemHref;
+    if(coverPath.empty()||coverPath.size()>1024 ||
+       coverPath.front()=='/' || coverPath.find("..")!=std::string::npos)
+      return false;
+    size_t size=0;
+    if(!archive_.getInflatedFileSize(coverPath.c_str(),&size) ||
+       size<8 || size>4u*1024u*1024u)return false;
+    std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
+        archive_.readFileToMemory(coverPath.c_str(),&size,false),&std::free);
+    if(!bytes || size<8 || size>4u*1024u*1024u)return false;
+    crosspod::PngPreview decoded;
+    bool okay=crosspod::decodePngPreview(bytes.get(),size,decoded);
+    if(!okay && bytes.get()[0]==0xff && bytes.get()[1]==0xd8)
+      okay=crosspod::decodeJpegPreview(bytes.get(),size,decoded);
+    if(!okay)return false;
+    crosspod::ShelfCover thumbnail;
+    return crosspod::makeShelfCover(decoded,thumbnail) &&
+           crosspod::saveShelfCover(bookPath_,thumbnail);
+  }
+
   crosspod::Typography typography() const {return typography_;}
   crosspod::ReaderPreferences preferences() const {return preferences_;}
   size_t chapterCount() const {
@@ -1787,6 +1813,7 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(action==crosspod::LogicalAction::Back) {
+        (void)reader->cacheShelfCover();
         reader.reset(); // close book/cache BEFORE reopening the card shelf
         crosspod::sortShelfBooks(books,sortMode,recent);
         selection=crosspod::lastOpenedIndex(books,recent);

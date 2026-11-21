@@ -1537,6 +1537,7 @@ class CardShelf {
     return browsing_ && !visible_.empty()?visible_[selected_]:current_;
   }
   bool empty() const {return books_.empty();}
+  bool hasMatches() const {return !visible_.empty();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
@@ -1939,6 +1940,20 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
+    if(shelf->searching()) {
+      if(action==crosspod::LogicalAction::Back)
+        shelf->endSearch();
+      else if(action==crosspod::LogicalAction::Previous)
+        (void)shelf->change(-1);
+      else if(action==crosspod::LogicalAction::Next)
+        (void)shelf->change(1);
+      else if(action==crosspod::LogicalAction::Confirm)
+        (void)shelf->applySearchChoice();
+      else if(event.kind==crosspod::PhysicalKind::TouchUp)
+        (void)shelf->tap(event.x,event.y);
+      shelf->present();
+      continue;
+    }
     if(action==crosspod::LogicalAction::Back) {
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
@@ -1948,6 +1963,7 @@ int runCardApp(const std::string& bookDir) {
     bool activate=action==crosspod::LogicalAction::Confirm;
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
+    if(shelf->searching()) {shelf->present();continue;}
     if(shelf->sortChosen()) {
       sortMode=sortMode==crosspod::ShelfSortMode::Title?
           crosspod::ShelfSortMode::Recent:
@@ -1966,7 +1982,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
-    if(shelf->empty())continue;
+    if(!shelf->hasMatches())continue;
     selection=shelf->selected();
     const std::string chosen=shelf->bookPath();
     shelf->setNotice("Opening EPUB...");

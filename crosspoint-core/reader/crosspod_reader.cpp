@@ -29,6 +29,7 @@
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
 #include "ShelfSort.hpp"
+#include "ShelfDetails.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -838,6 +839,9 @@ class Reader {
     persistPosition();
     return true;
   }
+  crosspod::ShelfDetails shelfDetails() const {
+    return {metadata_.coreMetadata.title,metadata_.coreMetadata.author};
+  }
   crosspod::Typography typography() const {return typography_;}
   crosspod::ReaderPreferences preferences() const {return preferences_;}
   size_t chapterCount() const {
@@ -1470,6 +1474,8 @@ class CardShelf {
   size_t selected_ = 0;
   size_t current_ = 0;
   crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
+  std::vector<crosspod::ShelfDetails> cachedDetails_;
+  std::vector<bool> detailsChecked_;
   bool browsing_ = false;
   int homeSelection_ = 0;
   std::string notice_;
@@ -1482,6 +1488,8 @@ class CardShelf {
       books_(books),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
+    cachedDetails_.resize(books_.size());
+    detailsChecked_.resize(books_.size(),false);
     if(!books_.empty()) {
       selected_=std::min(selection,books_.size()-1);
       current_=std::min(current,books_.size()-1);
@@ -1537,6 +1545,13 @@ class CardShelf {
     selected_=index;
     return true;
   }
+  const crosspod::ShelfDetails& details(size_t index) {
+    if(!detailsChecked_[index]) {
+      detailsChecked_[index]=true;
+      (void)crosspod::loadShelfDetails(books_[index].path,cachedDetails_[index]);
+    }
+    return cachedDetails_[index];
+  }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
@@ -1572,9 +1587,13 @@ class CardShelf {
       renderer_.drawLine(22,106,46,106,true);
       if(books_.empty())
         renderer_.drawText(1,65,119,"No books yet");
-      else
-        renderer_.drawText(1,65,119,
-            clippedLabel(books_[current_].label,20).c_str());
+      else {
+        const auto& info=details(current_);
+        renderer_.drawText(1,65,108,
+            clippedLabel(info.title.empty()?books_[current_].label:info.title,20).c_str());
+        if(!info.author.empty())
+          renderer_.drawText(1,65,131,clippedLabel(info.author,22).c_str());
+      }
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
         if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
@@ -1611,8 +1630,12 @@ class CardShelf {
           const bool active=index==selected_;
           if(active)renderer_.fillRect(12,y,350,36,true);
           else renderer_.drawLine(15,y+36,359,y+36,true);
-          const std::string label=clippedLabel(books_[index].label,22);
-          renderer_.drawText(1,22,y+7,label.c_str(),!active);
+          const auto& info=details(index);
+          const std::string label=clippedLabel(
+              info.title.empty()?books_[index].label:info.title,26);
+          renderer_.drawText(1,22,y+3,label.c_str(),!active);
+          if(!info.author.empty())
+            drawCompactLabel(22,y+28,clippedLabel(info.author,36).c_str(),160);
         }
       }
     }
@@ -1818,6 +1841,7 @@ int runCardApp(const std::string& bookDir) {
       // A successful open updates Continue Reading; rejected/corrupt EPUBs
       // never become the current title. Atomic history costs one SD write
       // per opened book, never one write per page turn.
+      (void)crosspod::saveShelfDetails(chosen,next->shelfDetails());
       if(crosspod::recordRecentBook(chosen))
         recent=crosspod::loadRecentBooks();
       shelf.reset();

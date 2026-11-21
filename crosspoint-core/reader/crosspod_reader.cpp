@@ -2557,6 +2557,57 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
+    if(shelf->onlineMode()) {
+      if(action==crosspod::LogicalAction::Back) {
+        shelf->returnFromOnline();
+        shelf->present();continue;
+      }
+      if(action==crosspod::LogicalAction::Next ||
+         action==crosspod::LogicalAction::Previous) {
+        if(shelf->change(action==crosspod::LogicalAction::Next?1:-1))
+          shelf->present();
+        continue;
+      }
+      if(event.kind==crosspod::PhysicalKind::TouchUp && event.y<73) {
+        shelf->returnFromOnline();shelf->present();continue;
+      }
+      bool activate=action==crosspod::LogicalAction::Confirm;
+      if(event.kind==crosspod::PhysicalKind::TouchUp) {
+        shelf->onlineTouch(event.x,event.y);
+        activate=true;
+      }
+      if(!activate || !shelf->onlineHasSelection())continue;
+      const auto selected=shelf->onlineEntry();
+      if(selected.kind==crosspod::OpdsEntry::Kind::Catalog) {
+        shelf->setNotice("Loading catalog...");
+        shelf->present();
+        (void)shelf->loadOnlinePage(selected.href,true);
+        shelf->present();
+        continue;
+      }
+      shelf->setNotice("Downloading EPUB...");
+      shelf->present();
+      std::string saved,error;
+      if(!crosspod::opdsDownloadEpub(bookDir,selected,saved,error)) {
+        shelf->setNotice(error.empty()?"Download failed":error);
+        shelf->present();continue;
+      }
+      // The reader only sees fully atomically renamed EPUB ZIPs. Rescan the
+      // bounded library after a download, never while a .part is in flight.
+      books=scanCardBooks(bookDir);
+      crosspod::sortShelfBooks(books,sortMode,recent);
+      auto found=std::find_if(books.begin(),books.end(),
+          [&](const ShelfEntry& entry){return entry.path==saved;});
+      selection=found==books.end()?0:
+          static_cast<size_t>(found-books.begin());
+      shelf.reset(new CardShelf(books,selection,selection,sortMode));
+      if(!shelf->open())return 6;
+      shelf->enterBrowser();
+      shelf->setNotice("EPUB downloaded to Books/Online");
+      shelf->present();
+      nextShelfIndex=0;
+      continue;
+    }
     if(shelf->searching()) {
       if(action==crosspod::LogicalAction::Back)
         shelf->endSearch();
@@ -2578,9 +2629,22 @@ int runCardApp(const std::string& bookDir) {
     if(action==crosspod::LogicalAction::Previous && shelf->change(-1))shelf->present();
     if(action==crosspod::LogicalAction::Next && shelf->change(1))shelf->present();
     bool activate=action==crosspod::LogicalAction::Confirm;
+    if(event.kind==crosspod::PhysicalKind::TouchUp && shelf->browsing() &&
+       event.y>=39 && event.y<74 && event.x>=190) {
+      (void)shelf->enterOnline();
+      shelf->present();
+      continue;
+    }
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
     if(shelf->searching()) {shelf->present();continue;}
+    if(shelf->onlineChosen()) {
+      shelf->setNotice("Loading catalog...");
+      shelf->present();
+      (void)shelf->enterOnline();
+      shelf->present();
+      continue;
+    }
     if(shelf->sortChosen()) {
       sortMode=sortMode==crosspod::ShelfSortMode::Title?
           crosspod::ShelfSortMode::Recent:

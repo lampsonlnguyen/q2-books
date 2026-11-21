@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -87,6 +88,14 @@ bool Q2SocketInput::receive(PhysicalEvent& result) {
   if (n < 0) return false;  // nonblocking EAGAIN or transport error
   if (n == 0) return false;
   return parse_q2_input(std::string_view(data, static_cast<size_t>(n)), result);
+}
+int Q2SocketInput::waitForInput(int timeoutMs) const {
+  if (fd_ < 0) return -1;
+  pollfd descriptor{fd_, POLLIN, 0};
+  const int result = ::poll(&descriptor, 1, timeoutMs);
+  if (result < 0) return errno == EINTR ? 0 : -1;
+  if (result == 0) return 0;
+  return (descriptor.revents & POLLIN) ? 1 : -1;
 }
 void Q2SocketInput::close() {
   if (fd_ >= 0) {

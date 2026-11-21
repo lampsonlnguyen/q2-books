@@ -19,6 +19,8 @@ class Q2SocketInput {
 
   bool open(std::string path = "/tmp/q2-crosspod.input.sock");
   bool receive(PhysicalEvent& result);
+  // 1 when a datagram is ready, 0 on timeout or signal, -1 on a socket error.
+  int waitForInput(int timeoutMs) const;
   void close();
  private:
   int fd_ = -1;

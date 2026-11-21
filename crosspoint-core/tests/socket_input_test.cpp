@@ -24,6 +24,7 @@ int main() {
   Q2SocketInput receiver;
   assert(receiver.open(path));
   assert(!receiver.receive(event)); // nonblocking and no data
+  assert(receiver.waitForInput(10) == 0);
   int sender = ::socket(AF_UNIX, SOCK_DGRAM, 0);
   assert(sender >= 0);
   sockaddr_un addr{};
@@ -32,10 +33,13 @@ int main() {
   const char msg[] = "k u 172";
   assert(::sendto(sender, msg, sizeof(msg) - 1, 0,
                   reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == sizeof(msg) - 1);
+  assert(receiver.waitForInput(1000) == 1);
   assert(receiver.receive(event));
+  assert(receiver.waitForInput(0) == 0);
   assert(event.kind == PhysicalKind::KeyUp && event.value == 172);
   ::close(sender);
   receiver.close();
+  assert(receiver.waitForInput(0) == -1);
   assert(::access(path.c_str(), F_OK) != 0);
   return 0;
 }

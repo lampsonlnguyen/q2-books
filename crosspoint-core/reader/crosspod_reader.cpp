@@ -2185,6 +2185,7 @@ void usage() {
     "  crosspod-reader --walk <book.epub>           (test pagination)\n"
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
+    "  crosspod-reader --test-page-links <book.epub> (real link regression)\n"
     "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
@@ -2215,6 +2216,24 @@ int main(int argc,char** argv) {
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-page-links")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    const auto links=reader.pageLinks();
+    std::printf("CrossPod Page links: %zu\n",links.size());
+    if(links.size()<2)return 7;
+    bool followed=false;
+    for(const auto& href:links) {
+      if(href.find("second.xhtml")!=std::string::npos) {
+        if(!reader.followLink(href))return 8;
+        followed=true;break;
+      }
+    }
+    if(!followed || !reader.hasLinkHistory())return 9;
+    if(!reader.goBackFromLink() || reader.hasLinkHistory())return 10;
+    std::puts("CrossPod page link jump and return: PASS");
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--inspect-toc")==0) {

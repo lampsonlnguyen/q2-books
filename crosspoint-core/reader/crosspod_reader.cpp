@@ -29,6 +29,7 @@
 #include <array>
 #include <chrono>
 #include <csignal>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -318,28 +319,58 @@ struct HtmlCollector {
     s.scopes.pop_back();
   }
 };
+// Stream ZIP inflation into Expat. A chapter can be several megabytes; holding
+// its entire uncompressed XML alongside the CSS, pagination and image buffers
+// needlessly spikes peak RAM on the Q2. This adapter uses CrossPoint's ZipFile
+// streaming contract and caps both input and collected text.
+class ChapterXmlSink final : public Print {
+  XML_Parser parser_;
+  size_t seen_=0;
+  bool failed_=false;
+ public:
+  explicit ChapterXmlSink(XML_Parser parser):parser_(parser) {}
+  size_t write(uint8_t byte) override {return write(&byte,1);}
+  size_t write(const uint8_t* data,size_t len) override {
+    if(failed_ || !data || len>MAX_XML_BYTES-seen_ ||
+       len>static_cast<size_t>(INT_MAX)) {
+      failed_=true;
+      return 0;
+    }
+    if(!len)return 0;
+    seen_+=len;
+    if(XML_Parse(parser_,reinterpret_cast<const char*>(data),
+                 static_cast<int>(len),XML_FALSE)!=XML_STATUS_OK) {
+      failed_=true;
+      return 0;
+    }
+    return len;
+  }
+  bool finish() {
+    return !failed_ && seen_!=0 &&
+        XML_Parse(parser_,nullptr,0,XML_TRUE)==XML_STATUS_OK;
+  }
+};
+
 bool parseChapter(ZipFile& archive,const std::string& name,std::vector<Paragraph>& out) {
   size_t size=0;
   if(!archive.getInflatedFileSize(name.c_str(),&size)||!size||size>MAX_XML_BYTES) {
     std::fprintf(stderr,"CrossPod: unsupported XHTML chapter length: %s (%zu)\n",name.c_str(),size);
     return false;
   }
-  std::unique_ptr<uint8_t,decltype(&std::free)> xml(
-      archive.readFileToMemory(name.c_str(),&size,true),&std::free);
-  if(!xml)return false;
   XML_Parser parser=XML_ParserCreateNS(nullptr,'|');
   if(!parser)return false;
-  HtmlCollector s(archive,name);
-  XML_SetUserData(parser,&s);
+  HtmlCollector collector(archive,name);
+  XML_SetUserData(parser,&collector);
   XML_SetElementHandler(parser,HtmlCollector::start,HtmlCollector::end);
   XML_SetCharacterDataHandler(parser,HtmlCollector::data);
-  const bool ok=XML_Parse(parser,reinterpret_cast<char*>(xml.get()),
-                static_cast<int>(size),XML_TRUE)==XML_STATUS_OK;
-  if(!ok)std::fprintf(stderr,"CrossPod: XHTML parse error %s: %s\n",
+  ChapterXmlSink sink(parser);
+  const bool inflated=archive.readFileToStream(name.c_str(),sink,1024);
+  const bool ok=inflated && sink.finish();
+  if(!ok)std::fprintf(stderr,"CrossPod: XHTML stream/parse error %s: %s\n",
       name.c_str(),XML_ErrorString(XML_GetErrorCode(parser)));
   XML_ParserFree(parser);
-  if(!ok||s.limitHit||s.items.empty())return false;
-  out=std::move(s.items);
+  if(!ok||collector.limitHit||collector.items.empty())return false;
+  out=std::move(collector.items);
   return true;
 }
 class TempCache {

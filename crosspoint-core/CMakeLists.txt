@@ -374,7 +374,7 @@ set_target_properties(crosspod_epub_page_preview PROPERTIES CXX_STANDARD 20 CXX_
 target_link_libraries(crosspod_epub_page_preview PRIVATE
     crosspoint_zip crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
 target_compile_options(crosspod_epub_page_preview PRIVATE -UNDEBUG)
 add_dependencies(crosspod_epub_page_preview epub_fixture)
 add_test(NAME crosspoint_real_epub_text_page_preview

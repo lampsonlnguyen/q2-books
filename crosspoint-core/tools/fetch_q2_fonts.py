@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Fetch pinned CrossPoint SD fonts for the Q2 reader, with exact SHA-256 verification.
+
+Uses the original CrossPoint project's cpfont v4 release. Never changes
+firmware/system fonts or embeds a different Q2-native rendering engine.
+"""
+from __future__ import annotations
+import hashlib
+import pathlib
+import sys
+import urllib.request
+
+RELEASE = "https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4"
+SHA256 = {
+    "NotoSansExtended_12.cpfont": "17e2dd57a2507203dcb04e1ce4f7f49c755cd327550c8c8333ac713655b06bd1",
+    "NotoSansExtended_14.cpfont": "3c7eabccb4ed9b4ab909c5a3d973dc6bdc19bfbe061bff54643ca4cf859aa116",
+    "NotoSansExtended_16.cpfont": "5245afdd81e86b2b9827785b379ac2380ff6dde3bbe15b9ddaba666e8b738967",
+    "NotoSansExtended_18.cpfont": "1c0166009a88a567a69d3caadb3a04e2ec2bd91b49b80100211a749e1d02801d",
+    "NotoSerifExtended_12.cpfont": "90cbcf43bc504f1ca3dad068e9286d7818dec6522fa2c9810b0e421637944091",
+    "NotoSerifExtended_14.cpfont": "d09be89359a201a0b43bcc05abca305e5358a939294f5d38852c82722cbcdb24",
+    "NotoSerifExtended_16.cpfont": "c269f21a040173777e2b9aa3e80b4e802da8edf9f2a8f5dac32aa68d3df4438a",
+    "NotoSerifExtended_18.cpfont": "5d35e6f0e5216d442106f9a638ed6c40a08e8ed55408b9fdb2844d234cf73b6d",
+}
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print("usage: fetch_q2_fonts.py OUTPUT_DIRECTORY", file=sys.stderr)
+        return 2
+    out = pathlib.Path(sys.argv[1])
+    out.mkdir(parents=True, exist_ok=True)
+    for original, expected in SHA256.items():
+        family, size = original.split("_")
+        short = "sans" if family == "NotoSansExtended" else "serif"
+        dest = out / f"{short}-{size}"
+        with urllib.request.urlopen(f"{RELEASE}/{original}", timeout=90) as response:
+            data = response.read(4_000_000)
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != expected:
+            raise RuntimeError(f"{original}: expected {expected}, got {digest}")
+        if len(data) < 200_000:
+            raise RuntimeError(f"{original}: implausibly short font")
+        dest.with_suffix(".cpfont").write_bytes(data)
+        print(f"Verified {original}: {len(data)} bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

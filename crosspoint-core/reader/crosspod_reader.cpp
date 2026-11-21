@@ -1355,15 +1355,29 @@ class Reader {
           return;
         }
     }
-    renderer_.clearScreen(0xff);
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
-      if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      if(!page) {
+        // An incomplete or transiently unreadable Section page is NOT a
+        // successful blank page. Preserve the previous framebuffer and retry
+        // on the next draw instead of permanently caching an empty raster.
+        std::fprintf(stderr,
+            "CrossPod: page %zu in spine %d unavailable; refusing blank cache\\n",
+            currentPage_,currentSpine_);
+        return;
+      }
+      renderer_.clearScreen(0xff);
+      page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
       cacheRenderedPage();
       drawProgress();
       applyNightMode();
       return;
     }
+    if(currentPage_>=pages_.size()) {
+      std::fputs("CrossPod: legacy page unavailable; preserving current framebuffer\\n",stderr);
+      return;
+    }
+    renderer_.clearScreen(0xff);
     const auto& page=pages_[currentPage_];
     for (const auto& line:page.lines)
       line.block->render(renderer_,1,preferences_.margin,line.y);

@@ -249,6 +249,11 @@ CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-selection "$work/reader/page-links.epub" \
   | tee "$work/selection.log"
 grep -q 'unicode selection and persistent highlight: PASS' "$work/selection.log"
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --test-footnote-popup "$work/reader/page-links.epub" \
+  | tee "$work/footnote-popup.log"
+grep -q 'XHTML footnote popover: PASS' "$work/footnote-popup.log"
+
 
 
 # Validate the generated EPUB on the actual Q2 MIPS application, with the

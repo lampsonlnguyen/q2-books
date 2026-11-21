@@ -575,6 +575,7 @@ target_include_directories(crosspoint_section_objects PRIVATE
 add_executable(crosspoint_original_engine_link_tests
     tests/original_chapter_parser_interface_test.cpp
     lib/Epub/blocks/ImageBlock.cpp
+    platform/posix/EpubRuntime.cpp
     lib/Epub/converters/ImageDimsProbe.cpp
     lib/Epub/htmlEntities.cpp
     $<TARGET_OBJECTS:crosspoint_xhtml_parser_objects>

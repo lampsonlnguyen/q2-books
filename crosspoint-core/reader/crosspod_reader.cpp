@@ -1264,7 +1264,7 @@ class Reader {
     renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
-    constexpr int kItems=11;
+    constexpr int kItems=13;
     constexpr int kRows=9;
     constexpr int kRowTop=73;
     constexpr int kRowHeight=21;
@@ -1274,7 +1274,8 @@ class Reader {
     drawMenuText(22,47,"Reading settings");
     renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
-        "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters"};
+        "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
+        "Page links","Return link"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1284,7 +1285,8 @@ class Reader {
       preferences_.hyphenation?"On":"Off",
       preferences_.embeddedStyle?"On":"Off",
       preferences_.nightMode?"On":"Off",
-      "Save page","Saved pages","Browse book"
+      "Save page","Saved pages","Browse book","Footnotes / links",
+      hasLinkHistory()?"Go back":"No previous link"
     };
     for(int row=0;row<kRows && first+row<kItems;++row) {
       const int item=first+row;
@@ -1934,6 +1936,7 @@ int runCardApp(const std::string& bookDir) {
   std::unique_ptr<Reader> reader;
   bool typeMenu=false;
   bool navigationMenu=false;
+  bool linkMenu=false;
   bool showingBookmarks=false;
   int navigationSelection=0;
   int typeSelection=0;
@@ -1959,7 +1962,7 @@ int runCardApp(const std::string& bookDir) {
         nextShelfIndexTick=std::chrono::steady_clock::now()+
             std::chrono::milliseconds(800);
       }
-      if(reader && !typeMenu && !navigationMenu &&
+      if(reader && !typeMenu && !navigationMenu && !linkMenu &&
          reader->needsPagePrefetch() && now>=nextBuildTick) {
         // Layout a bounded lookahead only when needed. Stop unnecessary
         // parser and SD-card activity once five pages are prepared.
@@ -1977,6 +1980,32 @@ int runCardApp(const std::string& bookDir) {
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {
+      if(linkMenu) {
+        const auto links=reader->pageLinks();
+        const int count=static_cast<int>(links.size());
+        if(action==crosspod::LogicalAction::Back) {
+          linkMenu=false;
+          reader->showTypographyMenu(typeSelection);
+        } else if(action==crosspod::LogicalAction::Next ||
+                  action==crosspod::LogicalAction::Previous) {
+          if(count)navigationSelection=std::clamp(
+              navigationSelection+
+              (action==crosspod::LogicalAction::Next?1:-1),0,count-1);
+          reader->showLinksMenu(navigationSelection);
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(event.kind==crosspod::PhysicalKind::TouchUp)
+            navigationSelection=std::clamp(
+                (navigationSelection/8)*8+(event.y-76)/24,
+                0,std::max(0,count-1));
+          const bool jumped=count && navigationSelection<count &&
+              reader->followLink(links[navigationSelection]);
+          if(jumped) {
+            linkMenu=false;typeMenu=false;reader->present();
+          } else reader->showLinksMenu(navigationSelection);
+        }
+        continue;
+      }
       if(navigationMenu) {
         const int count=static_cast<int>(showingBookmarks?
           reader->bookmarks().size():reader->chapterCount());
@@ -2016,15 +2045,24 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:10))%11;
+              (action==crosspod::LogicalAction::Next?1:12))%13;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
-            typeSelection=std::clamp(std::min(10,std::max(0,typeSelection-8))+
-                (event.y-73)/21,0,10);
+            typeSelection=std::clamp(
+                std::max(0,typeSelection-8)+(event.y-73)/21,0,12);
           if(typeSelection==8) {
             (void)reader->rememberPage();
+          } else if(typeSelection==11) {
+            linkMenu=true;
+            navigationSelection=0;
+          } else if(typeSelection==12) {
+            if(reader->goBackFromLink()) {
+              typeMenu=false;
+              reader->present();
+              continue;
+            }
           } else if(typeSelection>=9) {
             showingBookmarks=typeSelection==9;
             navigationMenu=true;
@@ -2040,6 +2078,8 @@ int runCardApp(const std::string& bookDir) {
           }
           if(navigationMenu)
             reader->showNavigationMenu(showingBookmarks,navigationSelection);
+          else if(linkMenu)
+            reader->showLinksMenu(navigationSelection);
           else reader->showTypographyMenu(typeSelection);
         }
         continue;
@@ -2064,8 +2104,10 @@ int runCardApp(const std::string& bookDir) {
       bool changed=false;
       if(action==crosspod::LogicalAction::Next) changed=reader->move(1);
       if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
-      if(event.kind==crosspod::PhysicalKind::TouchUp)
-        changed=reader->move(event.x>=187?1:-1);
+      if(event.kind==crosspod::PhysicalKind::TouchUp) {
+        changed=reader->followTouchedLink(event.x,event.y);
+        if(!changed)changed=reader->move(event.x>=187?1:-1);
+      }
       if(changed)reader->present();
       continue;
     }

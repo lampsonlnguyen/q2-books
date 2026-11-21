@@ -24,6 +24,7 @@
 #include "Typography.hpp"
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
+#include "ReaderPreferences.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
 #include <Q2SocketInput.hpp>
@@ -463,6 +464,7 @@ class Reader {
   std::unique_ptr<Section> upstreamSection_;
   int upstreamFontId_=0;
   crosspod::Typography typography_{};
+  crosspod::ReaderPreferences preferences_{};
   std::string typographyNotice_;
   std::vector<RenderPage> pages_;
   int currentSpine_ = -1;
@@ -479,8 +481,12 @@ class Reader {
   ReaderRenderSpec upstreamSpec() const {
     ReaderRenderSpec spec;
     spec.fontId=upstreamFontId_;
-    spec.viewportWidth=TEXT_WIDTH;
+    spec.viewportWidth=static_cast<uint16_t>(375-2*preferences_.margin-2);
     spec.viewportHeight=BOTTOM-TOP;
+    spec.lineCompression=preferences_.linePercent/100.0f;
+    spec.paragraphAlignment=static_cast<uint8_t>(preferences_.alignment);
+    spec.hyphenationEnabled=preferences_.hyphenation;
+    spec.embeddedStyle=preferences_.embeddedStyle;
     spec.lineCompression=1.0f;
     spec.embeddedStyle=true;
     spec.imageRendering=0;
@@ -668,6 +674,7 @@ class Reader {
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
   ~Reader() { ImageBlock::setExtractor(nullptr,nullptr); }
   bool open() {
+    (void)crosspod::loadReaderPreferences(preferences_);
     if (temporary_.path().empty()) {
       std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;
     }
@@ -772,22 +779,76 @@ class Reader {
     return true;
   }
   crosspod::Typography typography() const {return typography_;}
+  crosspod::ReaderPreferences preferences() const {return preferences_;}
+  bool adjustPreference(int option) {
+    crosspod::ReaderPreferences next=preferences_;
+    switch(option) {
+      case 2: next.linePercent=next.linePercent==100?120:
+          (next.linePercent==120?140:100);break;
+      case 3: next.margin=next.margin==14?22:
+          (next.margin==22?30:14);break;
+      case 4: next.alignment=1-next.alignment;break;
+      case 5: next.hyphenation=!next.hyphenation;break;
+      case 6: next.embeddedStyle=!next.embeddedStyle;break;
+      default:return false;
+    }
+    if(!crosspod::validReaderPreferences(next))return false;
+    const auto previous=preferences_;
+    const int spine=currentSpine_;
+    const size_t priorPage=currentPage_;
+    auto offset=upstreamSection_?
+      upstreamSection_->getVisibleTextOffsetForPage(
+        static_cast<uint16_t>(currentPage_)):std::nullopt;
+    preferences_=next;
+    if(spine>=0 && (!loadSpine(spine,1)||currentSpine_!=spine)) {
+      preferences_=previous;
+      (void)loadSpine(spine,1);
+      currentPage_=std::min(priorPage,pageCount()-1);
+      typographyNotice_="Could not update page layout";
+      return false;
+    }
+    // Preserve content position when a completed Section gives an exact
+    // visible-text offset; do not assume the old page number is stable after
+    // changing margins or line spacing.
+    if(upstreamSection_ && offset) {
+      while(upstreamSection_->isBuilding() &&
+            !upstreamSection_->buildReachedVisibleTextOffset(*offset)) {
+        if(!upstreamSection_->buildSomeMore(2))break;
+      }
+      auto nextPage=upstreamSection_->getPageForVisibleTextOffset(*offset);
+      currentPage_=nextPage.value_or(
+        static_cast<uint16_t>(std::min(priorPage,pageCount()-1)));
+    } else if(pageCount())currentPage_=std::min(priorPage,pageCount()-1);
+    if(!crosspod::saveReaderPreferences(preferences_))
+      typographyNotice_="Reading settings not saved";
+    else typographyNotice_.clear();
+    persistPosition();
+    return true;
+  }
   void showTypographyMenu(int selected) {
     render();
-    renderer_.fillRect(13,55,349,205,true);
-    renderer_.fillRect(15,57,345,201,false);
-    renderer_.drawText(1,30,74,"Reading appearance");
-    char row[96];
-    std::snprintf(row,sizeof(row),"%s Font: %s",
-      selected==0?">":" ",crosspod::typographyFamilyName(typography_.family));
-    renderer_.drawText(1,31,117,row);
-    std::snprintf(row,sizeof(row),"%s Size: %d",
-      selected==1?">":" ",typography_.size);
-    renderer_.drawText(1,31,152,row);
-    renderer_.drawText(1,31,190,"Wheel: select  Center: change");
-    renderer_.drawText(1,31,220,"Back: return to book");
+    renderer_.fillRect(10,37,355,258,true);
+    renderer_.fillRect(12,39,351,254,false);
+    renderer_.drawText(1,23,47,"Reading settings");
+    const char* labels[]={"Font","Size","Line spacing","Margins","Alignment","Hyphenation","Book CSS"};
+    const std::string values[]={
+      crosspod::typographyFamilyName(typography_.family),
+      std::to_string(typography_.size)+"pt",
+      std::to_string(preferences_.linePercent)+"%",
+      std::to_string(preferences_.margin)+"px",
+      preferences_.alignment?"Justify":"Book default",
+      preferences_.hyphenation?"On":"Off",
+      preferences_.embeddedStyle?"On":"Off"
+    };
+    for(int row=0;row<7;++row) {
+      const int y=77+row*25;
+      if(selected==row)renderer_.fillRect(18,y-3,337,22,true);
+      const std::string text=std::string(labels[row])+": "+values[row];
+      renderer_.drawText(1,27,y,text.c_str(),selected!=row);
+    }
+    renderer_.drawText(1,24,259,"Wheel: select  Center: change");
     if(!typographyNotice_.empty())
-      renderer_.drawText(1,31,245,typographyNotice_.c_str());
+      renderer_.drawText(1,24,282,typographyNotice_.c_str());
     display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {
@@ -891,12 +952,12 @@ class Reader {
     renderer_.clearScreen(0xff);
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
-      if(page)page->render(renderer_,upstreamFontId_,LEFT,TOP);
+      if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
       return;
     }
     const auto& page=pages_[currentPage_];
     for (const auto& line:page.lines)
-      line.block->render(renderer_,1,LEFT,line.y);
+      line.block->render(renderer_,1,preferences_.margin,line.y);
     // 4x4 ordered Bayer halftone; preserve image detail on Q2's 1-bit surface.
     static constexpr uint8_t bayer[4][4]={
       {0,8,2,10},{12,4,14,6},{3,11,1,9},{15,7,13,5}};
@@ -907,7 +968,7 @@ class Reader {
           const size_t sx=static_cast<size_t>(dx)*image.png.width/image.width;
           const unsigned gray=image.png.gray[sy*image.png.width+sx];
           const unsigned threshold=static_cast<unsigned>(bayer[dy&3][dx&3])*16u+8u;
-          if(gray<threshold)renderer_.drawPixel(image.x+dx,image.y+dy,true);
+          if(gray<threshold)renderer_.drawPixel(image.x+dx+(preferences_.margin-14),image.y+dy,true);
         }
       }
     }
@@ -1161,18 +1222,23 @@ int runCardApp(const std::string& bookDir) {
           reader->present();
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
-          typeSelection=1-typeSelection;
+          typeSelection=(typeSelection+
+              (action==crosspod::LogicalAction::Next?1:6))%7;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
-            typeSelection=event.y>=143?1:0;
-          auto next=reader->typography();
-          if(typeSelection==0) {
-            next.family=next.family==crosspod::Typography::Family::Sans?
-              crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-          } else next.size=next.size==12?14:(next.size==14?16:(next.size==16?18:12));
-          (void)reader->configureTypography(next);
+            typeSelection=std::clamp((event.y-77)/25,0,6);
+          if(typeSelection>=2)(void)reader->adjustPreference(typeSelection);
+          else {
+            auto next=reader->typography();
+            if(typeSelection==0) {
+              next.family=next.family==crosspod::Typography::Family::Sans?
+                crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+            } else next.size=next.size==12?14:
+                (next.size==14?16:(next.size==16?18:12));
+            (void)reader->configureTypography(next);
+          }
           reader->showTypographyMenu(typeSelection);
         }
         continue;
@@ -1344,18 +1410,23 @@ int main(int argc,char** argv) {
         reader.present();
       } else if(action==crosspod::LogicalAction::Previous ||
                 action==crosspod::LogicalAction::Next) {
-        typeSelection=1-typeSelection;
+        typeSelection=(typeSelection+
+            (action==crosspod::LogicalAction::Next?1:6))%7;
         reader.showTypographyMenu(typeSelection);
       } else if(action==crosspod::LogicalAction::Confirm ||
                 event.kind==crosspod::PhysicalKind::TouchUp) {
         if(event.kind==crosspod::PhysicalKind::TouchUp)
-          typeSelection=event.y>=143?1:0;
-        auto next=reader.typography();
-        if(typeSelection==0)
-          next.family=next.family==crosspod::Typography::Family::Sans?
-            crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-        else next.size=next.size==12?14:(next.size==14?16:(next.size==16?18:12));
-        (void)reader.configureTypography(next);
+          typeSelection=std::clamp((event.y-77)/25,0,6);
+        if(typeSelection>=2)(void)reader.adjustPreference(typeSelection);
+        else {
+          auto next=reader.typography();
+          if(typeSelection==0)
+            next.family=next.family==crosspod::Typography::Family::Sans?
+              crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+          else next.size=next.size==12?14:
+              (next.size==14?16:(next.size==16?18:12));
+          (void)reader.configureTypography(next);
+        }
         reader.showTypographyMenu(typeSelection);
       }
       continue;

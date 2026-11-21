@@ -1000,7 +1000,7 @@ int main(int argc,char** argv) {
     Reader reader(argv[2]);
     if(!reader.open())return 3;
     if(reader.imageCount()==0)return 4;
-    std::printf("CrossPod rendered PNG images: %zu\n",reader.imageCount());
+    std::printf("CrossPod rendered images: %zu\n",reader.imageCount());
     return reader.savePgm(argv[3])?0:5;
   }
   if(argc==4 && std::strcmp(argv[1],"--inspect-styles")==0) {

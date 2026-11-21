@@ -66,6 +66,8 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
   "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include"
 cmake --build "$work/reader" --target crosspod-reader --parallel 2
+cmake --build "$work/reader" --target crosspod_png_formats_tests --parallel 2
+timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_png_formats_tests"
 elf="$work/reader/crosspod-reader"
 python3 crosspoint-core/tools/check_q2_elf.py "$elf" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
 echo "C++ ABI requirements:"

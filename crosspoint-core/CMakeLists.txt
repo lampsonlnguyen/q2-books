@@ -487,6 +487,18 @@ add_test(NAME crosspod_reader_unopened_shelf_index
     "$<TARGET_FILE:crosspod-reader>"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_shelf_index_epub.py")
 
+set(CROSSPOD_LINKS_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/crosspod-page-links.epub")
+add_custom_command(OUTPUT "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
+        "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
+    VERBATIM)
+add_custom_target(crosspod_links_fixture DEPENDS "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+add_dependencies(crosspod-reader crosspod_links_fixture)
+add_test(NAME crosspod_reader_real_page_links
+    COMMAND crosspod-reader --test-page-links "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
 # Active card reader must preserve CrossPoint CSS alignment, emphasis and RTL.

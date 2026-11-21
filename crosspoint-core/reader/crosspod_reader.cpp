@@ -37,6 +37,10 @@
 #include "SelectionGeometry.hpp"
 #include "OfflineDictionary.hpp"
 #include "FootnotePreview.hpp"
+#include "OpdsCatalog.hpp"
+#include "KoreaderSync.hpp"
+#include <ProgressMapper.h>
+#include <ProgressComparison.h>
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -1808,6 +1812,12 @@ class CardShelf {
   bool currentCoverChecked_=false;
   bool currentCoverAvailable_=false;
   bool browsing_ = false;
+  bool onlineMode_=false;
+  std::string onlineUrl_;
+  std::string onlineTitle_;
+  std::vector<crosspod::OpdsEntry> onlineEntries_;
+  std::vector<std::string> onlineHistory_;
+  size_t onlineSelection_=0;
   int homeSelection_ = 0;
   std::string notice_;
   static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
@@ -1847,10 +1857,66 @@ class CardShelf {
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
+  bool onlineChosen() const {return !browsing_ && homeSelection_==3;}
+  bool onlineMode() const {return onlineMode_;}
   bool searching() const {return browsing_ && searchEditing_;}
+  bool enterOnline() {
+    const auto config=crosspod::loadConnectedConfig();
+    if(!config.configured()) {
+      notice_="Set .crosspod/connected.conf";
+      return false;
+    }
+    return loadOnlinePage(config.opdsUrl,false);
+  }
+  bool loadOnlinePage(const std::string& url,bool saveHistory) {
+    auto feed=crosspod::fetchOpdsFeed(url);
+    if(!feed.error.empty()) {
+      notice_=feed.error;
+      return false;
+    }
+    if(saveHistory && onlineHistory_.size()<12)
+      onlineHistory_.push_back(onlineUrl_);
+    onlineUrl_=url;
+    onlineTitle_=feed.title.empty()?"Connected library":feed.title;
+    onlineEntries_=std::move(feed.entries);
+    onlineSelection_=0;
+    onlineMode_=true;
+    browsing_=true;
+    searchEditing_=false;
+    notice_.clear();
+    return true;
+  }
+  void returnFromOnline() {
+    if(onlineHistory_.empty()) {
+      onlineMode_=false;onlineEntries_.clear();goHome();return;
+    }
+    const auto previous=onlineHistory_.back();
+    onlineHistory_.pop_back();
+    // A failed network fetch must not strand the user. Back twice exits.
+    auto feed=crosspod::fetchOpdsFeed(previous);
+    if(!feed.error.empty()) {
+      onlineMode_=false;onlineEntries_.clear();goHome();return;
+    }
+    onlineUrl_=previous;
+    onlineTitle_=feed.title;
+    onlineEntries_=std::move(feed.entries);
+    onlineSelection_=0;
+    notice_.clear();
+  }
+  bool onlineHasSelection() const {return onlineSelection_<onlineEntries_.size();}
+  crosspod::OpdsEntry onlineEntry() const {
+    return onlineHasSelection()?onlineEntries_[onlineSelection_]:
+      crosspod::OpdsEntry{};
+  }
+  void onlineTouch(int x,int y) {
+    if(y<TOP_Y || y>=TOP_Y+VISIBLE_ROWS*ROW_H)return;
+    const size_t start=(onlineSelection_/VISIBLE_ROWS)*VISIBLE_ROWS;
+    const size_t selected=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
+    if(selected<onlineEntries_.size())onlineSelection_=selected;
+  }
   void enterBrowser() {browsing_=true;searchEditing_=false;notice_.clear();}
   void goHome() {
-    browsing_=false;searchEditing_=false;homeSelection_=0;
+    browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
     searchQuery_.clear();refreshVisible();notice_.clear();
   }
   void enterSearch() {
@@ -1891,6 +1957,14 @@ class CardShelf {
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
+    if(onlineMode_) {
+      if(onlineEntries_.empty())return false;
+      const size_t before=onlineSelection_;
+      if(direction>0 && onlineSelection_+1<onlineEntries_.size())
+        ++onlineSelection_;
+      else if(direction<0 && onlineSelection_>0)--onlineSelection_;
+      return before!=onlineSelection_;
+    }
     if(searchEditing_) {
       const auto before=searchKey_;
       searchKey_=static_cast<size_t>((
@@ -1899,7 +1973,7 @@ class CardShelf {
       return searchKey_!=before;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,2);
+      const int next=std::clamp(homeSelection_+direction,0,3);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -1912,6 +1986,10 @@ class CardShelf {
   }
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
+    if(onlineMode_) {
+      if(y<73) {returnFromOnline();return true;}
+      onlineTouch(x,y);return true;
+    }
     if(searchEditing_) {
       if(y>=269){endSearch();return true;}
       if(y<88||y>=250||x<12||x>=362)return false;
@@ -1925,11 +2003,14 @@ class CardShelf {
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
-      else if(y>=244&&y<267)homeSelection_=2;
+      else if(y>=244&&y<267)homeSelection_=x<195?2:3;
       else return false;
       return true;
     }
-    if(y>=39 && y<74) {enterSearch();return true;}
+    if(y>=39 && y<74) {
+      if(x>=190)return enterOnline();
+      enterSearch();return true;
+    }
     if(visible_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
     const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);

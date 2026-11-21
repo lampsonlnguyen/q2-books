@@ -47,6 +47,7 @@
 #include <utility>
 #include <vector>
 #include <sys/stat.h>
+#include <sys/resource.h>
 #include <dirent.h>
 #include <cctype>
 #include <unistd.h>
@@ -1456,6 +1457,7 @@ void usage() {
     "Usage:\n"
     "  crosspod-reader --validate <book.epub>       (no framebuffer)\n"
     "  crosspod-reader --walk <book.epub>           (test pagination)\n"
+    "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader (no args)                    (Q2 card app)\n"
@@ -1509,12 +1511,14 @@ int main(int argc,char** argv) {
     CardShelf shelf(books);
     return shelf.open() && shelf.savePgm(argv[3])?0:4;
   }
-  bool dry=false,render=false,walk=false;
+  bool dry=false,render=false,walk=false,benchmark=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
   } else if(argc==3 && std::strcmp(argv[1],"--walk")==0) {
     dry=true;walk=true;path=argv[2];
+  } else if(argc==3 && std::strcmp(argv[1],"--bench")==0) {
+    dry=true;benchmark=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
     dry=true;render=true;path=argv[2];output=argv[3];
   } else if (argc==2 && argv[1][0] != '-') {
@@ -1524,12 +1528,34 @@ int main(int argc,char** argv) {
     std::fputs("CrossPod: only EPUB is supported in this device preview\n",stderr);
     return 2;
   }
+  const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
   if (!reader.open()) {
     std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
   if(dry) {
+    if(benchmark) {
+      const auto started=std::chrono::steady_clock::now();
+      size_t advanced=0;
+      constexpr size_t SAMPLE_PAGES=64;
+      while(advanced<SAMPLE_PAGES) {
+        if(reader.move(1)) {++advanced;continue;}
+        if(!reader.isBuilding())break;
+        (void)reader.buildNextPages(4);
+      }
+      const auto elapsed=std::chrono::steady_clock::now();
+      struct rusage usage{};
+      (void)getrusage(RUSAGE_SELF,&usage);
+      const auto openMs=std::chrono::duration_cast<std::chrono::milliseconds>(
+        started-openStart).count();
+      const auto turnMs=std::chrono::duration_cast<std::chrono::milliseconds>(
+        elapsed-started).count();
+      std::printf("CrossPod benchmark: open_ms=%lld sample_pages=%zu walk_ms=%lld maxrss_kb=%ld\\n",
+        static_cast<long long>(openMs),advanced,
+        static_cast<long long>(turnMs),usage.ru_maxrss);
+      return 0;
+    }
     if(walk) {
       // Exercise real page/spine transitions and the backward boundary.
       // Limit iterations defensively for corrupt EPUBs.

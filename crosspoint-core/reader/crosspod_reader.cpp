@@ -1342,8 +1342,8 @@ class CardShelf {
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
     if(!browsing_) {
-      if(y>=153&&y<194)homeSelection_=0;
-      else if(y>=194&&y<242)homeSelection_=1;
+      if(y>=158&&y<195)homeSelection_=0;
+      else if(y>=204&&y<241)homeSelection_=1;
       else return false;
       return true;
     }
@@ -1357,30 +1357,38 @@ class CardShelf {
   void setNotice(std::string notice) {notice_=std::move(notice);}
   void paint() {
     renderer_.clearScreen(0xff);
+    // Fixed title and footer are outside both the home and file-list regions.
     renderer_.fillRect(0,0,375,39,true);
-    renderer_.drawText(1,16,11,"CrossPod",false);
+    renderer_.drawText(1,16,10,"CrossPod",false);
     if(!browsing_) {
       renderer_.drawText(1,16,47,"Home");
-      renderer_.drawLine(15,70,359,70,true);
-      renderer_.drawText(1,16,80,"Current book");
+      renderer_.drawLine(15,74,359,74,true);
+      // A compact current-book panel, inspired by CrossPoint's home page.
+      // Do not invent book-cover artwork or draw filenames outside the panel.
+      renderer_.drawText(1,65,88,"Current book");
+      renderer_.drawLine(17,92,52,92,true);
+      renderer_.drawLine(17,92,17,138,true);
+      renderer_.drawLine(52,92,52,138,true);
+      renderer_.drawLine(17,138,52,138,true);
+      renderer_.drawLine(22,100,46,100,true);
+      renderer_.drawLine(22,106,46,106,true);
       if(books_.empty())
-        renderer_.drawText(1,16,111,"No books yet");
+        renderer_.drawText(1,65,119,"No books yet");
       else
-        renderer_.drawText(1,16,111,
-            clippedLabel(books_[selected_].label,25).c_str());
-      renderer_.drawLine(15,144,359,144,true);
+        renderer_.drawText(1,65,119,
+            clippedLabel(books_[selected_].label,20).c_str());
+      renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
-        if(homeSelection_==0)renderer_.fillRect(10,153,355,38,true);
-        renderer_.drawText(1,19,163,"Continue reading",homeSelection_!=0);
+        if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
+        renderer_.drawText(1,22,165,"Continue reading",homeSelection_!=0);
       }
       if(homeSelection_==1 || books_.empty())
-        renderer_.fillRect(10,195,355,38,true);
-      renderer_.drawText(1,19,205,"Browse files",
+        renderer_.fillRect(12,204,350,37,true);
+      renderer_.drawText(1,22,211,"Browse files",
           homeSelection_!=1 && !books_.empty());
-      renderer_.drawText(1,16,261,"Wheel: choose");
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),"Browse files  (%zu)",books_.size());
+      std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());
       renderer_.drawText(1,16,47,count);
       renderer_.drawLine(15,72,359,72,true);
       if(books_.empty()) {
@@ -1392,18 +1400,20 @@ class CardShelf {
           const size_t index=start+row;
           const int y=TOP_Y+static_cast<int>(row)*ROW_H;
           const bool active=index==selected_;
-          if(active)renderer_.fillRect(10,y,355,36,true);
-          else renderer_.drawLine(14,y+36,360,y+36,true);
-          const std::string label=clippedLabel(books_[index].label,26);
-          renderer_.drawText(1,18,y+7,label.c_str(),!active);
+          if(active)renderer_.fillRect(12,y,350,36,true);
+          else renderer_.drawLine(15,y+36,359,y+36,true);
+          const std::string label=clippedLabel(books_[index].label,22);
+          renderer_.drawText(1,22,y+7,label.c_str(),!active);
         }
       }
     }
-    renderer_.fillRect(0,281,375,39,true);
+    // A single footer line; previous "Wheel: choose" at y=261 overlapped
+    // the dark footer and became partly invisible on the actual LCD.
+    renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
-      ?clippedLabel(notice_,28)
-      :browsing_?"Center: open  Back: home":"Center: open  Back: exit";
-    renderer_.drawText(1,15,290,footer.c_str(),false);
+      ?clippedLabel(notice_,24)
+      :browsing_?"OK: open   Back: home":"OK: open   Back: exit";
+    renderer_.drawText(1,22,280,footer.c_str(),false);
   }
   void present() {paint();display_.displayBuffer();}
   bool savePgm(const std::string& out) {

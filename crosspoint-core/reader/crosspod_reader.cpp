@@ -2083,7 +2083,31 @@ class CardShelf {
     for(int y=0;y<39;++y)
       for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
         fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+byte]^=0xff;
-    if(!browsing_) {
+    if(onlineMode_) {
+      renderer_.drawText(1,16,49,
+          clippedLabel(onlineTitle_.empty()?"Online library":onlineTitle_,35).c_str());
+      renderer_.drawLine(15,72,359,72,true);
+      if(onlineEntries_.empty()) {
+        renderer_.drawText(1,20,120,"No EPUBs or folders");
+        drawCompactLabel(20,159,"Back: leave catalog",190);
+      }
+      const size_t start=(onlineSelection_/VISIBLE_ROWS)*VISIBLE_ROWS;
+      for(size_t row=0;row<VISIBLE_ROWS && start+row<onlineEntries_.size();++row) {
+        const size_t index=start+row;
+        const int y=TOP_Y+static_cast<int>(row)*ROW_H;
+        const bool active=index==onlineSelection_;
+        if(active)renderer_.fillRect(12,y,350,36,true);
+        else renderer_.drawLine(15,y+36,359,y+36,true);
+        const auto& entry=onlineEntries_[index];
+        const std::string prefix=entry.kind==crosspod::OpdsEntry::Kind::Epub?
+          "[EPUB] ":"[DIR] ";
+        renderer_.drawText(1,20,y+3,
+          clippedLabel(prefix+entry.title,31).c_str(),!active);
+        if(!entry.author.empty())
+          renderer_.drawText(1,20,y+21,
+            clippedLabel(entry.author,32).c_str(),!active);
+      }
+    } else if(!browsing_) {
       drawCompactLabel(16,61,"Home");
       renderer_.drawLine(15,74,359,74,true);
       // Real EPUB cover thumb is decoded once when leaving the book;
@@ -2117,11 +2141,14 @@ class CardShelf {
       std::string sortText="Sort: ";
       sortText+=crosspod::shelfSortLabel(sortMode_);
       drawCompactLabel(22,259,sortText.c_str(),170);
-      if(homeSelection_==2) {
-        // Invert the completed text raster, not just its background.
+      drawCompactLabel(232,259,"Online",170);
+      if(homeSelection_>=2) {
+        // Split the original sort row into wheel-selectable Sort/Online
+        // buttons, preserving the established Browse and Continue positions.
         auto* pixels=display_.getFrameBuffer();
         if(pixels)for(int y=244;y<267;++y)
-          for(int x=12;x<362;++x)
+          for(int x=homeSelection_==2?12:202;
+              x<(homeSelection_==2?192:362);++x)
             pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
                 static_cast<uint8_t>(0x80u>>(x&7));
       }
@@ -2153,7 +2180,7 @@ class CardShelf {
       char count[64];
       std::snprintf(count,sizeof(count),"Books: %zu/%zu",visible_.size(),books_.size());
       drawCompactLabel(16,61,count);
-      drawCompactLabel(216,61,"Tap: search",140);
+      drawCompactLabel(212,61,"Search | Online",133);
       renderer_.drawLine(15,72,359,72,true);
       if(visible_.empty()) {
         renderer_.drawText(1,16,102,books_.empty()?"No EPUB books found":"No matching books");
@@ -2183,7 +2210,8 @@ class CardShelf {
     renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
-      :searchEditing_?"Wheel: letters   OK: add   Back: results":
+      :onlineMode_?"OK: open/get   Back: prev":
+       searchEditing_?"Wheel: letters   OK: add   Back: results":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     renderer_.drawText(1,22,280,footer.c_str(),false);
   }

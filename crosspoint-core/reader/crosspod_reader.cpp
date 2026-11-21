@@ -1021,11 +1021,13 @@ class Reader {
         return link.href;
     return {};
   }
+  std::string footnotePreview(const std::string& href) {
+    if(currentSpine_<0)return {};
+    return crosspod::loadFootnotePreview(archive_,
+      metadata_.getSpineEntry(currentSpine_).href,href);
+  }
   void showFootnotePopup(const std::string& href) {
-    std::string note;
-    if(currentSpine_>=0)
-      note=crosspod::loadFootnotePreview(archive_,
-        metadata_.getSpineEntry(currentSpine_).href,href);
+    std::string note=footnotePreview(href);
     render();
     renderer_.fillRect(10,58,355,250,true);
     renderer_.fillRect(12,60,351,246,false);
@@ -2551,6 +2553,21 @@ int main(int argc,char** argv) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
     return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-footnote-popup")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    for(const auto& link:reader.pageLinks()) {
+      if(!reader.isFootnoteLink(link))continue;
+      const auto preview=reader.footnotePreview(link);
+      if(preview.find("This footnote is a short note")==std::string::npos)
+        return 8;
+      reader.showFootnotePopup(link);
+      std::puts("CrossPod XHTML footnote popover: PASS");
+      return 0;
+    }
+    std::puts("CrossPod XHTML footnote noteref missing");
+    return 7;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-selection")==0) {
     Reader reader(argv[2]);

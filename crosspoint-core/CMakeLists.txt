@@ -507,6 +507,13 @@ add_test(NAME crosspod_reader_renders_epub_png
       "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/illustrated-page.pgm")
 
+# Ensure real reader opens and rasterizes both PNG and JPEG inside the EPUB.
+add_test(NAME crosspod_reader_png_and_jpeg
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/epub_png_jpeg_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
+      "${CMAKE_CURRENT_BINARY_DIR}/jpeg-png-page.pgm")
+
 # CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
 # Compile only until missing FreeInk image codecs and reading activity
 # dependencies can be ported; this is not a linked reader.

@@ -576,6 +576,22 @@ foreach(script korean devanagari bengali gujarati gurmukhi kannada malayalam
       COMMAND crosspod-reader --validate "${script_epub}")
 endforeach()
 
+# Large chapter regression: first page before complete pagination,
+# every page reachable, reversible navigation, and peak RSS diagnostics.
+set(LONG_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/long-chapter.epub")
+add_custom_command(OUTPUT "${LONG_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_long_epub_fixture.py"
+      "${LONG_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_long_epub_fixture.py"
+    VERBATIM)
+add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
+add_dependencies(crosspod-reader long_epub_fixture)
+add_test(NAME crosspod_reader_incremental_large_chapter
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/incremental_reader_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
+
 # CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
 # Compile only until missing FreeInk image codecs and reading activity
 # dependencies can be ported; this is not a linked reader.

@@ -25,6 +25,8 @@
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
+#include "ReadingLayout.hpp"
+#include "Utf8Label.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -496,19 +498,8 @@ class Reader {
            (value.size-12)/2;
   }
   ReaderRenderSpec upstreamSpec() const {
-    ReaderRenderSpec spec;
-    spec.fontId=upstreamFontId_;
-    spec.viewportWidth=static_cast<uint16_t>(375-2*preferences_.margin-2);
-    spec.viewportHeight=BOTTOM-TOP;
-    spec.lineCompression=preferences_.linePercent/100.0f;
-    spec.paragraphAlignment=static_cast<uint8_t>(preferences_.alignment);
-    spec.hyphenationEnabled=preferences_.hyphenation;
-    spec.embeddedStyle=preferences_.embeddedStyle;
-    spec.lineCompression=1.0f;
-    spec.embeddedStyle=true;
-    spec.imageRendering=0;
-    spec.hyphenationEnabled=false;
-    return spec;
+    return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
+        static_cast<uint16_t>(375),static_cast<uint16_t>(BOTTOM-TOP));
   }
   std::string upstreamCachePath() const {
     struct stat st{};
@@ -694,7 +685,7 @@ class Reader {
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
-  bool open() {
+  bool open(bool resumeOnOpen=false) {
     (void)crosspod::loadReaderPreferences(preferences_);
     if (temporary_.path().empty()) {
       std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;
@@ -762,7 +753,27 @@ class Reader {
       } else std::fprintf(stderr,
           "CrossPod: original Section unavailable; using legacy collector\n");
     }
-    return loadSpine(0,1);
+    // Load the saved chapter first; the old startup rendered spine 0 and
+    // immediately discarded it when resume opened a later chapter.
+    crosspod::ReadingPosition saved{};
+    const bool hasSaved=resumeOnOpen &&
+        crosspod::loadReadingPosition(bookPath_,saved) &&
+        saved.spine>=0 && saved.spine<metadata_.getSpineCount();
+    const int firstSpine=hasSaved?saved.spine:0;
+    bool loaded=loadSpine(firstSpine,1);
+    if(!loaded && firstSpine!=0)loaded=loadSpine(0,1);
+    if(!loaded)return false;
+    if(resumeOnOpen) {
+      resumeEnabled_=true;
+      if(hasSaved && currentSpine_==saved.spine && pageCount()>0) {
+        // Keep startup bounded. A partially cached chapter may not have
+        // reached this position yet; never skip or fabricate pages.
+        currentPage_=std::min(saved.page,pageCount()-1);
+      }
+      positionDirty_=false;
+      lastPositionSync_=std::chrono::steady_clock::now();
+    }
+    return true;
   }
   void enableResume() {
     resumeEnabled_=true;
@@ -1250,6 +1261,12 @@ class Reader {
     return pageCount()!=before;
   }
   bool isBuilding() const {return upstreamSection_ && upstreamSection_->isBuilding();}
+  // Keep only a short page-ahead window warm. For long EPUB chapters the
+  // old continuous 90ms parser loop kept reading/writing SD and using CPU
+  // even when the reader spent minutes on the same page.
+  bool needsPagePrefetch() const {
+    return isBuilding() && pageCount()<=currentPage_+5;
+  }
   size_t estimatedPages() const {
     return upstreamSection_?upstreamSection_->estimatedTotalPages():pageCount();
   }
@@ -1300,6 +1317,8 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          drawProgress();
+          applyNightMode();
           return;
         }
     }
@@ -1307,9 +1326,9 @@ class Reader {
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      cacheRenderedPage();
       drawProgress();
       applyNightMode();
-      cacheRenderedPage();
       return;
     }
     const auto& page=pages_[currentPage_];
@@ -1329,9 +1348,9 @@ class Reader {
         }
       }
     }
+    cacheRenderedPage();
     drawProgress();
     applyNightMode();
-    cacheRenderedPage();
   }
   void present() {
     render();
@@ -1434,18 +1453,7 @@ std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
   return books;
 }
 std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
-  std::string out;
-  size_t pos=0,count=0;
-  while(pos<label.size() && count<maxCodepoints) {
-    unsigned char c=static_cast<unsigned char>(label[pos]);
-    size_t len=c<0x80?1:(c>=0xC2&&c<0xE0?2:(c<0xF0?3:4));
-    if(pos+len>label.size())break;
-    out.append(label,pos,len);
-    pos+=len;
-    ++count;
-  }
-  if(pos<label.size())out+="...";
-  return out;
+  return crosspod::clippedUiLabel(label,maxCodepoints);
 }
 
 class CardShelf {
@@ -1636,13 +1644,14 @@ int runCardApp(const std::string& bookDir) {
     if(!input.receive(event)) {
       if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
-      if(reader && !typeMenu && !navigationMenu && reader->isBuilding() &&
-         now>=nextBuildTick) {
-        // One small Section step, no framebuffer refresh: growing the page
-        // cache must not flash the current page or monopolize the click wheel.
+      if(reader && !typeMenu && !navigationMenu &&
+         reader->needsPagePrefetch() && now>=nextBuildTick) {
+        // Layout a bounded lookahead only when needed. Stop unnecessary
+        // parser and SD-card activity once five pages are prepared.
+        // No framebuffer refresh while prefetching.
         (void)reader->buildNextPages(2);
         nextBuildTick=std::chrono::steady_clock::now()+
-                      std::chrono::milliseconds(90);
+                      std::chrono::milliseconds(150);
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -1760,13 +1769,12 @@ int runCardApp(const std::string& bookDir) {
     shelf->setNotice("Opening EPUB...");
     shelf->present();
     auto next=std::make_unique<Reader>(chosen);
-    if(!next->open()) {
+    if(!next->open(true)) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
       shelf.reset();
       reader=std::move(next);
-      reader->enableResume();
       reader->present();
     }
   }
@@ -1858,13 +1866,19 @@ int main(int argc,char** argv) {
   }
   const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
-  if (!reader.open()) {
+  if (!reader.open(!dry)) {
     std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
   if(dry) {
     if(benchmark) {
-      const auto started=std::chrono::steady_clock::now();
+      const auto openEnd=std::chrono::steady_clock::now();
+      reader.render(); // includes the first page's SD read and glyph paint
+      const auto firstRenderEnd=std::chrono::steady_clock::now();
+      // Reuse the identical raster; never repeatedly inflate EPUB pages.
+      constexpr int REPEAT_FRAMES=32;
+      for(int i=0;i<REPEAT_FRAMES;++i)reader.render();
+      const auto repeatedEnd=std::chrono::steady_clock::now();
       size_t advanced=0;
       constexpr size_t SAMPLE_PAGES=64;
       while(advanced<SAMPLE_PAGES) {
@@ -1876,12 +1890,22 @@ int main(int argc,char** argv) {
       struct rusage usage{};
       (void)getrusage(RUSAGE_SELF,&usage);
       const auto openMs=std::chrono::duration_cast<std::chrono::milliseconds>(
-        started-openStart).count();
+        openEnd-openStart).count();
+      const auto firstRenderUs=std::chrono::duration_cast<std::chrono::microseconds>(
+        firstRenderEnd-openEnd).count();
+      const auto cachedRenderUs=std::chrono::duration_cast<std::chrono::microseconds>(
+        repeatedEnd-firstRenderEnd).count()/REPEAT_FRAMES;
       const auto turnMs=std::chrono::duration_cast<std::chrono::milliseconds>(
-        elapsed-started).count();
-      std::printf("CrossPod benchmark: open_ms=%lld sample_pages=%zu walk_ms=%lld maxrss_kb=%ld\n",
-        static_cast<long long>(openMs),advanced,
-        static_cast<long long>(turnMs),usage.ru_maxrss);
+        elapsed-repeatedEnd).count();
+      std::printf(
+        "CrossPod benchmark: open_ms=%lld first_render_us=%lld "
+        "cached_render_us=%lld sample_pages=%zu walk_ms=%lld "
+        "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld\n",
+        static_cast<long long>(openMs),
+        static_cast<long long>(firstRenderUs),
+        static_cast<long long>(cachedRenderUs),
+        advanced,static_cast<long long>(turnMs),
+        usage.ru_maxrss,usage.ru_inblock,usage.ru_oublock);
       return 0;
     }
     if(walk) {
@@ -1915,7 +1939,6 @@ int main(int argc,char** argv) {
   }
   std::signal(SIGINT,exitOnSignal);
   std::signal(SIGTERM,exitOnSignal);
-  reader.enableResume();
   reader.present();
   bool typeMenu=false;
   int typeSelection=0;

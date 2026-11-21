@@ -129,6 +129,37 @@ chmod +x "$work/reader-qemu"
 python3 crosspoint-core/tests/xhtml_streaming_test.py \
   "$work/reader-qemu" "$work/reader/illustrated.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" "$work/vietnamese.pgm"
+# v0.4.0 performance instrumentation: run twice using the same per-book
+# cache and retain both measurements (cold versus warmed SD layout).
+mkdir -p "$work/benchmark-state"
+for phase in cold warm; do
+  CROSSPOD_STATE_DIR="$work/benchmark-state" timeout 90s \
+    qemu-mipsel -L "$root" "$elf" --bench "$work/reader/vietnamese-prose.epub" \
+    | tee "$work/bench-$phase.log"
+  grep -q 'first_render_us=' "$work/bench-$phase.log"
+  grep -q 'cached_render_us=' "$work/bench-$phase.log"
+  grep -q 'read_blocks=' "$work/bench-$phase.log"
+done
+# Check that EPUB layout settings really affect the *upstream* page raster.
+# Older CrossPod silently overwrote the saved CSS/hyphenation/spacing settings.
+mkdir -p "$work/layout-settings"
+printf 'CROSSPOD-SETTINGS2 14 100 0 0 1 0\\n' > "$work/layout-settings/reading-settings.conf"
+CROSSPOD_STATE_DIR="$work/layout-settings" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" \
+    "$work/default-settings.pgm"
+printf 'CROSSPOD-SETTINGS2 14 140 1 1 0 0\\n' > "$work/layout-settings/reading-settings.conf"
+CROSSPOD_STATE_DIR="$work/layout-settings" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" \
+    "$work/changed-settings.pgm"
+python3 - "$work/default-settings.pgm" "$work/changed-settings.pgm" <<'PY'
+from pathlib import Path
+import sys
+a,b=(Path(p).read_bytes() for p in sys.argv[1:])
+assert len(a)==len(b)==120015
+changed=sum(x!=y for x,y in zip(a[15:],b[15:]))
+assert changed>50, f"Layout settings ignored: only {changed} changed pixels"
+print(f"MIPS EPUB CSS/layout preferences: PASS ({changed} pixel changes)")
+PY
 timeout 60s qemu-mipsel -L "$root" "$elf" --render-images "$work/reader/illustrated.epub" "$work/illustrated.pgm" | tee "$work/images.log"
 grep -q "CrossPod original Section:" "$work/images.log"
 grep -q "CrossPod rendered images: 2" "$work/images.log"

@@ -24,11 +24,14 @@ assert forward>=10, f"Long chapter yielded only {forward} page turns"
 assert forward==backward, (forward,backward)
 
 stats=run("--bench",120)
-match=re.search(r"open_ms=(\d+) sample_pages=(\d+) walk_ms=(\d+) maxrss_kb=(\d+)",
-                stats)
+match=re.search(
+    r"open_ms=(\d+) first_render_us=(\d+) cached_render_us=(\d+) "
+    r"sample_pages=(\d+) walk_ms=(\d+) maxrss_kb=(\d+)",
+    stats)
 assert match, stats
-start_ms,pages,walk_ms,rss=map(int,match.groups())
-assert pages>=10 and rss>0
+start_ms,first_us,cached_us,pages,walk_ms,rss=map(int,match.groups())
+assert pages>=10 and rss>0 and first_us>=0 and cached_us>=0
 print(f"Original Section incremental: PASS {forward} pages, "
-      f"startup={start_ms}ms, sample={pages}, walk={walk_ms}ms, "
+      f"startup={start_ms}ms, first={first_us}us, cached={cached_us}us, "
+      f"sample={pages}, walk={walk_ms}ms, "
       f"peak RSS={rss}KB")

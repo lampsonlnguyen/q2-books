@@ -107,6 +107,12 @@ timeout 120s qemu-mipsel -L "$root" "$elf" \
 grep -q '(incremental)' "$work/incremental-first-page.log"
 timeout 120s qemu-mipsel -L "$root" "$elf" \
   --walk "$work/reader/long-chapter.epub" | tee "$work/incremental-walk.log"
+# Wheel-turn stability gate: render *every* page, not only update the
+# page index. Repeated fast turns previously left the display blank.
+timeout 180s qemu-mipsel -L "$root" "$elf" \
+  --render-walk "$work/reader/long-chapter.epub" \
+  | tee "$work/long-scroll-render.log"
+grep -q 'without blank text' "$work/long-scroll-render.log"
 python3 - "$work/incremental-walk.log" <<'PY'
 from pathlib import Path
 import re, sys

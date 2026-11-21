@@ -94,7 +94,8 @@ mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || tr
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --walk "$work/reader/multilingual.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" "$work/vietnamese.pgm"
-timeout 60s qemu-mipsel -L "$root" "$elf" --render-images "$work/reader/illustrated.epub" "$work/illustrated.pgm"
+timeout 60s qemu-mipsel -L "$root" "$elf" --render-images "$work/reader/illustrated.epub" "$work/illustrated.pgm" | tee "$work/images.log"
+grep -q "CrossPod rendered images: 2" "$work/images.log"
 python3 - "$work/vietnamese.pgm" "$work/illustrated.pgm" <<'PY'
 from pathlib import Path
 import sys

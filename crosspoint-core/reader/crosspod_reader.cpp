@@ -2816,6 +2816,50 @@ void usage() {
 int main(int argc,char** argv) {
   // Card apps start with NO book argument; the on-device picker owns launch.
   if(argc==1) return runCardApp("/mnt/mmc/Books");
+  if(argc==3 && std::strcmp(argv[1],"--opds-probe")==0) {
+    const auto catalog=crosspod::fetchOpdsFeed(argv[2]);
+    if(!catalog.error.empty()) {
+      std::fprintf(stderr,"CrossPod OPDS request: %s\n",catalog.error.c_str());
+      return 8;
+    }
+    std::printf("CrossPod OPDS: %s, entries=%zu\n",
+                catalog.title.c_str(),catalog.entries.size());
+    for(const auto& entry:catalog.entries)
+      std::printf("%s: %s\n",
+        entry.kind==crosspod::OpdsEntry::Kind::Epub?"EPUB":"CATALOG",
+        entry.title.c_str());
+    return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--opds-download")==0) {
+    auto catalog=crosspod::fetchOpdsFeed(argv[2]);
+    if(!catalog.error.empty())return 8;
+    for(const auto& entry:catalog.entries) {
+      if(entry.kind!=crosspod::OpdsEntry::Kind::Epub)continue;
+      std::string saved,error;
+      if(!crosspod::opdsDownloadEpub(argv[3],entry,saved,error)) {
+        std::fprintf(stderr,"CrossPod download: %s\n",error.c_str());
+        return 9;
+      }
+      std::printf("CrossPod OPDS downloaded: %s\n",saved.c_str());
+      return 0;
+    }
+    return 10;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--koreader-hash")==0) {
+    const auto md5=crosspod::koReaderPartialMd5(argv[2]);
+    if(md5.empty())return 9;
+    std::printf("CrossPod KOReader partial MD5: %s\n",md5.c_str());
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-koreader-sync")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open(true))return 3;
+    if(reader.chapterCount()>1 && !reader.goToChapter(1))return 4;
+    if(!reader.pushReadingSync())return 5;
+    if(!reader.pullReadingSync())return 6;
+    std::puts("CrossPod KOReader XPath progress roundtrip: PASS");
+    return 0;
+  }
   if(argc==3 && std::strcmp(argv[1],"--index-book")==0) {
     // Host/QEMU regression: metadata and an EPUB3 cover-image must become
     // readable cached shelf files WITHOUT constructing a Reader or Section.

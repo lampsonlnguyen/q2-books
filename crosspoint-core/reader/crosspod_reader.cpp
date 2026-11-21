@@ -847,10 +847,10 @@ class Reader {
   void dumpToc() {
     if(!upstreamEpub_)return;
     const int count=upstreamEpub_->getTocItemsCount();
-    std::printf("CrossPod TOC entries: %d\\n",count);
+    std::printf("CrossPod TOC entries: %d\n",count);
     for(int i=0;i<count;++i) {
       const auto t=upstreamEpub_->getTocItem(i);
-      std::printf("toc=%d spine=%d depth=%u title=%s anchor=%s\\n",
+      std::printf("toc=%d spine=%d depth=%u title=%s anchor=%s\n",
           i,t.spineIndex,t.level,t.title.c_str(),t.anchor.c_str());
     }
   }
@@ -1051,7 +1051,7 @@ class Reader {
     if(!upstreamSection_ || !upstreamSection_->isBuilding())return false;
     const size_t before=pageCount();
     if(!upstreamSection_->buildSomeMore(maxPages)) {
-      std::fprintf(stderr,"CrossPod: incremental Section failed; preserving book via fallback\\n");
+      std::fprintf(stderr,"CrossPod: incremental Section failed; preserving book via fallback\n");
       const int spine=currentSpine_;
       const size_t page=currentPage_;
       upstreamEpub_.reset();
@@ -1063,7 +1063,7 @@ class Reader {
       return true;
     }
     if(!upstreamSection_->isBuilding())
-      std::printf("CrossPod Section completed: %zu pages\\n",pageCount());
+      std::printf("CrossPod Section completed: %zu pages\n",pageCount());
     return pageCount()!=before;
   }
   bool isBuilding() const {return upstreamSection_ && upstreamSection_->isBuilding();}
@@ -1592,7 +1592,7 @@ int main(int argc,char** argv) {
         started-openStart).count();
       const auto turnMs=std::chrono::duration_cast<std::chrono::milliseconds>(
         elapsed-started).count();
-      std::printf("CrossPod benchmark: open_ms=%lld sample_pages=%zu walk_ms=%lld maxrss_kb=%ld\\n",
+      std::printf("CrossPod benchmark: open_ms=%lld sample_pages=%zu walk_ms=%lld maxrss_kb=%ld\n",
         static_cast<long long>(openMs),advanced,
         static_cast<long long>(turnMs),usage.ru_maxrss);
       return 0;

@@ -1,9 +1,12 @@
 #pragma once
 // SPDX-License-Identifier: MIT
-// Transitional bounded PNG-to-monochrome adapter for the Q2 preview reader.
-// The finished port should replace this with CrossPoint ImageBlock/decoders.
+// Bounded PNG decoder for the transitional CrossPod Q2 reader.
+// Supports the common EPUB PNG variants: 8-bit grayscale, indexed palette,
+// grayscale+alpha, RGB and RGBA (non-interlaced only). Uses original
+// CrossPoint EPUB/ZIP and GfxRenderer; this is not a separate UI framework.
 #include <zlib.h>
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdlib>
 #include <cstdint>
@@ -27,8 +30,12 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
   if(!bytes||len<33||std::memcmp(bytes,sig,8)!=0)return false;
   size_t at=8;
   uint32_t width=0,height=0;
-  unsigned channels=0;
-  bool seenIHDR=false,seenEND=false;
+  unsigned channels=0,colorType=255;
+  bool seenIHDR=false,seenEND=false,seenIDAT=false,seenPLTE=false,seenTRNS=false;
+  std::array<uint8_t,768> palette{};
+  std::array<uint8_t,256> paletteAlpha{};
+  paletteAlpha.fill(255);
+  size_t paletteEntries=0;
   std::vector<uint8_t> compressed;
   while(at+12<=len) {
     const uint32_t amount=readBE32(bytes+at);
@@ -43,23 +50,41 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
       width=readBE32(chunk);
       height=readBE32(chunk+4);
       if(width==0||height==0||width>MAX_PIXELS/height || chunk[8]!=8 ||
-         (chunk[9]!=2 && chunk[9]!=6) || chunk[10]!=0 ||
-         chunk[11]!=0 || chunk[12]!=0)return false;
-      channels=chunk[9]==2?3u:4u;
+         chunk[10]!=0 || chunk[11]!=0 || chunk[12]!=0)return false;
+      colorType=chunk[9];
+      switch(colorType) {
+        case 0:channels=1;break;  // 8-bit grayscale
+        case 2:channels=3;break;  // 8-bit RGB
+        case 3:channels=1;break;  // 8-bit indexed palette
+        case 4:channels=2;break;  // 8-bit grayscale + alpha
+        case 6:channels=4;break;  // 8-bit RGBA
+        default:return false;
+      }
+    } else if(std::memcmp(type,"PLTE",4)==0) {
+      if(!seenIHDR||seenIDAT||seenPLTE||amount==0||
+         amount>palette.size()||amount%3!=0)return false;
+      seenPLTE=true;
+      paletteEntries=amount/3;
+      std::memcpy(palette.data(),chunk,amount);
+    } else if(std::memcmp(type,"tRNS",4)==0) {
+      if(!seenIHDR||seenIDAT||seenTRNS||colorType!=3||
+         !seenPLTE||amount>paletteEntries)return false;
+      seenTRNS=true;
+      std::memcpy(paletteAlpha.data(),chunk,amount);
     } else if(std::memcmp(type,"IDAT",4)==0) {
-      if(!seenIHDR || compressed.size()>MAX_COMPRESSED-std::min<size_t>(amount,MAX_COMPRESSED) ||
+      if(!seenIHDR || (colorType==3&&!seenPLTE)||
          amount>MAX_COMPRESSED-compressed.size())return false;
+      seenIDAT=true;
       compressed.insert(compressed.end(),chunk,chunk+amount);
     } else if(std::memcmp(type,"IEND",4)==0) {
       seenEND=amount==0;
       break;
     } else if((type[0]&0x20u)==0) {
-      // Unknown mandatory PNG chunk.
-      return false;
+      return false; // unknown mandatory PNG chunk
     }
     at+=12u+amount;
   }
-  if(!seenIHDR||!seenEND||compressed.empty())return false;
+  if(!seenIHDR||!seenEND||!seenIDAT||compressed.empty())return false;
   const size_t stride=static_cast<size_t>(width)*channels;
   const size_t rawLen=static_cast<size_t>(height)*(stride+1);
   if(rawLen>5u*1024u*1024u)return false;
@@ -95,8 +120,19 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
     }
     for(uint32_t x=0;x<width;++x) {
       const uint8_t* pixel=row+static_cast<size_t>(x)*channels;
-      const uint32_t gray=(77u*pixel[0]+150u*pixel[1]+29u*pixel[2]+128u)>>8;
-      const uint32_t alpha=channels==4?pixel[3]:255;
+      unsigned gray=0,alpha=255;
+      if(colorType==0 || colorType==4) {
+        gray=pixel[0];
+        if(colorType==4)alpha=pixel[1];
+      } else {
+        const uint8_t* rgb=pixel;
+        if(colorType==3) {
+          if(pixel[0]>=paletteEntries)return false;
+          rgb=palette.data()+3u*pixel[0];
+          alpha=paletteAlpha[pixel[0]];
+        } else if(colorType==6)alpha=pixel[3];
+        gray=(77u*rgb[0]+150u*rgb[1]+29u*rgb[2]+128u)>>8;
+      }
       out.gray[static_cast<size_t>(y)*width+x]=static_cast<uint8_t>(
         (gray*alpha+255u*(255u-alpha)+127u)/255u);
     }

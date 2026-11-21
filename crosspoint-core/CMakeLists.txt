@@ -533,6 +533,18 @@ add_test(NAME crosspod_reader_png_and_jpeg
       "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/jpeg-png-page.pgm")
 
+# Chinese/Japanese EPUB. Q2 hardware build renders this through the original
+# CrossPoint Section and verifies CJK glyph fallback is actually used.
+set(CJK_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/cjk-script.epub")
+add_custom_command(OUTPUT "${CJK_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_cjk_epub_fixture.py" "${CJK_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_cjk_epub_fixture.py"
+    VERBATIM)
+add_custom_target(cjk_epub_fixture ALL DEPENDS "${CJK_EPUB_FIXTURE}")
+add_dependencies(crosspod-reader cjk_epub_fixture)
+add_test(NAME crosspod_reader_cjk_original_section
+    COMMAND crosspod-reader --validate "${CJK_EPUB_FIXTURE}")
+
 # CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
 # Compile only until missing FreeInk image codecs and reading activity
 # dependencies can be ported; this is not a linked reader.

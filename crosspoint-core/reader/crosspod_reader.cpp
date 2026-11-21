@@ -1035,19 +1035,35 @@ class Reader {
     return upstreamSection_?upstreamSection_->estimatedTotalPages():pageCount();
   }
   bool move(int direction) {
-    if(direction>0 && currentPage_+1>=pageCount() && isBuilding())
+    if(direction>0 && currentPage_+1>=pageCount() && isBuilding()) {
       (void)buildNextPages(2);
+      // No new page available yet: remain in this chapter until the
+      // incremental parser finishes. Never silently skip unread content.
+      if(isBuilding() && currentPage_+1>=pageCount())return false;
+    }
     if (direction>0 && currentPage_+1<pageCount()) { ++currentPage_; persistPosition(); return true; }
     if (direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
     const bool changed=loadSpine(currentSpine_+direction,direction);
     if(changed)persistPosition();
     return changed;
   }
+  void drawProgress() {
+    const int totalChapters=metadata_.getSpineCount();
+    if(totalChapters<=0 || currentSpine_<0)return;
+    const size_t localCount=std::max<size_t>(1,estimatedPages());
+    const float local=static_cast<float>(currentPage_+1)/localCount;
+    const float progress=std::clamp(
+      (static_cast<float>(currentSpine_)+local)/totalChapters,0.0f,1.0f);
+    const int filled=static_cast<int>(progress*347.0f);
+    renderer_.drawLine(14,314,361,314,true);
+    if(filled>0)renderer_.fillRect(14,312,filled,3,true);
+  }
   void render() {
     renderer_.clearScreen(0xff);
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      drawProgress();
       return;
     }
     const auto& page=pages_[currentPage_];
@@ -1067,6 +1083,7 @@ class Reader {
         }
       }
     }
+    drawProgress();
   }
   void present() {
     render();

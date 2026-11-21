@@ -134,6 +134,33 @@ cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
+
+# Genuine Chinese/Japanese regression: the pinned CrossPoint CJK font must be
+# loaded under the real Q2 MIPS ABI. Compare exact rasters against the
+# explicitly disabled-fallback control, not just the process exit code.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --render "$work/reader/cjk-script.epub" "$work/cjk-active.pgm" \
+  | tee "$work/cjk-active.log"
+grep -q 'CrossPod original Section:' "$work/cjk-active.log"
+grep -q 'CrossPod CJK fallback: original CrossPoint NotoSansCJKJP cpfont 12pt' "$work/cjk-active.log"
+CROSSPOD_DISABLE_CJK=1 CROSSPOD_STATE_DIR="$card/.crosspod" \
+  timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --render "$work/reader/cjk-script.epub" "$work/cjk-disabled.pgm" \
+  | tee "$work/cjk-disabled.log"
+grep -q 'CrossPod CJK fallback: unavailable 12pt' "$work/cjk-disabled.log"
+python3 - "$work/cjk-active.pgm" "$work/cjk-disabled.pgm" <<'PY'
+from pathlib import Path
+import sys
+active, disabled = (Path(p).read_bytes() for p in sys.argv[1:])
+for page in (active, disabled):
+    assert page.startswith(b"P5\n375 320\n255\n")
+    assert len(page) == 120015
+    assert page[15:].count(0) > 100
+changed = sum(a != b for a, b in zip(active[15:], disabled[15:]))
+assert changed > 200, f"CJK fallback ineffective: only {changed} changed pixels"
+print(f"MIPS Q2 Chinese/Japanese glyph fallback: PASS ({changed} pixel differences)")
+PY
+
 # The default must now use the extended multilingual Sans 12 pack, not just
 # the much smaller built-in UI glyph set.
 CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \

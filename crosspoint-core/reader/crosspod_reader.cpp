@@ -81,6 +81,16 @@ volatile std::sig_atomic_t interrupted = 0;
 std::string clippedLabel(const std::string&,size_t);
 void exitOnSignal(int) { interrupted = 1; }
 
+bool installExitHandlers() {
+  struct sigaction action{};
+  action.sa_handler=exitOnSignal;
+  sigemptyset(&action.sa_mask);
+  if(sigaction(SIGINT,&action,nullptr)==0 && sigaction(SIGTERM,&action,nullptr)==0)
+    return true;
+  std::perror("CrossPod: cannot install exit handlers");
+  return false;
+}
+
 using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 
@@ -865,9 +875,12 @@ class Reader {
     if(resumeOnOpen) {
       resumeEnabled_=true;
       if(hasSaved && currentSpine_==saved.spine && pageCount()>0) {
-        // Keep startup bounded. A partially cached chapter may not have
-        // reached this position yet; never skip or fabricate pages.
-        currentPage_=std::min(saved.page,pageCount()-1);
+        // Rebuild a missing page cache only as far as the saved page.
+        while(!interrupted && currentSpine_==saved.spine &&
+              pageCount()<=saved.page && isBuilding())
+          (void)buildNextPages(1);
+        if(currentSpine_==saved.spine && pageCount()>0)
+          currentPage_=std::min(saved.page,pageCount()-1);
       }
       positionDirty_=false;
       lastPositionAttempt_=std::chrono::steady_clock::now();
@@ -2412,8 +2425,10 @@ class CardShelf {
 };
 
 int runCardApp(const std::string& bookDir) {
+  if(!installExitHandlers())return 5;
   SessionProfile profile;
   std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  if(interrupted)return 0;
   auto recent=crosspod::loadRecentBooks();
   auto sortMode=crosspod::ShelfSortMode::Title;
   crosspod::sortShelfBooks(books,sortMode,recent);
@@ -2422,11 +2437,10 @@ int runCardApp(const std::string& bookDir) {
     std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
     return 5;
   }
-  std::signal(SIGINT,exitOnSignal);
-  std::signal(SIGTERM,exitOnSignal);
   size_t selection=crosspod::lastOpenedIndex(books,recent);
   std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
   if(!shelf->open())return 4;
+  if(interrupted)return 0;
   shelf->present();
   crosspod::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
@@ -2451,9 +2465,9 @@ int runCardApp(const std::string& bookDir) {
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
   while(!interrupted) {
+    if(reader)reader->flushPosition(false);
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
-      if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
       // Work only while idle on the bookshelf, not when reading or during
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
@@ -2649,8 +2663,10 @@ int runCardApp(const std::string& bookDir) {
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection==14) {
+            reader->flushPosition();
             (void)reader->pushReadingSync();
           } else if(typeSelection==15) {
+            reader->flushPosition();
             if(reader->pullReadingSync()) {
               typeMenu=false;
               reader->present();
@@ -2861,7 +2877,9 @@ int runCardApp(const std::string& bookDir) {
     shelf->setNotice("Opening EPUB...");
     shelf->present();
     auto next=std::make_unique<Reader>(chosen);
-    if(!next->open(true)) {
+    const bool opened=next->open(true);
+    if(interrupted)break;
+    if(!opened) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
@@ -3083,9 +3101,14 @@ int main(int argc,char** argv) {
     std::fputs("CrossPod: only EPUB is supported in this device preview\n",stderr);
     return 2;
   }
+  if(!dry && !installExitHandlers())return 5;
+  // Destroy the reader and flush progress before releasing the input socket.
+  crosspod::Q2SocketInput input;
   const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
-  if (!reader.open(!dry)) {
+  const bool opened=reader.open(!dry);
+  if(interrupted)return 0;
+  if(!opened) {
     std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
@@ -3185,21 +3208,18 @@ int main(int argc,char** argv) {
     if (render && !reader.savePgm(output)) return 4;
     return 0;
   }
-  crosspod::Q2SocketInput input;
   if(!input.open()) {
     std::fputs("CrossPod: input socket unavailable, refusing interactive mode\n",stderr);
     return 5;
   }
-  std::signal(SIGINT,exitOnSignal);
-  std::signal(SIGTERM,exitOnSignal);
   reader.present();
   bool typeMenu=false;
   int typeSelection=0;
   crosspod::Q2Controls controls(loadWheelSensitivity());
   while(!interrupted) {
+    reader.flushPosition(false);
     crosspod::PhysicalEvent event{};
     if (!input.receive(event)) {
-      reader.flushPosition(false);
       if(waitForReaderInput(input,reader.nextPositionFlush())<0) {
         std::fputs("CrossPod: input socket poll failed\n",stderr);
         return 5;
@@ -3249,6 +3269,5 @@ int main(int argc,char** argv) {
     }
     if(changed)reader.present();
   }
-  input.close();
   return 0;
 }

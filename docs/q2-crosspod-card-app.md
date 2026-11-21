@@ -55,13 +55,21 @@ across runs. Measure battery drain separately on the physical device.
 This build uses CrossPoint's original EPUB ZIP/OPF/spine, ParsedText, TextBlock
 and GfxRenderer; XHTML collection is provisional and can lose styling.
 
-Reading-position resume (development branch): CrossPod now stores a small
-per-book progress file under /mnt/mmc/.crosspod/ after an interactive page
-turn. Reopening the same EPUB restores the last chapter and page. Progress
-is ignored when the EPUB file size or modification time changes. The saved
-page is clamped to the currently paginated chapter; this transitional format
-is NOT CrossPoint's native progress.bin and is not KOReader sync compatible.
-The CLI --validate, --render and --walk modes do not write progress.
+DEVICE POWER AND READING PROGRESS:
+Q2 Pod firmware owns power on, shutdown, sleep and wake. CrossPod checkpoints
+changed reading progress on the SD card at most once every five seconds during
+reading. Leaving a book or receiving SIGTERM/SIGINT flushes pending progress
+before the app releases its input socket and exits. If power is cut or the app
+is forcibly killed, recovery uses the last completed checkpoint.
+
+On the next launch, Continue Reading reopens the last book at its saved
+chapter and page. Progress is ignored if the EPUB size or modification time
+changes. The CLI --validate, --render and --walk modes do not save progress.
+
+On a physical Q2, turn a few pages, exit with Back or Q2 Pod's Hold Return,
+then reopen CrossPod and use Continue Reading. Repeat with a firmware
+shutdown and restart. Check how much progress Q2 Pod preserves during shutdown
+on your firmware version.
 
 TYPOGRAPHY MENU (experimental font builds):
 While reading, press Centre or tap the top 45 pixels to open Reading appearance.

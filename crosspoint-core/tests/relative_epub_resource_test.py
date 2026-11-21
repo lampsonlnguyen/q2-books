@@ -23,6 +23,9 @@ assert "1. First item" in output, output
 assert "2. Second item" in output, output
 assert "5. Fifth item" in output, output
 assert "6. Sixth item" in output, output
+assert "Before nested" in output and "Nested paragraph" in output, output
+assert "After nested" in output, output
+assert "Heading cell" in output and "Cell contents" in output, output
 assert "Before break" in output and "After break" in output, output
 assert not any("Before breakAfter break" in line for line in output.splitlines()), output
 print("Sibling-directory CSS applied in active XHTML reader: PASS")

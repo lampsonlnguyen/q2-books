@@ -567,3 +567,27 @@ target_include_directories(crosspoint_section_objects PRIVATE
     lib/XmlParserUtils
     platform/posix
 )
+
+# Experimental FULL upstream reader link gate. Unlike the compile-only gates
+# above this deliberately resolves every reference used by the original
+# ChapterHtmlSlimParser, Section and Page. It must pass before switching the
+# Q2 user-facing reader to the original section engine.
+add_executable(crosspoint_original_engine_link_tests
+    tests/original_chapter_parser_interface_test.cpp
+    $<TARGET_OBJECTS:crosspoint_xhtml_parser_objects>
+    $<TARGET_OBJECTS:crosspoint_section_objects>
+    $<TARGET_OBJECTS:crosspoint_pagination_objects>
+    $<TARGET_OBJECTS:crosspoint_renderer_objects>)
+target_include_directories(crosspoint_original_engine_link_tests PRIVATE
+    lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
+    lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
+    lib/Memory lib/Serialization lib/XmlParserUtils platform/posix platform/q2)
+target_compile_definitions(crosspoint_original_engine_link_tests PRIVATE CROSSPOD_LINUX=1)
+set_target_properties(crosspoint_original_engine_link_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(crosspoint_original_engine_link_tests PRIVATE
+    crosspoint_zip crosspoint_epub_container crosspoint_opf
+    crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
+    crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
+add_test(NAME crosspoint_original_engine_real_link
+    COMMAND crosspoint_original_engine_link_tests)

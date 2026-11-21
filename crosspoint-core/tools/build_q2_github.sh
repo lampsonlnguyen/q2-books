@@ -103,6 +103,13 @@ grep -q 'updated=1' "$work/shelf-index-fresh.log"
 grep -q 'updated=0' "$work/shelf-index-cached.log"
 grep -q 'Nguyễn Thị Mai' "$work/shelf-index-fresh.log"
 echo "Q2 unattended OPF/cover index: PASS"
+# Original CrossPoint Page links, internal anchors, EPUB footnotes and
+# one-entry return history must work on the actual Q2 MIPS executable.
+python3 crosspoint-core/tests/make_reader_links_epub.py "$work/reader/page-links.epub"
+CROSSPOD_STATE_DIR="$work/benchmark-state" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --test-page-links "$work/reader/page-links.epub" \
+  | tee "$work/page-links.log"
+grep -q 'page link jump and return: PASS' "$work/page-links.log"
 echo "C++ ABI requirements:"
 mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || true
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub" | tee "$work/upstream-validation.log"

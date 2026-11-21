@@ -19,6 +19,7 @@ namespace crosspod {
 struct ShelfIndexResult {
   bool metadata=false;
   bool cover=false;
+  bool updated=false;
 };
 inline bool isSafeEpubItem(const std::string& item) {
   return !item.empty() && item.size()<1024 && item.front()!='/' &&
@@ -64,6 +65,7 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
     return result;
   if(!metadataReady && (!parser.title.empty()||!parser.author.empty())) {
     result.metadata=saveShelfDetails(bookPath,{parser.title,parser.author});
+    result.updated=result.metadata;
   }
 
   // An EPUB with no declared image cover is still a valid book.
@@ -82,8 +84,10 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
     decodedOk=decodeJpegPreview(image.get(),bytes,decoded);
   if(!decodedOk)return result;
   ShelfCover thumb{};
-  if(makeShelfCover(decoded,thumb))
+  if(makeShelfCover(decoded,thumb)) {
     result.cover=saveShelfCover(bookPath,thumb);
+    result.updated=result.updated || result.cover;
+  }
   return result;
 }
 } // namespace crosspod

@@ -2060,6 +2060,20 @@ void usage() {
 int main(int argc,char** argv) {
   // Card apps start with NO book argument; the on-device picker owns launch.
   if(argc==1) return runCardApp("/mnt/mmc/Books");
+  if(argc==3 && std::strcmp(argv[1],"--index-book")==0) {
+    // Host/QEMU regression: metadata and an EPUB3 cover-image must become
+    // readable cached shelf files WITHOUT constructing a Reader or Section.
+    const auto result=crosspod::indexShelfBook(argv[2]);
+    crosspod::ShelfDetails details;
+    crosspod::ShelfCover cover;
+    const bool haveMetadata=crosspod::loadShelfDetails(argv[2],details);
+    const bool haveCover=crosspod::loadShelfCover(argv[2],cover);
+    std::printf("CrossPod shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\\n",
+       haveMetadata,haveCover,result.updated,
+       haveMetadata?details.title.c_str():"",
+       haveMetadata?details.author.c_str():"");
+    return haveMetadata && haveCover?0:5;
+  }
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());

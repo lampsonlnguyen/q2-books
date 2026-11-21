@@ -2540,6 +2540,23 @@ int main(int argc,char** argv) {
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
     return 0;
   }
+  if(argc==3 && std::strcmp(argv[1],"--test-selection")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.beginTextSelection())return 7;
+    const auto selected=reader.selectedText();
+    if(selected.empty())return 8;
+    if(!reader.stepSelection(1))return 9;
+    if(!reader.saveSelectionHighlight())return 10;
+    const auto recorded=crosspod::loadHighlights(argv[2]);
+    if(recorded.empty() || recorded.front().begin>=recorded.front().end)
+      return 11;
+    reader.present(); // highlights must draw over actual Section page pixels
+    if(!reader.eraseSelectionHighlight())return 12;
+    if(!crosspod::loadHighlights(argv[2]).empty())return 13;
+    std::printf("CrossPod unicode selection and persistent highlight: PASS (%s)\n",
+                selected.c_str());
+    return 0;
+  }
   if(argc==3 && std::strcmp(argv[1],"--test-page-links")==0) {
     Reader reader(argv[2]);
     if(!reader.open())return 3;

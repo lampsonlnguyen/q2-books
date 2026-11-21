@@ -27,6 +27,7 @@
 #include "ReaderPreferences.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
+#include "ShelfHistory.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -1399,6 +1400,7 @@ class Reader {
 struct ShelfEntry {
   std::string path;
   std::string label;
+  std::time_t modified=0;
 };
 std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
   std::vector<ShelfEntry> books;
@@ -1425,7 +1427,7 @@ std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
       if (name.size()<6)continue;
       const std::string_view ending(name.data()+name.size()-5,5);
       if (!(ending==".epub"||ending==".EPUB"||ending==".Epub")) continue;
-      books.push_back({path,name.substr(0,name.size()-5)});
+      books.push_back({path,name.substr(0,name.size()-5),st.st_mtime});
     }
     closedir(d);
     return subfolders;

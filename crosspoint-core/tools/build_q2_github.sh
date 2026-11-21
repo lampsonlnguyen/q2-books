@@ -55,6 +55,18 @@ cmake -S "$work/expat/expat" -B "$work/expat-build" -DCMAKE_SYSTEM_NAME=Linux \
   -DEXPAT_BUILD_EXAMPLES=OFF -DEXPAT_BUILD_PKGCONFIG=OFF -DCMAKE_INSTALL_LIBDIR=lib
 cmake --build "$work/expat-build" --parallel 2
 cmake --install "$work/expat-build"
+# Pinned libjpeg-turbo source. Disable SIMD for MIPS32r2; the hardened
+# grayscale decoder enforces a 1 megapixel / 4 MiB compressed-image limit.
+git clone --quiet --depth 1 --branch 3.0.4 https://github.com/libjpeg-turbo/libjpeg-turbo.git "$work/libjpeg"
+cmake -S "$work/libjpeg" -B "$work/jpeg-build" -DCMAKE_SYSTEM_NAME=Linux \
+  -DCMAKE_SYSTEM_PROCESSOR=mipsel -DCMAKE_C_COMPILER=clang \
+  "-DCMAKE_C_FLAGS=$flags" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+  -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=$prefix" \
+  -DCMAKE_INSTALL_LIBDIR=lib -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
+  -DWITH_SIMD=OFF -DWITH_TURBOJPEG=OFF -DWITH_JPEG8=ON
+cmake --build "$work/jpeg-build" --target jpeg-static --parallel 2
+cmake --install "$work/jpeg-build"
+test -s "$prefix/lib/libjpeg.a"
 printf '#include <vector>\nint main(){std::vector<int> x(2);return x[0];}\n' > "$work/probe.cpp"
 clang++ $flags "$work/probe.cpp" $link -o "$work/probe"
 python3 crosspoint-core/tools/check_q2_elf.py "$work/probe" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
@@ -64,7 +76,8 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
   "-DCMAKE_EXE_LINKER_FLAGS=$link" \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
-  "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include"
+  "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include" \
+  "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include"
 cmake --build "$work/reader" --target crosspod-reader --parallel 2
 cmake --build "$work/reader" --target crosspod_png_formats_tests --parallel 2
 timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_png_formats_tests"

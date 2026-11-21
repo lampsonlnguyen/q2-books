@@ -481,6 +481,14 @@ target_compile_options(crosspod_illustrated_epub_resources PRIVATE -UNDEBUG)
 add_dependencies(crosspod_illustrated_epub_resources illustrated_epub_fixture)
 add_test(NAME crosspod_original_zip_illustrated_epub
     COMMAND crosspod_illustrated_epub_resources "${ILLUSTRATED_EPUB_FIXTURE}")
+# Verify the live XHTML collector can resolve ../styles relative to a nested
+# chapter while maintaining image/text sequence. Host CI tests this with both
+# GCC and Clang, not merely a separate parser stub.
+add_test(NAME crosspod_reader_relative_css_and_inline_image
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/relative_epub_resource_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+
 # End-to-end illustrated EPUB: PNG extracted, decoded, placed and rasterized
 # into a 375x320 monochrome CrossPod page.
 add_dependencies(crosspod-reader illustrated_epub_fixture)

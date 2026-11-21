@@ -85,8 +85,27 @@ jobs:
           support, advanced CrossPoint bookshelf features and performance
           remain in development.
           NOTES
-          if gh release view core-v.0.3.0-beta -R "$GH_REPO" >/dev/null 2>&1; then
-            echo "::error::Release already exists; refusing to overwrite assets."
-            exit 1
+          tag="core-v.0.3.0-beta"
+          if gh release view "$tag" -R "$GH_REPO" >/dev/null 2>&1; then
+            # Existing GitHub-generated release is empty; never overwrite
+            # user-provided or previously published release assets.
+            count="$(gh release view "$tag" -R "$GH_REPO" --json assets --jq '.assets | length')"
+            test "$count" = 0 || {
+              echo "::error::Release has assets; refusing destructive replacement."
+              exit 1
+            }
+            gh release upload "$tag" \
+              dist/crosspod-q2-reader-v0.3.0-beta.zip \
+              dist/crosspod-q2-reader-v0.3.0-beta.zip.sha256 \
+              -R "$GH_REPO"
+            gh release edit "$tag" -R "$GH_REPO" --prerelease \
+              --title "CrossPod v0.3.0 Beta (Shanling Q2)" \
+              --notes-file dist/RELEASE_NOTES.md
+          else
+            gh release create "$tag" \
+              dist/crosspod-q2-reader-v0.3.0-beta.zip \
+              dist/crosspod-q2-reader-v0.3.0-beta.zip.sha256 \
+              -R "$GH_REPO" --verify-tag --prerelease \
+              --title "CrossPod v0.3.0 Beta (Shanling Q2)" \
+              --notes-file dist/RELEASE_NOTES.md
           fi
-          gh release create core-v.0.3.0-beta             dist/crosspod-q2-reader-v0.3.0-beta.zip             dist/crosspod-q2-reader-v0.3.0-beta.zip.sha256             -R "$GH_REPO" --verify-tag --prerelease             --title "CrossPod v0.3.0 Beta (Shanling Q2)"             --notes-file dist/RELEASE_NOTES.md

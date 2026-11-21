@@ -574,6 +574,9 @@ target_include_directories(crosspoint_section_objects PRIVATE
 # Q2 user-facing reader to the original section engine.
 add_executable(crosspoint_original_engine_link_tests
     tests/original_chapter_parser_interface_test.cpp
+    lib/Epub/blocks/ImageBlock.cpp
+    lib/Epub/converters/ImageDimsProbe.cpp
+    lib/Epub/htmlEntities.cpp
     $<TARGET_OBJECTS:crosspoint_xhtml_parser_objects>
     $<TARGET_OBJECTS:crosspoint_section_objects>
     $<TARGET_OBJECTS:crosspoint_pagination_objects>

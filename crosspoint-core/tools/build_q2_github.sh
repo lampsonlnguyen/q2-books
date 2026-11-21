@@ -135,6 +135,33 @@ cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
 
+# Full script pack must load on MIPS, not just be copied into the ZIP.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --validate "$work/reader/script-korean.epub" | tee "$work/korean-validate.log"
+grep -q 'CrossPod multilingual fonts: 14/14 scripts loaded (12pt)' "$work/korean-validate.log"
+grep -q 'CrossPod original Section:' "$work/korean-validate.log"
+
+for script in korean devanagari; do
+  file="$work/reader/script-$script.epub"
+  CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+    --render "$file" "$work/$script-enabled.pgm" | tee "$work/$script-enabled.log"
+  CROSSPOD_DISABLE_SCRIPTS="$script" CROSSPOD_STATE_DIR="$card/.crosspod" \
+    timeout 90s qemu-mipsel -L "$root" "$elf" \
+    --render "$file" "$work/$script-disabled.pgm" | tee "$work/$script-disabled.log"
+  grep -q 'CrossPod original Section:' "$work/$script-enabled.log"
+  python3 - "$work/$script-enabled.pgm" "$work/$script-disabled.pgm" "$script" <<'PY'
+from pathlib import Path
+import sys
+active, disabled = (Path(p).read_bytes() for p in sys.argv[1:3])
+assert active.startswith(b"P5\n375 320\n255\n")
+assert len(active)==len(disabled)==120015
+delta=sum(a!=b for a,b in zip(active[15:],disabled[15:]))
+assert delta>100, f"{sys.argv[3]} glyph fallback ineffective: {delta}"
+print(f"Q2 script raster {sys.argv[3]}: PASS ({delta} changed pixels)")
+PY
+done
+
+
 # Genuine Chinese/Japanese regression: the pinned CrossPoint CJK font must be
 # loaded under the real Q2 MIPS ABI. Compare exact rasters against the
 # explicitly disabled-fallback control, not just the process exit code.

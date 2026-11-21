@@ -30,8 +30,8 @@ def main(out):
 <item id="image" href="images/test.png" media-type="image/png"/></manifest>
 <spine><itemref idref="chapter"/></spine></package>"""
     chapter = """<?xml version="1.0" encoding="utf-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml"><body>
-<h1>Illustrated chapter</h1><p>Before the image.</p>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="../styles/book.css"/></head><body>
+<h1>Illustrated chapter</h1><p class="image-caption">Before the image.</p>
 <img src="../images/test.png" alt="Four colored squares"/>
 <p>After the image.</p></body></html>"""
     container = """<?xml version="1.0"?>
@@ -44,6 +44,7 @@ media-type="application/oebps-package+xml"/></rootfiles></container>"""
         z.writestr("OEBPS/content.opf", opf, compress_type=ZIP_DEFLATED)
         z.writestr("OEBPS/text/chapter.xhtml", chapter, compress_type=ZIP_DEFLATED)
         z.writestr("OEBPS/images/test.png", png(), compress_type=ZIP_DEFLATED)
+        z.writestr("OEBPS/styles/book.css", "p.image-caption { text-align: center; font-style: italic; }", compress_type=ZIP_DEFLATED)
 
 
 if __name__ == "__main__":

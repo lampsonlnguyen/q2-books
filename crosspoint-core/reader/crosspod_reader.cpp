@@ -1696,7 +1696,7 @@ int runCardApp(const std::string& bookDir) {
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             typeSelection=std::clamp(std::min(10,std::max(0,typeSelection-8))+
-                (event.y-75)/20,0,10);
+                (event.y-73)/21,0,10);
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection>=9) {
@@ -1940,7 +1940,7 @@ int main(int argc,char** argv) {
       } else if(action==crosspod::LogicalAction::Confirm ||
                 event.kind==crosspod::PhysicalKind::TouchUp) {
         if(event.kind==crosspod::PhysicalKind::TouchUp)
-          typeSelection=std::clamp((event.y-75)/20,0,6);
+          typeSelection=std::clamp((event.y-73)/21,0,6);
         if(typeSelection>=2)(void)reader.adjustPreference(typeSelection);
         else {
           auto next=reader.typography();

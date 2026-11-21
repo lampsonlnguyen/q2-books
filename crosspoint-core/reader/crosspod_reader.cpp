@@ -497,6 +497,8 @@ class Reader {
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
+  std::vector<crosspod::Highlight> highlights_;
+  bool highlightsLoaded_=false;
   std::vector<crosspod::SelectedWord> selectedWords_;
   int selectionAnchor_=-1;
   int selectionFocus_=-1;
@@ -1030,6 +1032,13 @@ class Reader {
     drawMenuText(22,278,"Wheel: select  Center: follow");
     display_.displayBuffer();
   }
+  const std::vector<crosspod::Highlight>& highlights() {
+    if(!highlightsLoaded_) {
+      highlights_=crosspod::loadHighlights(bookPath_);
+      highlightsLoaded_=true;
+    }
+    return highlights_;
+  }
   bool beginTextSelection() {
     if(!upstreamSection_)return false;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
@@ -1085,19 +1094,23 @@ class Reader {
   }
   bool saveSelectionHighlight() {
     uint32_t start=0,end=0;
-    return selectionRange(start,end) &&
-      crosspod::addHighlight(bookPath_,{
-          static_cast<uint32_t>(currentSpine_),start,end});
+    if(!selectionRange(start,end) ||
+       !crosspod::addHighlight(bookPath_,{
+         static_cast<uint32_t>(currentSpine_),start,end}))return false;
+    highlightsLoaded_=false;
+    return true;
   }
   bool eraseSelectionHighlight() {
     uint32_t start=0,end=0;
-    return selectionRange(start,end) &&
-      crosspod::removeHighlightAt(bookPath_,
-        static_cast<uint32_t>(currentSpine_),start);
+    if(!selectionRange(start,end) ||
+       !crosspod::removeHighlightAt(bookPath_,
+         static_cast<uint32_t>(currentSpine_),start))return false;
+    highlightsLoaded_=false;
+    return true;
   }
   void paintHighlightOverlay() {
     if(!upstreamSection_ || currentSpine_<0)return;
-    const auto highlights=crosspod::loadHighlights(bookPath_);
+    const auto& highlights=this->highlights();
     if(highlights.empty() && selectionAnchor_<0)return;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
     if(!page)return;
@@ -1117,6 +1130,13 @@ class Reader {
       if(marked)invertMenuRect(word.x-1,word.y+2,word.width+2,
                               std::max(8,word.height-7));
     }
+  }
+  void showSelectionPreview() {
+    render();
+    renderer_.fillRect(10,254,355,47,true);
+    renderer_.fillRect(12,256,351,43,false);
+    drawMenuText(20,265,"Wheel: word  Center: actions");
+    display_.displayBuffer();
   }
   void showTextSelectionMenu(int option) {
     render();
@@ -1589,6 +1609,7 @@ class Reader {
           lastRenderOk_=true;
           drawProgress();
           applyNightMode();
+          paintHighlightOverlay();
           return;
         }
     }
@@ -1625,6 +1646,7 @@ class Reader {
       }
       drawProgress();
       applyNightMode();
+      paintHighlightOverlay();
       return;
     }
     if(currentPage_>=pages_.size()) {
@@ -1652,6 +1674,7 @@ class Reader {
     cacheRenderedPage();
     drawProgress();
     applyNightMode();
+    paintHighlightOverlay();
   }
   void present() {
     render();

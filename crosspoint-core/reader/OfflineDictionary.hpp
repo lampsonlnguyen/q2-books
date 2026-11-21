@@ -29,6 +29,11 @@ inline std::string lookupDefinition(const std::string& raw) {
   if(needle.empty()||needle.size()>128)return {};
   // Cap both line length and lookups to keep removable-SD I/O bounded.
   FILE* f=std::fopen(dictionaryFile().c_str(),"rb");
+  if(!f) {
+    const auto file=dictionaryFile();
+    f=std::fopen((file.substr(0,file.find_last_of('/'))+
+                   "/dictionary-starter.tsv").c_str(),"rb");
+  }
   if(f) {
     char line[1024]{};
     for(unsigned i=0;i<50000 && std::fgets(line,sizeof(line),f);++i) {

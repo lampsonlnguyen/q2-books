@@ -65,6 +65,36 @@ bool isParagraph(std::string_view n) {
 bool skipTag(std::string_view n) {
   return n == "script" || n == "style" || n == "svg" || n == "nav";
 }
+// Resolve a relative EPUB ZIP resource without allowing traversal outside
+// the archive. Relative ../ segments are common for CSS and XHTML images.
+std::string resolveEpubResource(const std::string& chapterDir,std::string_view uri) {
+  if(uri.empty() || uri.front()=='/' || uri.front()=='\\' ||
+     uri.find(':')!=std::string_view::npos ||
+     uri.find('\\\\')!=std::string_view::npos ||
+     uri.find('?')!=std::string_view::npos ||
+     uri.find('#')!=std::string_view::npos)return {};
+  std::vector<std::string> segments;
+  const std::string joined=chapterDir+std::string(uri);
+  size_t cursor=0;
+  while(cursor<joined.size()) {
+    const size_t next=joined.find('/',cursor);
+    const auto segment=joined.substr(cursor,next==std::string::npos?
+                                            std::string::npos:next-cursor);
+    if(segment=="..") {
+      if(segments.empty())return {};
+      segments.pop_back();
+    } else if(!segment.empty() && segment!=".")segments.push_back(segment);
+    if(next==std::string::npos)break;
+    cursor=next+1;
+  }
+  if(segments.empty())return {};
+  std::string normalized;
+  for(const auto& segment:segments) {
+    if(!normalized.empty())normalized.push_back('/');
+    normalized+=segment;
+  }
+  return normalized;
+}
 struct StyledRun {
   std::string text;
   EpdFontFamily::Style style = EpdFontFamily::REGULAR;
@@ -117,10 +147,8 @@ struct HtmlCollector {
     return stylesheet.loadFromStream(file)!=CssParser::ParseResult::Error;
   }
   void externalCss(std::string_view uri) {
-    if(uri.empty() || uri[0]=='/' || uri.find("..")!=std::string_view::npos ||
-       uri.find(':')!=std::string_view::npos || uri.find('?')!=std::string_view::npos ||
-       uri.find('#')!=std::string_view::npos)return;
-    const std::string path=chapterDir+std::string(uri);
+    const std::string path=resolveEpubResource(chapterDir,uri);
+    if(path.empty())return;
     size_t len=0;
     if(!archive.getInflatedFileSize(path.c_str(),&len)||len==0||len>256*1024)return;
     std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
@@ -177,39 +205,22 @@ struct HtmlCollector {
       s.current.runs.push_back({" ",EpdFontFamily::REGULAR});
     if((n=="img" || n=="image") && !scope.hidden) {
       const auto uri=attribute(attrs,n=="img"?"src":"href");
-      // Resolve paths inside EPUB ZIP: safe relative segments only, no URLs,
-      // no filesystem escape, never fetch network resources.
-      if(!uri.empty() && uri[0]!='/' && uri.find(':')==std::string_view::npos &&
-         uri.find('?')==std::string_view::npos && uri.find('#')==std::string_view::npos) {
-        std::vector<std::string> parts;
-        std::string path=s.chapterDir+std::string(uri);
-        size_t start=0;
-        bool safe=true;
-        while(start<=path.size()) {
-          const size_t end=path.find('/',start);
-          const std::string part=path.substr(start,end==std::string::npos?
-                                             std::string::npos:end-start);
-          if(part=="..") {
-            if(parts.empty()){safe=false;break;}
-            parts.pop_back();
-          } else if(part!="" && part!=".")parts.push_back(part);
-          if(end==std::string::npos)break;
-          start=end+1;
-        }
-        if(safe && !parts.empty() && s.items.size()<MAX_BLOCKS) {
-          std::string resolved;
-          for(const auto& part:parts){if(!resolved.empty())resolved+='/';resolved+=part;}
-          if(resolved.size()>4 && resolved.substr(resolved.size()-4)==".png") {
-            if(s.collectingDepth && !s.current.runs.empty()) {
-              s.items.push_back(std::move(s.current));
-              s.current=Paragraph{};
-              s.current.align=scope.align;
-              s.current.rtl=scope.rtl;
-            }
-            Paragraph image;
-            image.imagePath=std::move(resolved);
-            s.items.push_back(std::move(image));
+      // An EPUB image may live in a sibling directory (../images).
+      const std::string resolved=resolveEpubResource(s.chapterDir,uri);
+      if(!resolved.empty() && s.items.size()<MAX_BLOCKS) {
+        const auto ext=resolved.find_last_of('.');
+        const bool png=ext!=std::string::npos &&
+          resolved.compare(ext,4,".png")==0;
+        if(png) {
+          if(s.collectingDepth && !s.current.runs.empty()) {
+            s.items.push_back(std::move(s.current));
+            s.current=Paragraph{};
+            s.current.align=scope.align;
+            s.current.rtl=scope.rtl;
           }
+          Paragraph image;
+          image.imagePath=resolved;
+          s.items.push_back(std::move(image));
         }
       }
     }

@@ -31,6 +31,7 @@
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "ShelfIndexer.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -1660,6 +1661,21 @@ class CardShelf {
            (0x80u>>(px&7)))
           renderer_.drawPixel(x+px,y+py,true);
   }
+  void onIndexedBook(const std::string& path) {
+    // A new cache file may have appeared since this shelf object was made.
+    // Refresh only that book's lazy metadata (and current cover, if any).
+    for(size_t i=0;i<books_.size();++i) {
+      if(books_[i].path!=path)continue;
+      detailsChecked_[i]=false;
+      cachedDetails_[i]={};
+      if(i==current_) {
+        currentCoverChecked_=false;
+        currentCoverAvailable_=false;
+      }
+      if(!searchQuery_.empty())refreshVisible();
+      break;
+    }
+  }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
@@ -1827,11 +1843,27 @@ int runCardApp(const std::string& bookDir) {
   int navigationSelection=0;
   int typeSelection=0;
   auto nextBuildTick=std::chrono::steady_clock::now();
+  size_t nextShelfIndex=0;
+  auto nextShelfIndexTick=std::chrono::steady_clock::now()+
+      std::chrono::milliseconds(800);
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
       if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
+      // Work only while idle on the bookshelf, not when reading or during
+      // input handling. One bounded OPF/thumbnail attempt per idle tick;
+      // never parse chapter pages or write an index on every wheel turn.
+      if(shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+        const std::string& book=books[nextShelfIndex++].path;
+        const auto result=crosspod::indexShelfBook(book);
+        if(result.updated) {
+          shelf->onIndexedBook(book);
+          shelf->present();
+        }
+        nextShelfIndexTick=std::chrono::steady_clock::now()+
+            std::chrono::milliseconds(800);
+      }
       if(reader && !typeMenu && !navigationMenu &&
          reader->needsPagePrefetch() && now>=nextBuildTick) {
         // Layout a bounded lookahead only when needed. Stop unnecessary
@@ -1845,6 +1877,8 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     const auto action=controls.translate(event).action;
+    nextShelfIndexTick=std::chrono::steady_clock::now()+
+        std::chrono::milliseconds(800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {
@@ -2014,6 +2048,7 @@ void usage() {
     "  crosspod-reader --walk <book.epub>           (test pagination)\n"
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
+    "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
     "  crosspod-reader (no args)                    (Q2 card app)\n"
@@ -2026,6 +2061,20 @@ void usage() {
 int main(int argc,char** argv) {
   // Card apps start with NO book argument; the on-device picker owns launch.
   if(argc==1) return runCardApp("/mnt/mmc/Books");
+  if(argc==3 && std::strcmp(argv[1],"--index-book")==0) {
+    // Host/QEMU regression: metadata and an EPUB3 cover-image must become
+    // readable cached shelf files WITHOUT constructing a Reader or Section.
+    const auto result=crosspod::indexShelfBook(argv[2]);
+    crosspod::ShelfDetails details;
+    crosspod::ShelfCover cover;
+    const bool haveMetadata=crosspod::loadShelfDetails(argv[2],details);
+    const bool haveCover=crosspod::loadShelfCover(argv[2],cover);
+    std::printf("CrossPod shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\n",
+       haveMetadata,haveCover,result.updated,
+       haveMetadata?details.title.c_str():"",
+       haveMetadata?details.author.c_str():"");
+    return haveMetadata && haveCover?0:5;
+  }
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());

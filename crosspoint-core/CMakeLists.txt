@@ -474,6 +474,14 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
+# Opening a book is not required to index its OPF title, author and cover.
+# Test with a generated EPUB3 cover-image and invalidated file identity.
+add_test(NAME crosspod_reader_unopened_shelf_index
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shelf_indexer.py"
+    "$<TARGET_FILE:crosspod-reader>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_shelf_index_epub.py")
+
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
 # Active card reader must preserve CrossPoint CSS alignment, emphasis and RTL.

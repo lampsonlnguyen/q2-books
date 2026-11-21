@@ -89,6 +89,20 @@ cmake --build "$work/reader" --target crosspod_png_formats_tests --parallel 2
 timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_png_formats_tests"
 elf="$work/reader/crosspod-reader"
 python3 crosspoint-core/tools/check_q2_elf.py "$elf" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+# A never-opened EPUB must acquire its OPF title, author and cover without
+# constructing a CrossPoint Section, and a second pass must reuse the cache.
+python3 crosspoint-core/tests/make_shelf_index_epub.py "$work/reader/shelf-cover.epub"
+mkdir -p "$work/idle-index-state"
+for pass in fresh cached; do
+  CROSSPOD_STATE_DIR="$work/idle-index-state" timeout 60s \
+    qemu-mipsel -L "$root" "$elf" --index-book "$work/reader/shelf-cover.epub" \
+    | tee "$work/shelf-index-$pass.log"
+  grep -q 'metadata=1 cover=1' "$work/shelf-index-$pass.log"
+done
+grep -q 'updated=1' "$work/shelf-index-fresh.log"
+grep -q 'updated=0' "$work/shelf-index-cached.log"
+grep -q 'Nguyễn Thị Mai' "$work/shelf-index-fresh.log"
+echo "Q2 unattended OPF/cover index: PASS"
 echo "C++ ABI requirements:"
 mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || true
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub" | tee "$work/upstream-validation.log"

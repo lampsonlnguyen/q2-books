@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, feature/multilingual-visibility-epub]
+    branches: [main, v0.5.0-lazy-metadata-index]
   pull_request:
     branches: [main]
   workflow_dispatch:

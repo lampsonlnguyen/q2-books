@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <ctime>
 #include <csignal>
 #include <climits>
 #include <cstdio>
@@ -1635,7 +1636,8 @@ class CardShelf {
               info.title.empty()?books_[index].label:info.title,26);
           renderer_.drawText(1,22,y+3,label.c_str(),!active);
           if(!info.author.empty())
-            drawCompactLabel(22,y+28,clippedLabel(info.author,36).c_str(),160);
+            renderer_.drawText(1,22,y+21,
+                clippedLabel(info.author,29).c_str(),!active);
         }
       }
     }

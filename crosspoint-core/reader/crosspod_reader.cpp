@@ -475,7 +475,7 @@ class Reader {
   bool resumeEnabled_ = false;
   mutable bool positionDirty_=false;
   mutable std::chrono::steady_clock::time_point lastPositionSync_{};
-  int lineHeight() const { return std::max(27,typography_.size*2); }
+  int lineHeight() const { return std::max(22,typography_.size*2); }
   size_t pageCount() const {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
   }
@@ -550,7 +550,7 @@ class Reader {
     renderer_.removeFont(1);
     if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
     const int nextFontId=fontIdForTypography(settings);
-    if(next) {
+    if(next && next->getEpdFont()) {
       renderer_.insertFont(1,EpdFontFamily(settings.size,next->getEpdFont()));
       renderer_.registerSdCardFont(1,next.get());
       renderer_.insertFont(nextFontId,EpdFontFamily(settings.size,next->getEpdFont()));
@@ -724,6 +724,8 @@ class Reader {
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
     renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
+    // UI font is always fixed; book typography updates must not touch it.
+    renderer_.insertFont(2,EpdFontFamily(12,&bodyFont_));
     if (!decompressor_.init()) return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
@@ -976,19 +978,45 @@ class Reader {
     persistPosition();
     return true;
   }
+  // Built-in 12pt font ID 2 stays constant when the reader font changes.
+  // Scale it for compact menus without loading different SD-card glyph sizes.
+  void drawMenuText(int x,int baseline,const char* str) {
+    constexpr int kScale=192; // 75% of 12pt
+    for(const unsigned char* p=
+          reinterpret_cast<const unsigned char*>(str);*p;++p) {
+      if(*p<0x80)
+        x+=renderer_.drawScaledCodepoint(2,*p,
+          EpdFontFamily::REGULAR,x,baseline,kScale);
+      else {
+        // Preserve non-ASCII glyphs with the invariant fallback font.
+        x+=renderer_.drawScaledCodepoint(2,'?',
+          EpdFontFamily::REGULAR,x,baseline,kScale);
+        while((p[1]&0xc0)==0x80)++p;
+      }
+      if(x>=351)break;
+    }
+  }
+  void invertMenuRect(int x,int y,int w,int h) {
+    uint8_t* fb=display_.getFrameBuffer();
+    if(!fb)return;
+    for(int py=std::max(0,y);py<std::min(320,y+h);++py)
+      for(int px=std::max(0,x);px<std::min(375,x+w);++px)
+        fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=
+          static_cast<uint8_t>(0x80u>>(px&7));
+  }
   void showTypographyMenu(int selected) {
-    render();
+    renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
     constexpr int kItems=11;
-    constexpr int kRows=7;
-    constexpr int kRowTop=76;
-    constexpr int kRowHeight=27;
+    constexpr int kRows=9;
+    constexpr int kRowTop=75;
+    constexpr int kRowHeight=20;
     const int first=std::min(std::max(0,selected-kRows+1),kItems-kRows);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
-    renderer_.drawText(1,22,48,"Reading settings");
-    renderer_.fillRect(18,67,337,1,true);
+    drawMenuText(22,49,"Reading settings");
+    renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters"};
     const std::string values[]={
@@ -1006,20 +1034,21 @@ class Reader {
       const int item=first+row;
       const int y=kRowTop+row*kRowHeight;
       const bool active=selected==item;
-      if(active)renderer_.fillRect(18,y-2,337,kRowHeight,true);
+      // Invert the completed row, including the glyph pixels, after drawing.
       // Separate columns prevent long values from colliding with labels.
       const std::string label=clippedLabel(labels[item],12);
       const std::string value=clippedLabel(values[item],12);
-      renderer_.drawText(1,24,y,label.c_str(),!active);
-      renderer_.drawText(1,192,y,value.c_str(),!active);
+      drawMenuText(24,y,label.c_str());
+      drawMenuText(192,y,value.c_str());
+      if(active)invertMenuRect(18,y-3,337,kRowHeight);
     }
-    renderer_.fillRect(18,268,337,1,true);
+    renderer_.fillRect(18,263,337,1,true);
     const std::string position=std::to_string(selected+1)+"/"+
       std::to_string(kItems)+"  Wheel: scroll  Center: select";
-    renderer_.drawText(1,23,275,clippedLabel(position,32).c_str());
+    drawMenuText(23,274,clippedLabel(position,36).c_str());
     if(!typographyNotice_.empty()) {
       const std::string notice=clippedLabel(typographyNotice_,46);
-      renderer_.drawText(1,23,291,clippedLabel(notice,32).c_str());
+      drawMenuText(23,291,clippedLabel(notice,38).c_str());
     }
     display_.displayBuffer();
   }
@@ -1478,9 +1507,9 @@ int runCardApp(const std::string& bookDir) {
          now>=nextBuildTick) {
         // One small Section step, no framebuffer refresh: growing the page
         // cache must not flash the current page or monopolize the click wheel.
-        (void)reader->buildNextPages(1);
+        (void)reader->buildNextPages(2);
         nextBuildTick=std::chrono::steady_clock::now()+
-                      std::chrono::milliseconds(150);
+                      std::chrono::milliseconds(90);
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -1533,7 +1562,8 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
-            typeSelection=std::clamp((event.y-62)/19,0,10);
+            typeSelection=std::clamp(std::min(10,std::max(0,typeSelection-8))+
+                (event.y-75)/20,0,10);
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection>=9) {
@@ -1546,8 +1576,7 @@ int runCardApp(const std::string& bookDir) {
             if(typeSelection==0) {
               next.family=next.family==crosspod::Typography::Family::Sans?
                 crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-            } else next.size=next.size==12?14:
-                (next.size==14?16:(next.size==16?18:12));
+            } else next.size=next.size==8?10:(next.size==10?12:8);
             (void)reader->configureTypography(next);
           }
           if(navigationMenu)
@@ -1778,15 +1807,14 @@ int main(int argc,char** argv) {
       } else if(action==crosspod::LogicalAction::Confirm ||
                 event.kind==crosspod::PhysicalKind::TouchUp) {
         if(event.kind==crosspod::PhysicalKind::TouchUp)
-          typeSelection=std::clamp((event.y-77)/25,0,6);
+          typeSelection=std::clamp((event.y-75)/20,0,6);
         if(typeSelection>=2)(void)reader.adjustPreference(typeSelection);
         else {
           auto next=reader.typography();
           if(typeSelection==0)
             next.family=next.family==crosspod::Typography::Family::Sans?
               crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-          else next.size=next.size==12?14:
-              (next.size==14?16:(next.size==16?18:12));
+          else next.size=next.size==8?10:(next.size==10?12:8);
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection);

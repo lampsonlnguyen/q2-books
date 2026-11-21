@@ -1009,8 +1009,11 @@ int main(int argc,char** argv) {
         italic=italic||((run.style&EpdFontFamily::ITALIC)!=0);
         content+=run.text;
       }
-      std::printf("paragraph=%zu align=%d rtl=%d bold=%d italic=%d text=%s\n",
-        i,static_cast<int>(p.align),p.rtl,bold,italic,content.c_str());
+      std::printf("paragraph=%zu align=%d rtl=%d bold=%d italic=%d mt=%d mb=%d ml=%d mr=%d indent=%d break_before=%d break_after=%d text=%s\n",
+        i,static_cast<int>(p.align),p.rtl,bold,italic,
+        p.block.marginTop,p.block.marginBottom,p.block.marginLeft,
+        p.block.marginRight,p.block.textIndent,
+        p.block.pageBreakBefore,p.block.pageBreakAfter,content.c_str());
     }
     return 0;
   }

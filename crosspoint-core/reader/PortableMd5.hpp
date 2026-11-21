@@ -3,6 +3,7 @@
 // Compact RFC 1321 MD5 implementation used solely for the KOReader document
 // identity and KOSync's required x-auth-key digest. MD5 is NOT used for
 // integrity/security decisions; HTTPS is required for untrusted networks.
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>

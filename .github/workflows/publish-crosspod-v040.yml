@@ -1,0 +1,96 @@
+name: Publish CrossPod v0.4.0 beta
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-crosspod-v040.yml"
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: crosspod-v040-release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify merged source is identical to tested Q2 build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          passed=0f14cab678702779fd62a0da2ac3c764a652e5d8
+          baseline=ebae69dbc2e56255b2b7b6846ad7fa09eaaff5bc
+          test "$(git rev-parse HEAD^)" = "$baseline"
+          git diff --exit-code "$passed" "$baseline" -- \
+            crosspoint-core/reader crosspoint-core/lib \
+            crosspoint-core/platform crosspoint-core/CMakeLists.txt \
+            crosspoint-core/tools/build_q2_github.sh
+          test "$(gh api "repos/$GH_REPO/actions/runs/44891779781" --jq '.conclusion')" = success
+          test "$(gh api "repos/$GH_REPO/actions/runs/44891779781" --jq '.head_sha')" = "$passed"
+          echo "Reader source matches passing Q2 MIPS build"
+      - name: Fetch and verify Q2 SD-card app package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 44891779781 -R "$GH_REPO" \
+            -n crosspod-q2-reader-alpha -D dist
+          cd dist
+          sha256sum -c crosspod-q2-reader-alpha.zip.sha256
+          unzip -t crosspod-q2-reader-alpha.zip >/dev/null
+          for path in .crosspod/crosspod-engine .crosspod/q2-crosspod \
+            .crosspod/fonts/sans-12.cpfont .crosspod/fonts/cjk-12.cpfont; do
+            unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx "$path"
+          done
+          mv crosspod-q2-reader-alpha.zip crosspod-q2-reader-v0.4.0-beta.zip
+          sha256sum crosspod-q2-reader-v0.4.0-beta.zip > \
+            crosspod-q2-reader-v0.4.0-beta.zip.sha256
+      - name: Create v0.4.0 tag and publish prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=v0.4.0
+          target=ebae69dbc2e56255b2b7b6846ad7fa09eaaff5bc
+          if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha')" = "$target"
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" \
+              -f "ref=refs/tags/$tag" -f "sha=$target" >/dev/null
+          fi
+          if gh release view "$tag" -R "$GH_REPO" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite assets."
+            exit 1
+          fi
+          gh release create "$tag" \
+            dist/crosspod-q2-reader-v0.4.0-beta.zip \
+            dist/crosspod-q2-reader-v0.4.0-beta.zip.sha256 \
+            -R "$GH_REPO" --verify-tag --prerelease \
+            --title "CrossPod v0.4.0 Beta (Shanling Q2)" \
+            --notes-file docs/v0.4.0.md
+      - name: Delete merged development branch after publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branch=v0.4.0-engine-fidelity
+          expected=a96739e6f105826b12f8cecbb3d08d3b68a1f9ec
+          actual="$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha')"
+          test "$actual" = "$expected"
+          git merge-base --is-ancestor "$expected" ebae69dbc2e56255b2b7b6846ad7fa09eaaff5bc
+          gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch"

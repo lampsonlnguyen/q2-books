@@ -3,6 +3,7 @@
 // Small monochrome EPUB cover thumbnails; no full-size image decoding during
 // shelf startup or page turns. The decoder is the existing Q2 PNG/JPEG path.
 #include "ReadingPosition.hpp"
+#include "ShelfIdentity.hpp"
 #include "PngPreview.hpp"
 #include <algorithm>
 #include <array>
@@ -78,23 +79,12 @@ inline bool loadShelfCover(const std::string& book,ShelfCover& cover) {
   if(!f)return false;
   char header[128]{};
   if(!std::fgets(header,sizeof(header),f)) {std::fclose(f);return false;}
-  constexpr char magic[]="CROSSPOD-COVER1 ";
-  if(std::strncmp(header,magic,sizeof(magic)-1)!=0) {
-    std::fclose(f);return false;
-  }
-  const char* cursor=header+sizeof(magic)-1;
-  char* end=nullptr;
-  errno=0;
-  const auto bytes=std::strtoull(cursor,&end,10);
-  if(errno || end==cursor || *end!=' ') {std::fclose(f);return false;}
-  cursor=end+1;
-  errno=0;
-  const auto changed=std::strtoull(cursor,&end,10);
-  if(errno || end==cursor || (*end!='\n'&&*end!='\0') ||
-     bytes!=static_cast<unsigned long long>(st.st_size) ||
-     changed!=static_cast<unsigned long long>(st.st_mtime)) {
-    std::fclose(f);return false;
-  }
+  unsigned long long bytes=0,changed=0;
+  const bool matching=parseShelfIdentityHeader(
+      header,"CROSSPOD-COVER1",bytes,changed) &&
+      bytes==static_cast<unsigned long long>(st.st_size) &&
+      changed==static_cast<unsigned long long>(st.st_mtime);
+  if(!matching) {std::fclose(f);return false;}
   ShelfCover loaded;
   const bool ok=std::fread(loaded.ink.data(),1,loaded.ink.size(),f)
       ==loaded.ink.size();

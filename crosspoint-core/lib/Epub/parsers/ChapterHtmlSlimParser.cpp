@@ -1534,7 +1534,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       // Rows stream in one at a time, so plan shared column widths from the raw markup first.
       HalFile tableFile;
       TableColumnMeasure measure;
-      if (Storage.openFileForRead("EHP", self->filepath, tableFile) &&
+      if (self->openInput(tableFile) &&
           tableFile.seek(static_cast<size_t>(XML_GetCurrentByteIndex(self->xmlParser_))) &&
           self->measureTableColumns(tableFile, measure)) {
         self->planTableColumns(measure);
@@ -2854,7 +2854,17 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
 
 ChapterHtmlSlimParser::~ChapterHtmlSlimParser() { abortParse(); }
 
-bool ChapterHtmlSlimParser::beginParse() {
+bool ChapterHtmlSlimParser::openInput(HalFile& file) const {
+#ifdef CROSSPOD_LINUX
+  if (inputBytes_) {
+    file = HalFile(::fmemopen(inputBytes_, inputSize_, "rb"));
+    return file.isOpen();
+  }
+#endif
+  return Storage.openFileForRead("EHP", filepath, file);
+}
+
+bool ChapterHtmlSlimParser::beginParse(uint8_t* inputBytes, size_t inputSize) {
   stopRequested = false;
   htmlEnded_ = false;
   // Initialize block style stack with a root entry representing "no ancestor block elements".
@@ -2900,7 +2910,9 @@ bool ChapterHtmlSlimParser::beginParse() {
   // Using DefaultHandlerExpand preserves normal entity expansion from DOCTYPE
   XML_SetDefaultHandlerExpand(xmlParser_, defaultHandlerExpand);
 
-  if (!Storage.openFileForRead("EHP", filepath, parseFile_)) {
+  inputBytes_ = inputBytes;
+  inputSize_ = inputSize;
+  if (!openInput(parseFile_)) {
     destroyXmlParser(xmlParser_);
     xmlParser_ = nullptr;
     return false;

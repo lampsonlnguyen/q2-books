@@ -352,9 +352,20 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
   // reopen skip the multi-second inflate. If htmlPath exists it is known-complete.
   const bool reusedHtml = Storage.exists(htmlPath.c_str());
   bool htmlCached = reusedHtml;
+  std::unique_ptr<uint8_t, decltype(&std::free)> htmlBytes{nullptr, &std::free};
+  size_t htmlSize = 0;
+#ifdef CROSSPOD_LINUX
+  // Q2 can hold ordinary chapter XHTML in RAM. Avoid staging it on the SD
+  // card before the incremental parser can deliver the first page.
+  constexpr size_t maxInMemoryHtml = 1024 * 1024;
+  if (!reusedHtml && epub->getItemSize(localPath, &htmlSize) &&
+      htmlSize > 0 && htmlSize <= maxInMemoryHtml) {
+    htmlBytes.reset(epub->readItemContentsToBytes(localPath, &htmlSize));
+  }
+#endif
   if (reusedHtml) {
     LOG_DBG("SCT", "Reusing cached HTML %s", htmlPath.c_str());
-  } else {
+  } else if (!htmlBytes) {
     Storage.mkdir(htmlDir.c_str());
 
     // Retry logic for SD card timing issues
@@ -422,9 +433,8 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
     if (!reusedHtml) Storage.remove(tmpHtmlPath.c_str());
     return false;
   }
-  // htmlCached == "htmlPath is the live cache" (reused, or just promoted). finalizeBuild/abandonBuild
-  // then leave the cached HTML alone; only an un-promoted temp (rename failed) is theirs to clean up.
-  ctx->reusedHtml = htmlCached;
+  // Only a chapter read from the unpromoted staging file needs temp cleanup.
+  ctx->reusedHtml = htmlCached || htmlBytes != nullptr;
   ctx->htmlPath = htmlPath;
   ctx->tmpHtmlPath = tmpHtmlPath;
   ctx->parsePath = htmlCached ? htmlPath : tmpHtmlPath;
@@ -494,9 +504,10 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
   ctx->parser->setParagraphIndentSpaces(spec.paragraphIndentSpaces);
   Hyphenator::setPreferredLanguage(epub->getLanguage());
   ComplexShaper::setDocumentLanguage(epub->getLanguage().c_str());
+  ctx->htmlBytes = std::move(htmlBytes);
   build_ = std::move(ctx);
 
-  if (!build_->parser->beginParse()) {
+  if (!build_->parser->beginParse(build_->htmlBytes.get(), build_->htmlBytes ? htmlSize : 0)) {
     LOG_ERR("SCT", "Failed to begin parse");
     abandonBuild();
     return false;

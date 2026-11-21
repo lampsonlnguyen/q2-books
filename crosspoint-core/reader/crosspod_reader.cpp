@@ -570,7 +570,7 @@ class Reader {
     cjkFallbackId_=cjkFallbackFont_?nextCjkId:0;
     upstreamFontId_=nextFontId;
     typography_=settings;
-    std::printf("CrossPod CJK fallback: %s %dpt\\n",
+    std::printf("CrossPod CJK fallback: %s %dpt\n",
         cjkFallbackFont_?"original CrossPoint NotoSansCJKJP cpfont":"unavailable",
         settings.size);
     return true;

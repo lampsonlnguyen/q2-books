@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, v0.5.0-library-search-folders]
+    branches: [main, feature/multilingual-visibility-epub]
   pull_request:
     branches: [main]
   workflow_dispatch:

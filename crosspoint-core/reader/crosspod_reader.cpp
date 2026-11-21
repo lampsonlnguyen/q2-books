@@ -801,14 +801,36 @@ class Reader {
       if(upstreamEpub_ && index<upstreamEpub_->getSpineItemsCount()) {
         auto section=std::make_unique<Section>(upstreamEpub_,index,renderer_);
         const ReaderRenderSpec spec=upstreamSpec();
-        if((section->loadSectionFile(spec) ||
-            section->createSectionFile(spec)) && section->pageCount>0) {
+        // Restore complete/partial pages immediately. On a cache miss
+        // build only until the first page is available; the event loop will
+        // grow the original Section in bounded increments between inputs.
+        const bool cached=section->loadSectionFile(spec);
+        bool usable=cached && section->pageCount>0;
+        if(!cached && section->startBuild(spec)) {
+          while(section->isBuilding() && section->pageCount==0) {
+            if(!section->buildSomeMore(1))break;
+          }
+          usable=section->pageCount>0;
+        } else if(cached && section->isPartial() && section->startBuild(spec)) {
+          // Partial's cached pages remain immediately readable while the
+          // next incremental pass rebuilds its page LUT in the background.
+          usable=true;
+        }
+        if(usable) {
+          // Reading backwards across a spine requires its *actual* last
+          // page, never the partial watermark.
+          if(direction<0 && section->isBuilding()) {
+            if(!section->buildSomeMore(0))usable=false;
+          }
+        }
+        if(usable) {
           upstreamSection_=std::move(section);
           currentSpine_=index;
           currentPage_=direction<0?upstreamSection_->pageCount-1:0;
           pages_.clear();
-          std::printf("CrossPod original Section: spine %d/%d, %zu page(s)\n",
-              index+1,n,pageCount());
+          std::printf("CrossPod original Section: spine %d/%d, %zu page(s)%s\n",
+              index+1,n,pageCount(),
+              upstreamSection_->isBuilding()?" (incremental)":"");
           return true;
         }
         std::fprintf(stderr,
@@ -833,7 +855,32 @@ class Reader {
     currentSpine_=oldSpine;
     return false;
   }
+  bool buildNextPages(int maxPages=1) {
+    if(!upstreamSection_ || !upstreamSection_->isBuilding())return false;
+    const size_t before=pageCount();
+    if(!upstreamSection_->buildSomeMore(maxPages)) {
+      std::fprintf(stderr,"CrossPod: incremental Section failed; preserving book via fallback\\n");
+      const int spine=currentSpine_;
+      const size_t page=currentPage_;
+      upstreamEpub_.reset();
+      upstreamSection_.reset();
+      if(loadSpine(spine,1)) {
+        currentPage_=std::min(page,pageCount()-1);
+        persistPosition();
+      }
+      return true;
+    }
+    if(!upstreamSection_->isBuilding())
+      std::printf("CrossPod Section completed: %zu pages\\n",pageCount());
+    return pageCount()!=before;
+  }
+  bool isBuilding() const {return upstreamSection_ && upstreamSection_->isBuilding();}
+  size_t estimatedPages() const {
+    return upstreamSection_?upstreamSection_->estimatedTotalPages():pageCount();
+  }
   bool move(int direction) {
+    if(direction>0 && currentPage_+1>=pageCount() && isBuilding())
+      (void)buildNextPages(2);
     if (direction>0 && currentPage_+1<pageCount()) { ++currentPage_; persistPosition(); return true; }
     if (direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
     const bool changed=loadSpine(currentSpine_+direction,direction);
@@ -1096,6 +1143,13 @@ int runCardApp(const std::string& bookDir) {
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
+      if(reader && reader->isBuilding()) {
+        // No background thread touches the framebuffer or shared font
+        // cache: build on the same event-loop thread between input events.
+        // Render only when the section page count changes.
+        const bool grew=reader->buildNextPages(1);
+        if(grew)reader->present();
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
     }

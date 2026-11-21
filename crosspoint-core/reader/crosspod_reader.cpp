@@ -486,6 +486,7 @@ class Reader {
   };
   std::array<CachedRaster,3> rasterCache_{};
   size_t nextRasterSlot_=0;
+  bool lastRenderOk_=true;
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
@@ -1350,6 +1351,7 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          lastRenderOk_=true;
           drawProgress();
           applyNightMode();
           return;
@@ -1358,6 +1360,7 @@ class Reader {
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(!page) {
+        lastRenderOk_=false;
         // An incomplete or transiently unreadable Section page is NOT a
         // successful blank page. Preserve the previous framebuffer and retry
         // on the next draw instead of permanently caching an empty raster.
@@ -1368,7 +1371,23 @@ class Reader {
       }
       renderer_.clearScreen(0xff);
       page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
-      cacheRenderedPage();
+      // If a long session evicted a glyph cache in an unusable state, make
+      // exactly one fresh attempt rather than recording an all-white raster
+      // in the three-page cache (which persisted until the app restarted).
+      if(!pageHasVisibleInk()) {
+        fontCache_.clearCache();
+        renderer_.clearScreen(0xff);
+        page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      }
+      lastRenderOk_=pageHasVisibleInk();
+      if(lastRenderOk_)cacheRenderedPage();
+      else {
+        // Direct bitmap menu glyphs work even when the SD-book font has
+        // failed; leave a visible diagnostic instead of a silent white page.
+        drawMenuText(20,140,"Page text unavailable",1);
+        std::fprintf(stderr,"CrossPod: no body ink after glyph retry at spine %d page %zu\\n",
+                     currentSpine_,currentPage_);
+      }
       drawProgress();
       applyNightMode();
       return;
@@ -1419,6 +1438,7 @@ class Reader {
     if(std::fclose(file)!=0)ok=false;
     return ok;
   }
+  bool lastRenderSucceeded() const { return lastRenderOk_; }
   bool pageHasVisibleInk() const {
     const uint8_t* pixels=display_.getFrameBuffer();
     if(!pixels)return false;
@@ -2066,11 +2086,11 @@ int main(int argc,char** argv) {
       // This catches the blank-reader regression after prolonged wheel turns.
       size_t forward=0,backward=0;
       reader.render();
-      if(!reader.pageHasVisibleInk())return 9;
+      if(!reader.lastRenderSucceeded() || !reader.pageHasVisibleInk())return 9;
       while(forward<2048) {
         if(reader.move(1)) {
           reader.render();
-          if(!reader.pageHasVisibleInk()) {
+          if(!reader.lastRenderSucceeded() || !reader.pageHasVisibleInk()) {
             std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\n",
                          forward+1);
             return 9;

@@ -1,0 +1,26 @@
+name: Remove merged v0.5.0 development branch
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-v050-branch.yml"
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove only verified merged branch tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=v0.5.0-bookshelf
+          expected=b839a34f92ea69c8b13dab287c410157e46ca655
+          merged=8dbaaa92997fca43f10aacb706269c8f8c01a12c
+          actual="$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha')"
+          test "$actual" = "$expected"
+          gh api "repos/$GH_REPO/compare/$expected...$merged" --jq '.status' | grep -Fx ahead
+          gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch"

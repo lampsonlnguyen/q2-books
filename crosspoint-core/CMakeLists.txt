@@ -16,6 +16,12 @@ add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
 
 # SD-card reading settings/bookmarks are independent of CrossPoint engine.
 # Q2 preferences must reach original CrossPoint layout/cache validation.
+# Persistent Q2 bookshelf history, metadata and sort regression.
+add_executable(crosspod_shelf_library_tests tests/shelf_library_test.cpp)
+target_include_directories(crosspod_shelf_library_tests PRIVATE reader)
+target_compile_options(crosspod_shelf_library_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_shelf_library_history COMMAND crosspod_shelf_library_tests)
+
 add_executable(crosspod_utf8_label_tests tests/utf8_label_test.cpp)
 target_include_directories(crosspod_utf8_label_tests PRIVATE reader)
 target_link_libraries(crosspod_utf8_label_tests PRIVATE crosspoint_utf8)

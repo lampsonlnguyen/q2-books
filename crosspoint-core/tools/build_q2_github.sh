@@ -238,6 +238,13 @@ CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-page-links "$work/reader/page-links.epub" \
   | tee "$work/page-links.log"
 grep -q 'page link jump and return: PASS' "$work/page-links.log"
+# Selection must use the original rendered TextBlock source ranges, write
+# and re-read highlight records, then remove them without changing the EPUB.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --test-selection "$work/reader/page-links.epub" \
+  | tee "$work/selection.log"
+grep -q 'unicode selection and persistent highlight: PASS' "$work/selection.log"
+
 
 # Validate the generated EPUB on the actual Q2 MIPS application, with the
 # full SD cpfont bundle present. This checks structure/openability; visual

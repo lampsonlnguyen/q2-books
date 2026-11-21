@@ -15,6 +15,10 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 #include <ParsedText.h>
+#include <Page.h>
+#include <Section.h>
+#include <ReaderRenderSpec.h>
+#include <Epub/blocks/ImageBlock.h>
 #include <Q2Controls.hpp>
 #include <SdCardFont.h>
 #include "Typography.hpp"
@@ -451,6 +455,11 @@ class Reader {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   std::unique_ptr<SdCardFont> selectedFont_;
+  // Keep the complete upstream EPUB parser/Section lifecycle alive for this
+  // book. CrossPod's prior collector remains a fail-safe fallback.
+  std::shared_ptr<Epub> upstreamEpub_;
+  std::unique_ptr<Section> upstreamSection_;
+  int upstreamFontId_=0;
   crosspod::Typography typography_{};
   std::string typographyNotice_;
   std::vector<RenderPage> pages_;
@@ -458,6 +467,53 @@ class Reader {
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
   int lineHeight() const { return std::max(27,typography_.size*2); }
+  size_t pageCount() const {
+    return upstreamSection_?upstreamSection_->pageCount:pages_.size();
+  }
+  int fontIdForTypography(crosspod::Typography value) const {
+    return 100+(value.family==crosspod::Typography::Family::Serif?4:0)+
+           (value.size-12)/2;
+  }
+  ReaderRenderSpec upstreamSpec() const {
+    ReaderRenderSpec spec;
+    spec.fontId=upstreamFontId_;
+    spec.viewportWidth=TEXT_WIDTH;
+    spec.viewportHeight=BOTTOM-TOP;
+    spec.lineCompression=1.0f;
+    spec.embeddedStyle=true;
+    spec.imageRendering=0;
+    spec.hyphenationEnabled=false;
+    return spec;
+  }
+  std::string upstreamCachePath() const {
+    struct stat st{};
+    (void)::stat(bookPath_.c_str(),&st);
+    uint64_t hash=14695981039346656037ull;
+    const auto mix=[&](uint64_t value) {
+      for(int i=0;i<8;++i){hash^=(value>>(8*i))&255u;hash*=1099511628211ull;}
+    };
+    for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
+    mix(static_cast<uint64_t>(st.st_size));
+    mix(static_cast<uint64_t>(st.st_mtime));
+    const char* state=std::getenv("CROSSPOD_STATE_DIR");
+    const std::string base=state&&*state?state:"/tmp";
+    const std::string cache=base+"/cache";
+    Storage.mkdir(cache.c_str());
+    char folder[44];
+    std::snprintf(folder,sizeof(folder),"book-%016llx",
+                  static_cast<unsigned long long>(hash));
+    return cache+"/"+folder;
+  }
+  static bool extractUpstreamImage(void* context,const char* source,const char* dest) {
+    auto* self=static_cast<Reader*>(context);
+    if(!self || !self->upstreamEpub_ || !source || !dest)return false;
+    HalFile out;
+    if(!Storage.openFileForWrite("CROSSPOD",dest,out))return false;
+    const bool ok=self->upstreamEpub_->readItemContentsToStream(source,out,4096);
+    out.close();
+    if(!ok)Storage.remove(dest);
+    return ok;
+  }
   bool useTypography(crosspod::Typography settings) {
     if(!crosspod::validTypography(settings))return false;
     std::unique_ptr<SdCardFont> next;
@@ -473,11 +529,19 @@ class Reader {
     }
     // Rebind the original CrossPoint font registry, not a Q2 custom renderer.
     renderer_.removeFont(1);
+    if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
+    const int nextFontId=fontIdForTypography(settings);
     if(next) {
       renderer_.insertFont(1,EpdFontFamily(settings.size,next->getEpdFont()));
       renderer_.registerSdCardFont(1,next.get());
-    } else renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
+      renderer_.insertFont(nextFontId,EpdFontFamily(settings.size,next->getEpdFont()));
+      renderer_.registerSdCardFont(nextFontId,next.get());
+    } else {
+      renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
+      renderer_.insertFont(nextFontId,EpdFontFamily(12,&bodyFont_));
+    }
     selectedFont_=std::move(next);
+    upstreamFontId_=nextFontId;
     typography_=settings;
     return true;
   }
@@ -649,6 +713,15 @@ class Reader {
         selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");
     std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
+    const char* requestedEngine=std::getenv("CROSSPOD_ENGINE");
+    if(!requestedEngine || std::strcmp(requestedEngine,"legacy")!=0) {
+      auto candidate=std::make_shared<Epub>(bookPath_,upstreamCachePath());
+      if(candidate->load(true,false)) {
+        upstreamEpub_=std::move(candidate);
+        ImageBlock::setExtractor(this,&Reader::extractUpstreamImage);
+      } else std::fprintf(stderr,
+          "CrossPod: original Section unavailable; using legacy collector\n");
+    }
     return loadSpine(0,1);
   }
   void enableResume() {
@@ -659,7 +732,7 @@ class Reader {
       (void)loadSpine(0,1);
       return;
     }
-    currentPage_=std::min(saved.page,pages_.size()-1);
+    currentPage_=std::min(saved.page,pageCount()-1);
   }
   void persistPosition() const {
     if(resumeEnabled_)
@@ -681,7 +754,7 @@ class Reader {
       typographyNotice_="Could not repaginate";
       return false;
     }
-    if(spine>=0 && !pages_.empty())currentPage_=std::min(page,pages_.size()-1);
+    if(spine>=0 && pageCount())currentPage_=std::min(page,pageCount()-1);
     if(!crosspod::saveTypography(typography_))
       typographyNotice_="Settings not saved to SD";
     else typographyNotice_.clear();
@@ -708,31 +781,50 @@ class Reader {
     display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {
-    // Crossing a spine boundary must not destroy the current page if the next
-    // chapter is unreadable or the user is at the beginning/end of the book.
     const int oldSpine=currentSpine_;
     const size_t oldPage=currentPage_;
     auto oldPages=std::move(pages_);
+    auto oldSection=std::move(upstreamSection_);
     const int n=metadata_.getSpineCount();
-    while (index>=0 && index<n) {
+    while(index>=0 && index<n) {
       const auto entry=metadata_.getSpineEntry(index);
+      if(upstreamEpub_ && index<upstreamEpub_->getSpineItemsCount()) {
+        auto section=std::make_unique<Section>(upstreamEpub_,index,renderer_);
+        const ReaderRenderSpec spec=upstreamSpec();
+        if((section->loadSectionFile(spec) ||
+            section->createSectionFile(spec)) && section->pageCount>0) {
+          upstreamSection_=std::move(section);
+          currentSpine_=index;
+          currentPage_=direction<0?upstreamSection_->pageCount-1:0;
+          pages_.clear();
+          std::printf("CrossPod original Section: spine %d/%d, %zu page(s)\n",
+              index+1,n,pageCount());
+          return true;
+        }
+        std::fprintf(stderr,
+           "CrossPod: original Section could not lay out %s; falling back\n",
+           entry.href.c_str());
+      }
       std::vector<Paragraph> paragraphs;
-      if (parseChapter(archive_,bookPath_,entry.href,paragraphs) && paginate(paragraphs)) {
+      if(parseChapter(archive_,bookPath_,entry.href,paragraphs) &&
+         paginate(paragraphs)) {
+        upstreamSection_.reset();
         currentSpine_=index;
-        currentPage_=direction<0 ? pages_.size()-1 : 0;
-        std::printf("CrossPod: spine %d/%d %s, %zu page(s)\n",
-            index+1,n,entry.href.c_str(),pages_.size());
+        currentPage_=direction<0?pages_.size()-1:0;
+        std::printf("CrossPod legacy fallback: spine %d/%d, %zu page(s)\n",
+            index+1,n,pages_.size());
         return true;
       }
       index+=direction;
     }
     pages_=std::move(oldPages);
+    upstreamSection_=std::move(oldSection);
     currentPage_=oldPage;
     currentSpine_=oldSpine;
     return false;
   }
   bool move(int direction) {
-    if (direction>0 && currentPage_+1<pages_.size()) { ++currentPage_; persistPosition(); return true; }
+    if (direction>0 && currentPage_+1<pageCount()) { ++currentPage_; persistPosition(); return true; }
     if (direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
     const bool changed=loadSpine(currentSpine_+direction,direction);
     if(changed)persistPosition();
@@ -740,6 +832,11 @@ class Reader {
   }
   void render() {
     renderer_.clearScreen(0xff);
+    if(upstreamSection_) {
+      auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+      if(page)page->render(renderer_,upstreamFontId_,LEFT,TOP);
+      return;
+    }
     const auto& page=pages_[currentPage_];
     for (const auto& line:page.lines)
       line.block->render(renderer_,1,LEFT,line.y);
@@ -778,13 +875,22 @@ class Reader {
     if(std::fclose(file)!=0)ok=false;
     return ok;
   }
-  size_t imageCount() const {
+  size_t imageCount() {
+    if(upstreamSection_) {
+      size_t result=0;
+      for(int i=0;i<upstreamSection_->pageCount;++i) {
+        auto page=upstreamSection_->loadPage(i);
+        if(page)for(const auto& element:page->elements)
+          if(element->getTag()==TAG_PageImage)++result;
+      }
+      return result;
+    }
     size_t n=0;for(const auto& page:pages_)n+=page.images.size();
     return n;
   }
   void report() const {
     std::printf("CrossPod validated %s: page %zu/%zu, spine %d/%d\n",
-        bookPath_.c_str(),currentPage_+1,pages_.size(),
+        bookPath_.c_str(),currentPage_+1,pageCount(),
         currentSpine_+1,metadata_.getSpineCount());
   }
 };

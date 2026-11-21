@@ -364,10 +364,15 @@ class Reader {
   bool useTypography(crosspod::Typography settings) {
     if(!crosspod::validTypography(settings))return false;
     std::unique_ptr<SdCardFont> next;
-    if(settings.family!=crosspod::Typography::Family::Sans || settings.size!=12) {
-      next=std::make_unique<SdCardFont>();
-      if(!next->load(crosspod::typographyFontPath(settings).c_str()) ||
-         !next->getEpdFont())return false;
+    // Prefer the original CrossPoint extended font even at default Sans 12;
+    // it covers more scripts than the compact built-in UI font. When an older
+    // SD card has no fonts, preserve the built-in Sans 12 emergency fallback.
+    next=std::make_unique<SdCardFont>();
+    if(!next->load(crosspod::typographyFontPath(settings).c_str()) ||
+       !next->getEpdFont()) {
+      if(settings.family!=crosspod::Typography::Family::Sans || settings.size!=12)
+        return false;
+      next.reset();
     }
     // Rebind the original CrossPoint font registry, not a Q2 custom renderer.
     renderer_.removeFont(1);
@@ -517,12 +522,15 @@ class Reader {
     if (!decompressor_.init()) return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
+    (void)useTypography(typography_); // extended Sans 12 when installed
     crosspod::Typography savedType;
     if(crosspod::loadTypography(savedType) && !useTypography(savedType))
       typographyNotice_="Selected font file missing";
     std::printf("CrossPod typeface: %s %dpt%s\n",
         crosspod::typographyFamilyName(typography_.family),typography_.size,
         typographyNotice_.empty()?"":" (saved font unavailable; fallback)");
+    std::printf("CrossPod font source: %s\n",
+        selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");
     std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
     return loadSpine(0,1);

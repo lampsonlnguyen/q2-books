@@ -2142,6 +2142,8 @@ int runCardApp(const std::string& bookDir) {
   bool selectionChoosing=false;
   bool selectionActions=false;
   bool dictionaryOverlay=false;
+  bool footnoteOverlay=false;
+  std::string footnoteHref;
   int selectionAction=0;
   bool touchPressed=false;
   int touchStartX=0,touchStartY=0;
@@ -2190,6 +2192,21 @@ int runCardApp(const std::string& bookDir) {
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {
+      if(footnoteOverlay) {
+        if(action==crosspod::LogicalAction::Back ||
+           (event.kind==crosspod::PhysicalKind::TouchUp && event.x<187)) {
+          footnoteOverlay=false;
+          reader->present();
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          footnoteOverlay=false;
+          const bool jumped=reader->followLink(footnoteHref);
+          if(jumped) {
+            linkMenu=false;typeMenu=false;reader->present();
+          } else reader->present();
+        }
+        continue;
+      }
       if(dictionaryOverlay) {
         if(action==crosspod::LogicalAction::Back ||
            action==crosspod::LogicalAction::Confirm ||
@@ -2260,11 +2277,18 @@ int runCardApp(const std::string& bookDir) {
             navigationSelection=std::clamp(
                 (navigationSelection/8)*8+(event.y-76)/24,
                 0,std::max(0,count-1));
-          const bool jumped=count && navigationSelection<count &&
-              reader->followLink(links[navigationSelection]);
-          if(jumped) {
-            linkMenu=false;typeMenu=false;reader->present();
-          } else reader->showLinksMenu(navigationSelection);
+          if(count && navigationSelection<count &&
+             reader->isFootnoteLink(links[navigationSelection])) {
+            footnoteHref=links[navigationSelection];
+            footnoteOverlay=true;
+            reader->showFootnotePopup(footnoteHref);
+          } else {
+            const bool jumped=count && navigationSelection<count &&
+                reader->followLink(links[navigationSelection]);
+            if(jumped) {
+              linkMenu=false;typeMenu=false;reader->present();
+            } else reader->showLinksMenu(navigationSelection);
+          }
         }
         continue;
       }
@@ -2396,8 +2420,15 @@ int runCardApp(const std::string& bookDir) {
       if(action==crosspod::LogicalAction::Next) changed=reader->move(1);
       if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
       if(event.kind==crosspod::PhysicalKind::TouchUp) {
-        changed=reader->followTouchedLink(event.x,event.y);
-        if(!changed)changed=reader->move(event.x>=187?1:-1);
+        const auto href=reader->touchedLink(event.x,event.y);
+        if(!href.empty()) {
+          if(reader->isFootnoteLink(href)) {
+            footnoteHref=href;footnoteOverlay=true;
+            reader->showFootnotePopup(href);
+            continue;
+          }
+          changed=reader->followLink(href);
+        } else changed=reader->move(event.x>=187?1:-1);
       }
       if(changed)reader->present();
       continue;

@@ -466,6 +466,13 @@ add_test(NAME crosspod_reader_card_empty_library
 add_test(NAME crosspod_reader_card_list_fixture
     COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/books-test")
 
+# Bounded PNG decoding with grayscale, alpha and palette input common in EPUB.
+add_executable(crosspod_png_formats_tests tests/png_formats_test.cpp)
+target_include_directories(crosspod_png_formats_tests PRIVATE reader)
+target_link_libraries(crosspod_png_formats_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(crosspod_png_formats_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_png_formats_and_crc COMMAND crosspod_png_formats_tests)
+
 # Alpha 2: illustrated EPUB fixture and actual original ZipFile PNG extraction.
 # This is an ingestion gate, not a claim that ImageBlock paints to the LCD.
 set(ILLUSTRATED_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/illustrated.epub")

@@ -104,6 +104,7 @@ struct Paragraph {
   CssTextAlign align = CssTextAlign::Justify;
   bool rtl = false;
   bool heading = false;
+  BlockStyle block; // original CrossPoint CSS box style
   std::string imagePath; // EPUB ZIP path, set only for resolved PNG resources.
 };
 struct HtmlCollector {
@@ -120,6 +121,7 @@ struct HtmlCollector {
     CssTextAlign align=CssTextAlign::Justify;
     bool paragraph=false;
     bool stylesheet=false;
+    bool pageBreakAfter=false;
     int listKind=0; // 0 none, 1 unordered, 2 ordered
     unsigned nextItemNumber=1;
   };
@@ -164,6 +166,7 @@ struct HtmlCollector {
     Scope scope=parent;
     scope.paragraph=false;
     scope.stylesheet=false;
+    scope.pageBreakAfter=false;
     if(n=="ol" || n=="ul") {
       scope.listKind=n=="ol"?2:1;
       scope.nextItemNumber=1;
@@ -205,6 +208,14 @@ struct HtmlCollector {
       s.current.align=scope.align;
       s.current.rtl=scope.rtl;
       s.current.heading=n.size()==2 && n[0]=='h';
+      // Use original CrossPoint block length resolution, not a Q2 CSS parser.
+      s.current.block=BlockStyle::fromCssStyle(
+          style,27.0f,CssTextAlign::None,TEXT_WIDTH);
+      s.current.block.alignment=scope.align;
+      s.current.block.textAlignDefined=true;
+      s.current.block.isRtl=scope.rtl;
+      s.current.block.directionDefined=style.hasDirection() || !dir.empty();
+      scope.pageBreakAfter=s.current.block.pageBreakAfter;
       if(n=="li") {
         // Preserve list structure instead of silently concatenating item text.
         std::string markerText="- ";
@@ -219,11 +230,16 @@ struct HtmlCollector {
     if(n=="br" && s.collectingDepth && !scope.hidden) {
       // A hard XHTML line break is not a space: commit the current visual
       // line and continue with a new block, retaining inherited styling.
+      BlockStyle retained=s.current.block;
       if(!s.current.runs.empty() && s.items.size()<MAX_BLOCKS)
         s.items.push_back(std::move(s.current));
       s.current=Paragraph{};
       s.current.align=scope.align;
       s.current.rtl=scope.rtl;
+      retained.pageBreakBefore=false;
+      retained.pageBreakAfter=false;
+      retained.marginTop=retained.paddingTop=0;
+      s.current.block=retained;
     }
     if((n=="img" || n=="image") && !scope.hidden) {
       const auto uri=attribute(attrs,n=="img"?"src":"href");
@@ -280,6 +296,8 @@ struct HtmlCollector {
       if(nonempty && s.items.size()<MAX_BLOCKS)
         s.items.push_back(std::move(s.current));
       else if(s.items.size()>=MAX_BLOCKS)s.limitHit=true;
+      if(scope.pageBreakAfter && !s.items.empty())
+        s.items.back().block.pageBreakAfter=true;
       s.collectingDepth=0;
     }
     s.scopes.pop_back();
@@ -399,6 +417,12 @@ class Reader {
     size_t totalImages=0;
     bool pageLimitReached=false;
     for (const auto& p:paragraphs) {
+      if(p.block.pageBreakBefore &&
+         (!pages_.back().lines.empty() || !pages_.back().images.empty()) &&
+         !beginNextPage(y))return false;
+      y+=std::clamp<int>(p.block.topInset(),0,48);
+      if(y>=BOTTOM && (!pages_.back().lines.empty() ||
+         !pages_.back().images.empty()) && !beginNextPage(y))return false;
       if(!p.imagePath.empty()) {
         size_t bytes=0;
         if(!archive_.getInflatedFileSize(p.imagePath.c_str(),&bytes) ||
@@ -423,10 +447,9 @@ class Reader {
         y+=fitH+8;
         continue;
       }
-      BlockStyle block;
+      BlockStyle block=p.block;
       block.alignment=p.align;
       block.textAlignDefined=true;
-      block.directionDefined=p.rtl;
       block.isRtl=p.rtl;
       ParsedText layout(false,false,block,0);
       std::string pending;
@@ -449,7 +472,9 @@ class Reader {
       }
       flush();
       if (layout.hadDroppedWords()) return false;
-      layout.layoutAndExtractLines(renderer_,1,TEXT_WIDTH,
+      const int inset=std::clamp<int>(block.totalHorizontalInset(),0,96);
+      layout.layoutAndExtractLines(renderer_,1,
+          static_cast<uint16_t>(TEXT_WIDTH-inset),
           [&](std::unique_ptr<TextBlock> line,uint32_t) {
             if (!line || !line->valid() || pages_.size() > MAX_PAGES_PER_SPINE) return;
             if (y + lineHeight() > BOTTOM && !beginNextPage(y)) {
@@ -464,7 +489,11 @@ class Reader {
         std::fputs("CrossPod: chapter exceeds the bounded page cache\n",stderr);
         return false;
       }
-      y += p.heading ? 12 : 8;
+      y+=std::clamp<int>(p.block.bottomInset(),0,48);
+      y+=p.heading?12:8;
+      if(p.block.pageBreakAfter &&
+         (!pages_.back().lines.empty() || !pages_.back().images.empty()) &&
+         !beginNextPage(y))return false;
     }
     if (pages_.size()>1 && pages_.back().lines.empty() &&
         pages_.back().images.empty()) pages_.pop_back();

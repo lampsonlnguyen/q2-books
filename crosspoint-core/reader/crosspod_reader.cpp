@@ -62,7 +62,9 @@ std::string_view localName(std::string_view tag) {
 bool isParagraph(std::string_view n) {
   return n == "p" || n == "h1" || n == "h2" || n == "h3" ||
          n == "h4" || n == "h5" || n == "h6" || n == "li" ||
-         n == "blockquote" || n == "pre" || n == "dt" || n == "dd";
+         n == "blockquote" || n == "pre" || n == "dt" || n == "dd" ||
+         n == "div" || n == "section" || n == "article" ||
+         n == "figcaption" || n == "caption" || n == "td" || n == "th";
 }
 bool skipTag(std::string_view n) {
   return n == "script" || n == "style" || n == "svg" || n == "nav";
@@ -122,6 +124,8 @@ struct HtmlCollector {
     bool hidden=false, bold=false, italic=false, rtl=false;
     CssTextAlign align=CssTextAlign::Justify;
     bool paragraph=false;
+    BlockStyle paragraphBlock{};
+    bool heading=false;
     bool stylesheet=false;
     bool pageBreakAfter=false;
     int listKind=0; // 0 none, 1 unordered, 2 ordered
@@ -216,7 +220,14 @@ struct HtmlCollector {
     const auto dir=attribute(attrs,"dir");
     if(dir=="rtl")scope.rtl=true;
     else if(dir=="ltr")scope.rtl=false;
-    if(!scope.hidden && isParagraph(n) && !s.collectingDepth) {
+    if(!scope.hidden && isParagraph(n)) {
+      // A new block inside another block must not disappear. Commit the
+      // visible parent text before entering a nested paragraph/list/table
+      // cell, then restore the parent after the child closes.
+      if(s.collectingDepth && !s.current.runs.empty() &&
+         s.items.size()<MAX_BLOCKS) {
+        s.items.push_back(std::move(s.current));
+      }
       scope.paragraph=true;
       s.collectingDepth=static_cast<int>(s.scopes.size());
       s.current=Paragraph{};
@@ -231,6 +242,8 @@ struct HtmlCollector {
       s.current.block.isRtl=scope.rtl;
       s.current.block.directionDefined=style.hasDirection() || !dir.empty();
       scope.pageBreakAfter=s.current.block.pageBreakAfter;
+      scope.paragraphBlock=s.current.block;
+      scope.heading=s.current.heading;
       if(n=="li") {
         // Preserve list structure instead of silently concatenating item text.
         std::string markerText="- ";
@@ -315,6 +328,22 @@ struct HtmlCollector {
       if(scope.pageBreakAfter && !s.items.empty())
         s.items.back().block.pageBreakAfter=true;
       s.collectingDepth=0;
+      // Resume text after a nested <p>, <li>, <td> or <div> rather than
+      // discarding the parent's trailing words.
+      for(int d=static_cast<int>(s.scopes.size())-2;d>=1;--d) {
+        if(!s.scopes[d].paragraph)continue;
+        const auto& parent=s.scopes[d];
+        s.collectingDepth=d;
+        s.current=Paragraph{};
+        s.current.align=parent.align;
+        s.current.rtl=parent.rtl;
+        s.current.heading=parent.heading;
+        s.current.block=parent.paragraphBlock;
+        s.current.block.pageBreakBefore=false;
+        s.current.block.pageBreakAfter=false;
+        s.current.block.marginTop=s.current.block.paddingTop=0;
+        break;
+      }
     }
     s.scopes.pop_back();
   }

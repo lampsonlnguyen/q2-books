@@ -1419,7 +1419,7 @@ class Reader {
     renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
-    constexpr int kItems=13;
+    constexpr int kItems=14;
     constexpr int kRows=9;
     constexpr int kRowTop=73;
     constexpr int kRowHeight=21;
@@ -1430,7 +1430,7 @@ class Reader {
     renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
-        "Page links","Return link"};
+        "Page links","Return link","Select text"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1441,7 +1441,7 @@ class Reader {
       preferences_.embeddedStyle?"On":"Off",
       preferences_.nightMode?"On":"Off",
       "Save page","Saved pages","Browse book","Footnotes / links",
-      hasLinkHistory()?"Go back":"No previous link"
+      hasLinkHistory()?"Go back":"No previous link","Highlight / define"
     };
     for(int row=0;row<kRows && first+row<kItems;++row) {
       const int item=first+row;
@@ -2095,6 +2095,13 @@ int runCardApp(const std::string& bookDir) {
   bool typeMenu=false;
   bool navigationMenu=false;
   bool linkMenu=false;
+  bool selectionChoosing=false;
+  bool selectionActions=false;
+  bool dictionaryOverlay=false;
+  int selectionAction=0;
+  bool touchPressed=false;
+  int touchStartX=0,touchStartY=0;
+  std::chrono::steady_clock::time_point touchStartTime{};
   bool showingBookmarks=false;
   int navigationSelection=0;
   int typeSelection=0;
@@ -2121,6 +2128,7 @@ int runCardApp(const std::string& bookDir) {
             std::chrono::milliseconds(800);
       }
       if(reader && !typeMenu && !navigationMenu && !linkMenu &&
+         !selectionChoosing && !selectionActions && !dictionaryOverlay &&
          reader->needsPagePrefetch() && now>=nextBuildTick) {
         // Layout a bounded lookahead only when needed. Stop unnecessary
         // parser and SD-card activity once five pages are prepared.
@@ -2138,6 +2146,58 @@ int runCardApp(const std::string& bookDir) {
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {
+      if(dictionaryOverlay) {
+        if(action==crosspod::LogicalAction::Back ||
+           action==crosspod::LogicalAction::Confirm ||
+           event.kind==crosspod::PhysicalKind::TouchUp) {
+          dictionaryOverlay=false;
+          selectionActions=true;
+          reader->showTextSelectionMenu(selectionAction);
+        }
+        continue;
+      }
+      if(selectionActions) {
+        if(action==crosspod::LogicalAction::Back) {
+          selectionActions=false;reader->discardSelection();reader->present();
+        } else if(action==crosspod::LogicalAction::Next ||
+                  action==crosspod::LogicalAction::Previous) {
+          selectionAction=(selectionAction+
+              (action==crosspod::LogicalAction::Next?1:3))%4;
+          reader->showTextSelectionMenu(selectionAction);
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(event.kind==crosspod::PhysicalKind::TouchUp) {
+            if(event.y<260||event.y>=302)continue;
+            selectionAction=std::clamp((event.x-20)/85,0,3);
+          }
+          if(selectionAction==1) {
+            selectionActions=false;dictionaryOverlay=true;
+            reader->showDictionaryDefinition();
+          } else {
+            if(selectionAction==0)(void)reader->saveSelectionHighlight();
+            if(selectionAction==2)(void)reader->eraseSelectionHighlight();
+            selectionActions=false;reader->discardSelection();reader->present();
+          }
+        }
+        continue;
+      }
+      if(selectionChoosing) {
+        if(action==crosspod::LogicalAction::Back) {
+          selectionChoosing=false;reader->discardSelection();reader->present();
+        } else if(action==crosspod::LogicalAction::Next ||
+                  action==crosspod::LogicalAction::Previous) {
+          (void)reader->stepSelection(
+              action==crosspod::LogicalAction::Next?1:-1);
+          reader->showSelectionPreview();
+        } else if(action==crosspod::LogicalAction::Confirm) {
+          selectionChoosing=false;selectionActions=true;selectionAction=0;
+          reader->showTextSelectionMenu(0);
+        } else if(event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(reader->selectTouchWord(event.x,event.y,true))
+            reader->showSelectionPreview();
+        }
+        continue;
+      }
       if(linkMenu) {
         const auto links=reader->pageLinks();
         const int count=static_cast<int>(links.size());
@@ -2203,18 +2263,25 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:12))%13;
+              (action==crosspod::LogicalAction::Next?1:13))%14;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             typeSelection=std::clamp(
-                std::max(0,typeSelection-8)+(event.y-73)/21,0,12);
+                std::max(0,typeSelection-8)+(event.y-73)/21,0,13);
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection==11) {
             linkMenu=true;
             navigationSelection=0;
+          } else if(typeSelection==13) {
+            if(reader->beginTextSelection()) {
+              selectionChoosing=true;
+              typeMenu=false;
+              reader->showSelectionPreview();
+              continue;
+            }
           } else if(typeSelection==12) {
             if(reader->goBackFromLink()) {
               typeMenu=false;
@@ -2241,6 +2308,28 @@ int runCardApp(const std::string& bookDir) {
           else reader->showTypographyMenu(typeSelection);
         }
         continue;
+      }
+      // Hold a word or drag between words to select text. Short taps retain
+      // the existing link and left/right page controls. Q2 socket reports
+      // touch down/move/up even though ordinary readers used only release.
+      if(event.kind==crosspod::PhysicalKind::TouchDown) {
+        touchPressed=true;touchStartX=event.x;touchStartY=event.y;
+        touchStartTime=std::chrono::steady_clock::now();
+        continue;
+      }
+      if(event.kind==crosspod::PhysicalKind::TouchUp && touchPressed) {
+        touchPressed=false;
+        const auto elapsed=std::chrono::steady_clock::now()-touchStartTime;
+        const int dx=event.x-touchStartX,dy=event.y-touchStartY;
+        const bool deliberate=elapsed>=std::chrono::milliseconds(450) ||
+             dx*dx+dy*dy>=28*28;
+        if(deliberate && touchStartY>=TOP && touchStartY<BOTTOM &&
+           reader->selectTouchWord(touchStartX,touchStartY,false)) {
+          (void)reader->selectTouchWord(event.x,event.y,true);
+          selectionAction=0;selectionActions=true;
+          reader->showTextSelectionMenu(0);
+          continue;
+        }
       }
       if(action==crosspod::LogicalAction::Confirm ||
          (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {

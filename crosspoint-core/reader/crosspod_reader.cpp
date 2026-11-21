@@ -1295,8 +1295,10 @@ class CardShelf {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   size_t selected_ = 0;
+  bool browsing_ = false;
+  int homeSelection_ = 0;
   std::string notice_;
-  static constexpr int TOP_Y=59, ROW_H=36, VISIBLE_ROWS=6;
+  static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
 
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0):
@@ -1318,17 +1320,34 @@ class CardShelf {
   }
   size_t selected() const {return selected_;}
   bool empty() const {return books_.empty();}
+  bool browsing() const {return browsing_;}
+  bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
+  void enterBrowser() {browsing_=true;notice_.clear();}
+  void goHome() {browsing_=false;homeSelection_=0;notice_.clear();}
   const std::string& bookPath() const {return books_[selected_].path;}
   bool change(int direction) {
+    notice_.clear();
+    if(!browsing_) {
+      const int next=std::clamp(homeSelection_+direction,0,1);
+      if(next==homeSelection_)return false;
+      homeSelection_=next;
+      return true;
+    }
     if(books_.empty())return false;
     const auto before=selected_;
     if(direction>0 && selected_+1<books_.size())++selected_;
     else if(direction<0 && selected_>0)--selected_;
-    notice_.clear();
     return selected_!=before;
   }
   bool tap(int x,int y) {
-    if(books_.empty() || x<0||x>=375 || y<TOP_Y || y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+    if(x<0||x>=375)return false;
+    if(!browsing_) {
+      if(y>=153&&y<194)homeSelection_=0;
+      else if(y>=194&&y<242)homeSelection_=1;
+      else return false;
+      return true;
+    }
+    if(books_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
     const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
     if(index>=books_.size())return false;
@@ -1338,31 +1357,53 @@ class CardShelf {
   void setNotice(std::string notice) {notice_=std::move(notice);}
   void paint() {
     renderer_.clearScreen(0xff);
-    renderer_.fillRect(0,0,375,43,true);
-    renderer_.drawText(1,17,16,"CrossPod",false);
-    char counter[80];
-    std::snprintf(counter,sizeof(counter),"%zu EPUB book%s",books_.size(),books_.size()==1?"":"s");
-    renderer_.drawText(1,18,45,counter);
-    if(books_.empty()) {
-      renderer_.drawText(1,18,112,"No EPUB books found.");
-      renderer_.drawText(1,18,144,"Copy books to /Books/");
+    renderer_.fillRect(0,0,375,39,true);
+    renderer_.drawText(1,16,11,"CrossPod",false);
+    if(!browsing_) {
+      renderer_.drawText(1,16,47,"Home");
+      renderer_.drawLine(15,70,359,70,true);
+      renderer_.drawText(1,16,80,"Current book");
+      if(books_.empty())
+        renderer_.drawText(1,16,111,"No books yet");
+      else
+        renderer_.drawText(1,16,111,
+            clippedLabel(books_[selected_].label,25).c_str());
+      renderer_.drawLine(15,144,359,144,true);
+      if(!books_.empty()) {
+        if(homeSelection_==0)renderer_.fillRect(10,153,355,38,true);
+        renderer_.drawText(1,19,163,"Continue reading",homeSelection_!=0);
+      }
+      if(homeSelection_==1 || books_.empty())
+        renderer_.fillRect(10,195,355,38,true);
+      renderer_.drawText(1,19,205,"Browse files",
+          homeSelection_!=1 && !books_.empty());
+      renderer_.drawText(1,16,261,"Wheel: choose");
     } else {
-      const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
-      for(size_t row=0;row<VISIBLE_ROWS && start+row<books_.size();++row) {
-        const size_t index=start+row;
-        const int y=TOP_Y+static_cast<int>(row)*ROW_H;
-        const bool active=index==selected_;
-        if(active)renderer_.fillRect(10,y+2,355,31,true);
-        else renderer_.drawLine(14,y+ROW_H-3,361,y+ROW_H-3,true);
-        const std::string label=clippedLabel(books_[index].label,34);
-        renderer_.drawText(1,18,y+10,label.c_str(),!active);
+      char count[64];
+      std::snprintf(count,sizeof(count),"Browse files  (%zu)",books_.size());
+      renderer_.drawText(1,16,47,count);
+      renderer_.drawLine(15,72,359,72,true);
+      if(books_.empty()) {
+        renderer_.drawText(1,16,102,"No EPUB books found");
+        renderer_.drawText(1,16,144,"Copy EPUBs to /Books");
+      } else {
+        const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
+        for(size_t row=0;row<VISIBLE_ROWS && start+row<books_.size();++row) {
+          const size_t index=start+row;
+          const int y=TOP_Y+static_cast<int>(row)*ROW_H;
+          const bool active=index==selected_;
+          if(active)renderer_.fillRect(10,y,355,36,true);
+          else renderer_.drawLine(14,y+36,360,y+36,true);
+          const std::string label=clippedLabel(books_[index].label,26);
+          renderer_.drawText(1,18,y+7,label.c_str(),!active);
+        }
       }
     }
-    if(!notice_.empty()) {
-      renderer_.fillRect(0,272,375,20,true);
-      renderer_.drawText(1,12,277,clippedLabel(notice_,43).c_str(),false);
-    }
-    renderer_.drawText(1,18,299,"Wheel: select   Center: open   Back: exit");
+    renderer_.fillRect(0,281,375,39,true);
+    const std::string footer=!notice_.empty()
+      ?clippedLabel(notice_,28)
+      :browsing_?"Center: open  Back: home":"Center: open  Back: exit";
+    renderer_.drawText(1,15,290,footer.c_str(),false);
   }
   void present() {paint();display_.displayBuffer();}
   bool savePgm(const std::string& out) {
@@ -1512,12 +1553,21 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
-    if(action==crosspod::LogicalAction::Back)break;
+    if(action==crosspod::LogicalAction::Back) {
+      if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
+      break;
+    }
     if(action==crosspod::LogicalAction::Previous && shelf->change(-1))shelf->present();
     if(action==crosspod::LogicalAction::Next && shelf->change(1))shelf->present();
     bool activate=action==crosspod::LogicalAction::Confirm;
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
-    if(!activate || shelf->empty())continue;
+    if(!activate)continue;
+    if(shelf->browseChosen()) {
+      shelf->enterBrowser();
+      shelf->present();
+      continue;
+    }
+    if(shelf->empty())continue;
     selection=shelf->selected();
     const std::string chosen=shelf->bookPath();
     shelf->setNotice("Opening EPUB...");

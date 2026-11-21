@@ -46,7 +46,11 @@ jobs:
           gh run download 44937774555 -R "$GH_REPO" \
             -n crosspod-q2-reader-alpha -D dist/release
           cd dist/release
-          sha256sum -c crosspod-q2-reader-alpha.zip.sha256
+          # Q2 builder records its own absolute CI workspace path in the
+          # checksum sidecar; verify the digest against the downloaded file
+          # here instead of trusting the now-invalid original pathname.
+          expected="$(awk 'NR==1 {print $1}' crosspod-q2-reader-alpha.zip.sha256)"
+          echo "$expected  crosspod-q2-reader-alpha.zip" | sha256sum -c -
           unzip -t crosspod-q2-reader-alpha.zip > /dev/null
           for item in \
             .crosspod/crosspod-engine \

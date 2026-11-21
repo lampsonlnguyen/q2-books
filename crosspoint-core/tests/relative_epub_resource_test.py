@@ -20,7 +20,7 @@ assert "ml=15" in box, box
 assert "indent=54" in box, box  # 2em with 27 px em
 assert "break_after=1" in box, box
 assert "1. First item" in output, output
-assert "2. Second item" in output, output
+assert "2. Second item" in output, output\nassert "5. Fifth item" in output, output\nassert "6. Sixth item" in output, output
 assert "Before break" in output and "After break" in output, output
 assert not any("Before breakAfter break" in line for line in output.splitlines()), output
 print("Sibling-directory CSS applied in active XHTML reader: PASS")

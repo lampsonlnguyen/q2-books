@@ -1,7 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: MIT
 // C/libjpeg decoding is isolated from the C++ reader's allocation lifetime.
-#include <PngPreview.hpp>
+#include "PngPreview.hpp"
 #include <cstdlib>
 #include <cstddef>
 #include <cstdint>

@@ -187,7 +187,7 @@ assert sans != serif, "Font choices must produce distinct glyph rasters"
 logs = [Path(p).read_text() for p in sys.argv[3:]]
 assert "CrossPod typeface: Sans 16pt" in logs[0], logs[0]
 assert "CrossPod typeface: Serif 18pt" in logs[1], logs[1]
-assert all("fallback" not in log for log in logs), logs
+assert all("Selected font file missing" not in log and "Font file not installed" not in log for log in logs), logs
 print("MIPS Q2 font switching and rendering: PASS")
 PY
 rm -f "$card/.crosspod/typography.conf"

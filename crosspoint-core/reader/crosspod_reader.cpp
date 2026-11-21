@@ -36,6 +36,7 @@
 #include "Highlights.hpp"
 #include "SelectionGeometry.hpp"
 #include "OfflineDictionary.hpp"
+#include "FootnotePreview.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -1002,6 +1003,49 @@ class Reader {
     return true;
   }
   bool hasLinkHistory() const {return !jumpHistory_.empty();}
+  bool isFootnoteLink(const std::string& href) {
+    if(!upstreamSection_)return false;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return false;
+    for(const auto& note:page->footnotes)
+      if(href==note.href)return true;
+    return false;
+  }
+  std::string touchedLink(int touchX,int touchY) {
+    if(!upstreamSection_ || touchY<TOP || touchY>=BOTTOM)return {};
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return {};
+    for(const auto& link:page->links)
+      if(link.href[0] &&
+         link.contains(touchX-preferences_.margin,touchY-TOP,5,20))
+        return link.href;
+    return {};
+  }
+  void showFootnotePopup(const std::string& href) {
+    std::string note;
+    if(currentSpine_>=0)
+      note=crosspod::loadFootnotePreview(archive_,
+        metadata_.getSpineEntry(currentSpine_).href,href);
+    render();
+    renderer_.fillRect(10,58,355,250,true);
+    renderer_.fillRect(12,60,351,246,false);
+    renderer_.drawText(2,20,70,"Footnote");
+    if(note.empty())note="Preview unavailable. Center: open note";
+    size_t cursor=0;
+    for(int line=0;line<9 && cursor<note.size();++line) {
+      size_t end=std::min(note.size(),cursor+43);
+      if(end<note.size()) {
+        const size_t space=note.rfind(' ',end);
+        if(space!=std::string::npos && space>cursor)end=space;
+      }
+      renderer_.drawText(2,20,101+line*19,
+          clippedLabel(note.substr(cursor,end-cursor),42).c_str());
+      cursor=end;
+      while(cursor<note.size() && note[cursor]==' ')++cursor;
+    }
+    drawMenuText(20,284,"Back: close   Center: jump",1);
+    display_.displayBuffer();
+  }
   bool followTouchedLink(int touchX,int touchY) {
     if(!upstreamSection_ || touchY<TOP || touchY>=BOTTOM)return false;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));

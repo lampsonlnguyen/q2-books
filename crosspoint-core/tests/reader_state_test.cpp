@@ -23,8 +23,10 @@ int main() {
   // UI font is independent; persisted oversized reader settings migrate to 12pt.
   crosspod::Typography textSize{};
   assert(crosspod::validTypography(textSize));
-  assert(!crosspod::validTypography({crosspod::Typography::Family::Sans,14}));
-  assert(!crosspod::validTypography({crosspod::Typography::Family::Serif,18}));
+  crosspod::Typography oversizedSans{crosspod::Typography::Family::Sans,14};
+  crosspod::Typography oversizedSerif{crosspod::Typography::Family::Serif,18};
+  assert(!crosspod::validTypography(oversizedSans));
+  assert(!crosspod::validTypography(oversizedSerif));
   {
     const std::string oldSetting=std::string(dir)+"/typography.conf";
     FILE* old=std::fopen(oldSetting.c_str(),"wb");

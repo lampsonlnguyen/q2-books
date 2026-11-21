@@ -24,6 +24,13 @@ target_include_directories(crosspod_q2_memory_sink_tests PRIVATE platform/posix)
 target_compile_options(crosspod_q2_memory_sink_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_q2_renderer_sink_lifecycle COMMAND crosspod_q2_memory_sink_tests)
 
+# Nested EPUB folder enumeration and NFC-aware bookshelf search.
+add_executable(crosspod_shelf_search_tests tests/shelf_search_test.cpp)
+target_include_directories(crosspod_shelf_search_tests PRIVATE reader)
+target_link_libraries(crosspod_shelf_search_tests PRIVATE crosspoint_utf8)
+target_compile_options(crosspod_shelf_search_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_shelf_recursive_search COMMAND crosspod_shelf_search_tests)
+
 add_executable(crosspod_shelf_library_tests tests/shelf_library_test.cpp)
 target_include_directories(crosspod_shelf_library_tests PRIVATE reader)
 target_compile_options(crosspod_shelf_library_tests PRIVATE -UNDEBUG)

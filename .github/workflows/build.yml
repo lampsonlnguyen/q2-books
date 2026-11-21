@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, v0.5.0-bookshelf]
+    branches: [main, fix/reader-blank-text-long-scroll]
   pull_request:
     branches: [main]
   workflow_dispatch:

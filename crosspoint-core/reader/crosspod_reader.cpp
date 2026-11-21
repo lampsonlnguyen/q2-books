@@ -486,6 +486,7 @@ class Reader {
   };
   std::array<CachedRaster,3> rasterCache_{};
   size_t nextRasterSlot_=0;
+  bool lastRenderOk_=true;
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
@@ -1350,20 +1351,52 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          lastRenderOk_=true;
           drawProgress();
           applyNightMode();
           return;
         }
     }
-    renderer_.clearScreen(0xff);
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
-      if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
-      cacheRenderedPage();
+      if(!page) {
+        lastRenderOk_=false;
+        // An incomplete or transiently unreadable Section page is NOT a
+        // successful blank page. Preserve the previous framebuffer and retry
+        // on the next draw instead of permanently caching an empty raster.
+        std::fprintf(stderr,
+            "CrossPod: page %zu in spine %d unavailable; refusing blank cache\n",
+            currentPage_,currentSpine_);
+        return;
+      }
+      renderer_.clearScreen(0xff);
+      page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      // If a long session evicted a glyph cache in an unusable state, make
+      // exactly one fresh attempt rather than recording an all-white raster
+      // in the three-page cache (which persisted until the app restarted).
+      if(!pageHasVisibleInk()) {
+        fontCache_.clearCache();
+        renderer_.clearScreen(0xff);
+        page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      }
+      lastRenderOk_=pageHasVisibleInk();
+      if(lastRenderOk_)cacheRenderedPage();
+      else {
+        // Direct bitmap menu glyphs work even when the SD-book font has
+        // failed; leave a visible diagnostic instead of a silent white page.
+        drawMenuText(20,140,"Page text unavailable",1);
+        std::fprintf(stderr,"CrossPod: no body ink after glyph retry at spine %d page %zu\n",
+                     currentSpine_,currentPage_);
+      }
       drawProgress();
       applyNightMode();
       return;
     }
+    if(currentPage_>=pages_.size()) {
+      std::fputs("CrossPod: legacy page unavailable; preserving current framebuffer\n",stderr);
+      return;
+    }
+    renderer_.clearScreen(0xff);
     const auto& page=pages_[currentPage_];
     for (const auto& line:page.lines)
       line.block->render(renderer_,1,preferences_.margin,line.y);
@@ -1404,6 +1437,17 @@ class Reader {
     }
     if(std::fclose(file)!=0)ok=false;
     return ok;
+  }
+  bool lastRenderSucceeded() const { return lastRenderOk_; }
+  bool pageHasVisibleInk() const {
+    const uint8_t* pixels=display_.getFrameBuffer();
+    if(!pixels)return false;
+    // Ignore progress and UI footer: only count actual rendered book area.
+    for(int y=TOP;y<BOTTOM;++y)
+      for(int xByte=2;xByte<44;++xByte)
+        if(pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+xByte]!=0xff)
+          return true;
+    return false;
   }
   size_t imageCount() {
     if(upstreamSection_) {
@@ -1973,12 +2017,15 @@ int main(int argc,char** argv) {
     CardShelf shelf(books);
     return shelf.open() && shelf.savePgm(argv[3])?0:4;
   }
-  bool dry=false,render=false,walk=false,benchmark=false;
+  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
   } else if(argc==3 && std::strcmp(argv[1],"--walk")==0) {
     dry=true;walk=true;path=argv[2];
+  }
+  else if(argc==3 && std::strcmp(argv[1],"--render-walk")==0) {
+    dry=true;renderWalk=true;path=argv[2];
   } else if(argc==3 && std::strcmp(argv[1],"--bench")==0) {
     dry=true;benchmark=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
@@ -2033,6 +2080,40 @@ int main(int argc,char** argv) {
         advanced,static_cast<long long>(turnMs),
         usage.ru_maxrss,usage.ru_inblock,usage.ru_oublock);
       return 0;
+    }
+    if(renderWalk) {
+      // Exercise the actual font/glyph/page rasterizer, not just page indexes.
+      // This catches the blank-reader regression after prolonged wheel turns.
+      size_t forward=0,backward=0;
+      reader.render();
+      if(!reader.lastRenderSucceeded() || !reader.pageHasVisibleInk())return 9;
+      while(forward<2048) {
+        if(reader.move(1)) {
+          reader.render();
+          if(!reader.lastRenderSucceeded() || !reader.pageHasVisibleInk()) {
+            std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\n",
+                         forward+1);
+            return 9;
+          }
+          ++forward;
+          continue;
+        }
+        if(reader.isBuilding()) {
+          (void)reader.buildNextPages(4);
+          continue;
+        }
+        break;
+      }
+      if(forward>=2048)return 7;
+      while(backward<2048 && reader.move(-1)) {
+        reader.render();
+        if(!reader.pageHasVisibleInk())return 9;
+        ++backward;
+      }
+      if(backward!=forward)return 8;
+      std::printf("CrossPod rendered %zu pages forward and %zu backward without blank text\n",
+                  forward,backward);
+      return forward>=10?0:8;
     }
     if(walk) {
       // Exercise real page/spine transitions and the backward boundary.

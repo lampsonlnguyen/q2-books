@@ -23,6 +23,9 @@ forward,backward=map(int,match.groups())
 assert forward>=10, f"Long chapter yielded only {forward} page turns"
 assert forward==backward, (forward,backward)
 
+raster=run("--render-walk",120)
+assert f"CrossPod rendered {forward} pages forward and {backward} backward" in raster, raster
+
 stats=run("--bench",120)
 match=re.search(
     r"open_ms=(\d+) first_render_us=(\d+) cached_render_us=(\d+) "

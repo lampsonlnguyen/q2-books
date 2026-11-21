@@ -17,6 +17,13 @@ add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
 # SD-card reading settings/bookmarks are independent of CrossPoint engine.
 # Q2 preferences must reach original CrossPoint layout/cache validation.
 # Persistent Q2 bookshelf history, metadata and sort regression.
+# Q2 renderer reclamation must not retain freed objects after repeated
+# bookshelf-to-reader transitions or unregister callbacks of active readers.
+add_executable(crosspod_q2_memory_sink_tests tests/q2_memory_sink_lifecycle_test.cpp)
+target_include_directories(crosspod_q2_memory_sink_tests PRIVATE platform/posix)
+target_compile_options(crosspod_q2_memory_sink_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_q2_renderer_sink_lifecycle COMMAND crosspod_q2_memory_sink_tests)
+
 add_executable(crosspod_shelf_library_tests tests/shelf_library_test.cpp)
 target_include_directories(crosspod_shelf_library_tests PRIVATE reader)
 target_compile_options(crosspod_shelf_library_tests PRIVATE -UNDEBUG)

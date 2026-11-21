@@ -143,7 +143,7 @@ class GfxRenderer {
  public:
   explicit GfxRenderer(HalDisplay& halDisplay)
       : display(halDisplay), renderMode(BW), orientation(Portrait), fadingFix(false) {}
-  ~GfxRenderer() { freeBwBufferChunks(); }
+  ~GfxRenderer();
 
   // Setup
   void begin();  // must be called right after display.begin()

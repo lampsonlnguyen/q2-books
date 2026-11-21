@@ -3,6 +3,7 @@
 // The Q2 has 128MB shared RAM; checking actual MemAvailable is more useful
 // than retaining the ESP32 heap-specific API.
 #include <cstddef>
+#include <algorithm>
 #include <cstdio>
 #include <functional>
 #include <string>
@@ -21,7 +22,21 @@ class MemoryManager {
     static MemoryManager manager;
     return manager;
   }
-  void registerSink(Sink sink) { sinks_.push_back(std::move(sink)); }
+  // The shelf and reader renderers briefly overlap during an EPUB open.
+  // Keep callbacks attributed to the specific owning renderer, not a global
+  // renderer generation: tearing down the old shelf must not remove the
+  // newly opened reader's font-cache reclamation handlers.
+  void setSinkOwner(const void* owner) { pendingOwner_=owner; }
+  void registerSink(Sink sink) {
+    sinks_.push_back({std::move(sink),pendingOwner_});
+  }
+  void unregisterSinks(const void* owner) {
+    sinks_.erase(std::remove_if(sinks_.begin(),sinks_.end(),
+        [owner](const Registration& r){ return r.owner==owner; }),
+        sinks_.end());
+    if(pendingOwner_==owner)pendingOwner_=nullptr;
+  }
+  std::size_t sinkCount() const { return sinks_.size(); }
   std::size_t freeBytes() const {
     // Linux MemAvailable includes reclaimable page cache. This is intentionally
     // not the same as the process RSS cap, which is measured separately.
@@ -41,16 +56,19 @@ class MemoryManager {
   }
   bool ensureFree(std::size_t required) {
     if (freeBytes()>=required) return true;
-    // Caller-owned sinks live for the CrossPod reader process lifetime.
-    // Renderer teardown must clear the registry before any new renderer is
-    // installed; this is a known lifecycle requirement for device validation.
-    for (auto& sink:sinks_) {
-      if (sink.reclaim) sink.reclaim(required);
+    // The active renderer owns these callbacks and clears them on teardown.
+    for (auto& entry:sinks_) {
+      if (entry.sink.reclaim) entry.sink.reclaim(required);
       if (freeBytes()>=required) return true;
     }
     return false;
   }
  private:
-  std::vector<Sink> sinks_;
+  struct Registration {
+    Sink sink;
+    const void* owner=nullptr;
+  };
+  const void* pendingOwner_=nullptr;
+  std::vector<Registration> sinks_;
 };
 }

@@ -1503,6 +1503,9 @@ class CardShelf {
   crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
   std::vector<crosspod::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
+  crosspod::ShelfCover currentCover_{};
+  bool currentCoverChecked_=false;
+  bool currentCoverAvailable_=false;
   bool browsing_ = false;
   int homeSelection_ = 0;
   std::string notice_;
@@ -1579,6 +1582,28 @@ class CardShelf {
     }
     return cachedDetails_[index];
   }
+  void drawBookCover(int x,int y,size_t index) {
+    if(!currentCoverChecked_) {
+      currentCoverAvailable_=crosspod::loadShelfCover(books_[index].path,currentCover_);
+      currentCoverChecked_=true;
+    }
+    renderer_.drawLine(x-1,y-1,x+crosspod::ShelfCover::width,y-1,true);
+    renderer_.drawLine(x-1,y-1,x-1,y+crosspod::ShelfCover::height,true);
+    renderer_.drawLine(x+crosspod::ShelfCover::width,y-1,
+                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y+crosspod::ShelfCover::height,
+                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
+    if(!currentCoverAvailable_) {
+      renderer_.drawLine(x+7,y+12,x+39,y+12,true);
+      renderer_.drawLine(x+7,y+18,x+39,y+18,true);
+      return;
+    }
+    for(int py=0;py<crosspod::ShelfCover::height;++py)
+      for(int px=0;px<crosspod::ShelfCover::width;++px)
+        if(currentCover_.ink[py*crosspod::ShelfCover::stride+px/8] &
+           (0x80u>>(px&7)))
+          renderer_.drawPixel(x+px,y+py,true);
+  }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
@@ -1603,23 +1628,24 @@ class CardShelf {
     if(!browsing_) {
       drawCompactLabel(16,61,"Home");
       renderer_.drawLine(15,74,359,74,true);
-      // A compact current-book panel, inspired by CrossPoint's home page.
-      // Do not invent book-cover artwork or draw filenames outside the panel.
-      renderer_.drawText(1,65,88,"Current book");
-      renderer_.drawLine(17,92,52,92,true);
-      renderer_.drawLine(17,92,17,138,true);
-      renderer_.drawLine(52,92,52,138,true);
-      renderer_.drawLine(17,138,52,138,true);
-      renderer_.drawLine(22,100,46,100,true);
-      renderer_.drawLine(22,106,46,106,true);
+      // Real EPUB cover thumb is decoded once when leaving the book;
+      // shelf startup only reads a 360-byte 1-bit cached image.
+      if(!books_.empty())drawBookCover(18,86,current_);
+      else {
+        renderer_.drawLine(17,85,66,85,true);
+        renderer_.drawLine(17,85,17,146,true);
+        renderer_.drawLine(66,85,66,146,true);
+        renderer_.drawLine(17,146,66,146,true);
+      }
+      renderer_.drawText(1,82,88,"Current book");
       if(books_.empty())
-        renderer_.drawText(1,65,119,"No books yet");
+        renderer_.drawText(1,82,119,"No books yet");
       else {
         const auto& info=details(current_);
-        renderer_.drawText(1,65,108,
-            clippedLabel(info.title.empty()?books_[current_].label:info.title,20).c_str());
+        renderer_.drawText(1,82,110,
+            clippedLabel(info.title.empty()?books_[current_].label:info.title,19).c_str());
         if(!info.author.empty())
-          renderer_.drawText(1,65,131,clippedLabel(info.author,22).c_str());
+          renderer_.drawText(1,82,132,clippedLabel(info.author,20).c_str());
       }
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {

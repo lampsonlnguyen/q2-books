@@ -63,6 +63,13 @@ class ScriptFontFallback {
     const char* disabled=std::getenv("CROSSPOD_DISABLE_CJK");
     for(size_t i=0;i<scriptFontSpecs.size();++i) {
       if(i==0 && disabled && std::strcmp(disabled,"1")==0)continue;
+      // Test/debug override to isolate one script without uninstalling fonts.
+      const char* excluded=std::getenv("CROSSPOD_DISABLE_SCRIPTS");
+      if(excluded && *excluded) {
+        const std::string list=std::string(",")+excluded+",";
+        const std::string key=std::string(",")+scriptFontSpecs[i].slug+",";
+        if(list.find(key)!=std::string::npos)continue;
+      }
       const auto& spec=scriptFontSpecs[i];
       const std::string path=typographyRoot()+"/fonts/"+
         spec.slug+"-"+std::to_string(size)+".cpfont";

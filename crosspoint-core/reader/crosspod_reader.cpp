@@ -1261,6 +1261,12 @@ class Reader {
     return pageCount()!=before;
   }
   bool isBuilding() const {return upstreamSection_ && upstreamSection_->isBuilding();}
+  // Keep only a short page-ahead window warm. For long EPUB chapters the
+  // old continuous 90ms parser loop kept reading/writing SD and using CPU
+  // even when the reader spent minutes on the same page.
+  bool needsPagePrefetch() const {
+    return isBuilding() && pageCount()<=currentPage_+5;
+  }
   size_t estimatedPages() const {
     return upstreamSection_?upstreamSection_->estimatedTotalPages():pageCount();
   }
@@ -1638,13 +1644,14 @@ int runCardApp(const std::string& bookDir) {
     if(!input.receive(event)) {
       if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
-      if(reader && !typeMenu && !navigationMenu && reader->isBuilding() &&
-         now>=nextBuildTick) {
-        // One small Section step, no framebuffer refresh: growing the page
-        // cache must not flash the current page or monopolize the click wheel.
+      if(reader && !typeMenu && !navigationMenu &&
+         reader->needsPagePrefetch() && now>=nextBuildTick) {
+        // Layout a bounded lookahead only when needed. Stop unnecessary
+        // parser and SD-card activity once five pages are prepared.
+        // No framebuffer refresh while prefetching.
         (void)reader->buildNextPages(2);
         nextBuildTick=std::chrono::steady_clock::now()+
-                      std::chrono::milliseconds(90);
+                      std::chrono::milliseconds(150);
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -1893,7 +1900,7 @@ int main(int argc,char** argv) {
       std::printf(
         "CrossPod benchmark: open_ms=%lld first_render_us=%lld "
         "cached_render_us=%lld sample_pages=%zu walk_ms=%lld "
-        "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld\\n",
+        "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld\n",
         static_cast<long long>(openMs),
         static_cast<long long>(firstRenderUs),
         static_cast<long long>(cachedRenderUs),

@@ -684,7 +684,7 @@ class Reader {
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
-  bool open() {
+  bool open(bool resumeOnOpen=false) {
     (void)crosspod::loadReaderPreferences(preferences_);
     if (temporary_.path().empty()) {
       std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;
@@ -752,7 +752,27 @@ class Reader {
       } else std::fprintf(stderr,
           "CrossPod: original Section unavailable; using legacy collector\n");
     }
-    return loadSpine(0,1);
+    // Load the saved chapter first; the old startup rendered spine 0 and
+    // immediately discarded it when resume opened a later chapter.
+    crosspod::ReadingPosition saved{};
+    const bool hasSaved=resumeOnOpen &&
+        crosspod::loadReadingPosition(bookPath_,saved) &&
+        saved.spine>=0 && saved.spine<metadata_.getSpineCount();
+    const int firstSpine=hasSaved?saved.spine:0;
+    bool loaded=loadSpine(firstSpine,1);
+    if(!loaded && firstSpine!=0)loaded=loadSpine(0,1);
+    if(!loaded)return false;
+    if(resumeOnOpen) {
+      resumeEnabled_=true;
+      if(hasSaved && currentSpine_==saved.spine && pageCount()>0) {
+        // Keep startup bounded. A partially cached chapter may not have
+        // reached this position yet; never skip or fabricate pages.
+        currentPage_=std::min(saved.page,pageCount()-1);
+      }
+      positionDirty_=false;
+      lastPositionSync_=std::chrono::steady_clock::now();
+    }
+    return true;
   }
   void enableResume() {
     resumeEnabled_=true;
@@ -1752,13 +1772,12 @@ int runCardApp(const std::string& bookDir) {
     shelf->setNotice("Opening EPUB...");
     shelf->present();
     auto next=std::make_unique<Reader>(chosen);
-    if(!next->open()) {
+    if(!next->open(true)) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
       shelf.reset();
       reader=std::move(next);
-      reader->enableResume();
       reader->present();
     }
   }
@@ -1850,7 +1869,7 @@ int main(int argc,char** argv) {
   }
   const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
-  if (!reader.open()) {
+  if (!reader.open(!dry)) {
     std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
@@ -1907,7 +1926,6 @@ int main(int argc,char** argv) {
   }
   std::signal(SIGINT,exitOnSignal);
   std::signal(SIGTERM,exitOnSignal);
-  reader.enableResume();
   reader.present();
   bool typeMenu=false;
   int typeSelection=0;

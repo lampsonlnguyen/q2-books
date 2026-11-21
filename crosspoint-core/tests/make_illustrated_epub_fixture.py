@@ -30,7 +30,8 @@ def main(out):
 <manifest><item id="chapter" href="text/chapter.xhtml" media-type="application/xhtml+xml"/>
 <item id="image" href="images/test.png" media-type="image/png"/>\n<item id="jpeg" href="images/sample.jpg" media-type="image/jpeg"/></manifest>
 <spine><itemref idref="chapter"/></spine></package>"""
-    # 4x4 original JPEG fixture (created with Pillow; no network dependency).\n    jpeg = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAEAAQDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAaEAEAAQUAAAAAAAAAAAAAAAAABQIGNna0/8QAFAEBAAAAAAAAAAAAAAAAAAAAB//EAB4RAAAEBwAAAAAAAAAAAAAAAAABAzUCBQZygrGy/9oADAMBAAIRAxEAPwCuByC9tvl+qsAHTxxXuPYAa5fV8OIR/9k=")\n    chapter = """<?xml version="1.0" encoding="utf-8"?>
+    # 4x4 original JPEG fixture (created with Pillow; no network dependency).
+    jpeg = base64.b64decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAEAAQDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAaEAEAAQUAAAAAAAAAAAAAAAAABQIGNna0/8QAFAEBAAAAAAAAAAAAAAAAAAAAB//EAB4RAAAEBwAAAAAAAAAAAAAAAAABAzUCBQZygrGy/9oADAMBAAIRAxEAPwCuByC9tvl+qsAHTxxXuPYAa5fV8OIR/9k=")\n    chapter = """<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="../styles/book.css"/></head><body>
 <h1>Illustrated chapter</h1><p class="image-caption">Before the image.</p>
 <img src="../images/test.png" alt="Four colored squares"/>\n<img src="../images/sample.jpg" alt="JPEG sample"/>

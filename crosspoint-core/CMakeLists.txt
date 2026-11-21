@@ -42,6 +42,13 @@ target_compile_options(crosspod_advanced_reading_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_advanced_reading_persistence_dictionary_footnote
     COMMAND crosspod_advanced_reading_tests)
 
+add_executable(crosspod_connected_tests tests/connected_library_test.cpp)
+target_include_directories(crosspod_connected_tests PRIVATE reader)
+target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT)
+target_compile_options(crosspod_connected_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_opds_kavita_and_koreader_transport_contract
+    COMMAND crosspod_connected_tests)
+
 add_executable(crosspod_reader_links_tests tests/reader_links_test.cpp)
 target_include_directories(crosspod_reader_links_tests PRIVATE reader)
 target_compile_options(crosspod_reader_links_tests PRIVATE -UNDEBUG)
@@ -457,6 +464,9 @@ add_test(NAME crosspoint_vietnamese_book_page_preview
 # remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
 add_executable(crosspod-reader
     reader/crosspod_reader.cpp
+    lib/KOReaderSync/ChapterXPathResolver.cpp
+    lib/KOReaderSync/ProgressMapper.cpp
+    lib/KOReaderSync/ProgressComparison.cpp
     reader/JpegPreview.c
     platform/posix/EpubRuntime.cpp
     lib/Epub/parsers/TocNavParser.cpp
@@ -478,7 +488,8 @@ set_source_files_properties(lib/Epub/parsers/ChapterHtmlSlimParser.cpp
 target_include_directories(crosspod-reader PRIVATE
     lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
     lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
-    lib/Memory lib/Serialization lib/XmlParserUtils reader platform/posix platform/q2)
+    lib/Memory lib/Serialization lib/XmlParserUtils lib/KOReaderSync
+    reader platform/posix platform/q2)
 target_compile_definitions(crosspod-reader PRIVATE CROSSPOD_LINUX=1)
 set_target_properties(crosspod-reader PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(crosspod-reader PRIVATE
@@ -507,6 +518,14 @@ add_custom_target(crosspod_links_fixture DEPENDS "${CROSSPOD_LINKS_EPUB_FIXTURE}
 add_dependencies(crosspod-reader crosspod_links_fixture)
 add_test(NAME crosspod_reader_real_page_links
     COMMAND crosspod-reader --test-page-links "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+# Disposable localhost OPDS/Kavita mock: test Atom navigation, an actual
+# streamed EPUB ZIP, KOReader partial-MD5 and XPath push/pull against a real
+# crosspoint-reader process. No external server or credentials required.
+add_test(NAME crosspod_connected_network_end_to_end
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

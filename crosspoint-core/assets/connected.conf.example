@@ -1,0 +1,22 @@
+# CrossPod v0.7 — Optional local-network library
+# Copy this file to /mnt/mmc/.crosspod/connected.conf and edit it.
+# Do not put real API keys/passwords in GitHub, issue reports or screenshots.
+# Use ONLY on a private, trusted Wi-Fi/LAN. This first Q2 POSIX build does
+# not implement HTTPS/TLS; it refuses https:// rather than downgrading.
+# Enable your Q2 Wi-Fi in Q2 Pod before opening CrossPod.
+#
+# From Kavita: User settings -> 3rd Party Clients -> Auth Key / OPDS URL.
+# OPDS browse/download:
+opds_url=http://192.168.5.100:5150/api/opds/REPLACE_WITH_KAVITA_AUTH_KEY
+#
+# Optional two-way KOReader-compatible progress sync (Kavita 0.8.7+):
+# This is NOT a page-number sync. CrossPod maps source XHTML XPath offsets.
+# For Kavita the KOReader sync URL is the /api/koreader/{authKey} endpoint.
+sync_url=http://192.168.5.100:5150/api/koreader/REPLACE_WITH_KAVITA_AUTH_KEY
+sync_username=REPLACE_WITH_YOUR_KAVITA_USERNAME
+sync_password=REPLACE_WITH_KAVITA_AUTH_KEY
+#
+# Intentionally off by default. Even when enabled, uploads/downloads happen
+# only when you manually select Sync: upload or Sync: download in Reading
+# settings. This prevents overwriting progress from another device.
+enable_sync=0

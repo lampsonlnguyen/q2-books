@@ -153,4 +153,33 @@ bool Epub::getItemSize(const std::string& itemHref,size_t* size) const {
   ZipFile zip(filepath);
   return zip.getInflatedFileSize(itemHref.c_str(),size);
 }
-size_t Epub::getBookSize() const {return 0;}
+// The upstream CrossPoint size-progress helpers were unnecessary before
+// KOSync and previously stubbed out. Use the exact original metadata LUT,
+// not a rough chapter index / page-count approximation.
+size_t Epub::getCumulativeSpineItemSize(int index) const {
+  if(!bookMetadataCache || !bookMetadataCache->isLoaded() ||
+     index<0 || index>=bookMetadataCache->getSpineCount())return 0;
+  return bookMetadataCache->getCumulativeSize(index);
+}
+int Epub::getSpineIndexForSize(size_t bytes) const {
+  if(!bookMetadataCache || !bookMetadataCache->isLoaded() ||
+     bytes>UINT32_MAX)return -1;
+  return bookMetadataCache->getSpineIndexForSize(
+      static_cast<uint32_t>(bytes));
+}
+size_t Epub::getBookSize() const {
+  if(!bookMetadataCache || !bookMetadataCache->isLoaded() ||
+     bookMetadataCache->getSpineCount()==0)return 0;
+  return getCumulativeSpineItemSize(getSpineItemsCount()-1);
+}
+float Epub::calculateProgress(int spineIndex,float intraSpine) const {
+  const auto total=getBookSize();
+  if(!total || spineIndex<0||spineIndex>=getSpineItemsCount())return 0.0f;
+  const auto prior=spineIndex>=1?
+      getCumulativeSpineItemSize(spineIndex-1):0;
+  const auto through=getCumulativeSpineItemSize(spineIndex);
+  const auto current=through>=prior?through-prior:0;
+  return std::clamp((static_cast<float>(prior)+
+      std::clamp(intraSpine,0.0f,1.0f)*static_cast<float>(current))/
+      static_cast<float>(total),0.0f,1.0f);
+}

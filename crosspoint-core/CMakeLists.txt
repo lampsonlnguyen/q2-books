@@ -518,6 +518,14 @@ add_custom_target(crosspod_links_fixture DEPENDS "${CROSSPOD_LINKS_EPUB_FIXTURE}
 add_dependencies(crosspod-reader crosspod_links_fixture)
 add_test(NAME crosspod_reader_real_page_links
     COMMAND crosspod-reader --test-page-links "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+# Disposable localhost OPDS/Kavita mock: test Atom navigation, an actual
+# streamed EPUB ZIP, KOReader partial-MD5 and XPath push/pull against a real
+# crosspoint-reader process. No external server or credentials required.
+add_test(NAME crosspod_connected_network_end_to_end
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

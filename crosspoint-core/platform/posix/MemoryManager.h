@@ -22,6 +22,10 @@ class MemoryManager {
     return manager;
   }
   void registerSink(Sink sink) { sinks_.push_back(std::move(sink)); }
+  // Renderers in the Q2 app are short-lived (shelf -> book -> shelf). Avoid
+  // retaining callbacks that capture a destroyed renderer across transitions.
+  void clearSinks() { sinks_.clear(); }
+  std::size_t sinkCount() const { return sinks_.size(); }
   std::size_t freeBytes() const {
     // Linux MemAvailable includes reclaimable page cache. This is intentionally
     // not the same as the process RSS cap, which is measured separately.
@@ -41,9 +45,7 @@ class MemoryManager {
   }
   bool ensureFree(std::size_t required) {
     if (freeBytes()>=required) return true;
-    // Caller-owned sinks live for the CrossPod reader process lifetime.
-    // Renderer teardown must clear the registry before any new renderer is
-    // installed; this is a known lifecycle requirement for device validation.
+    // The active renderer owns these callbacks and clears them on teardown.
     for (auto& sink:sinks_) {
       if (sink.reclaim) sink.reclaim(required);
       if (freeBytes()>=required) return true;

@@ -49,7 +49,7 @@ inline bool saveReaderPreferences(const ReaderPreferences& value) {
   const std::string name=readerPreferencesFile(),tmp=name+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-SETTINGS2 %d %d %d %d %d %d\\n",
+  bool ok=std::fprintf(f,"CROSSPOD-SETTINGS2 %d %d %d %d %d %d\n",
     value.margin,value.linePercent,value.alignment,
     value.hyphenation?1:0,value.embeddedStyle?1:0,value.nightMode?1:0)>0;
   if(std::fflush(f)!=0)ok=false;

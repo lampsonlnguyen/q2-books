@@ -1,0 +1,59 @@
+name: Archive completed CrossPod development branches
+on:
+  push:
+    paths:
+      - .github/workflows/archive-retired-branches.yml
+permissions:
+  contents: write
+jobs:
+  archive-and-clean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve two historical branch heads as tags
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          archive() {
+            local branch="$1" tag="$2" expected="$3"
+            local actual
+            actual="$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha')"
+            test "$actual" = "$expected" || { echo "Branch changed: $branch" >&2; exit 1; }
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" >/tmp/tag-ref.json 2>/dev/null; then
+              local saved
+              saved="$(python3 -c 'import json;print(json.load(open("/tmp/tag-ref.json"))["object"]["sha"])')"
+              test "$saved" = "$expected" || { echo "Archive tag differs: $tag" >&2; exit 1; }
+            else
+              gh api -X POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$expected" >/dev/null
+            fi
+            test "$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.sha')" = "$expected"
+            echo "Archive verified: $tag -> $expected"
+          }
+          archive crosspod-renderer-linux-link archive/renderer-linux-link 696e049a0252cb3df414da2c54deda93197decfc
+          archive crosspoint-gfxrenderer-compile archive/gfxrenderer-compile 2494cf562a1371b25ebbb04b57737a8f86f62bda
+      - name: Remove superseded development branches after verifying refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          verify() {
+            local branch="$1" expected="$2"
+            test "$(gh api "repos/$GH_REPO/git/ref/heads/$branch" --jq '.object.sha')" = "$expected" || {
+              echo "Ref changed; refusing deletion of $branch" >&2; exit 1;
+            }
+          }
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/archive/renderer-linux-link" --jq '.object.sha')" = 696e049a0252cb3df414da2c54deda93197decfc
+          test "$(gh api "repos/$GH_REPO/git/ref/tags/archive/gfxrenderer-compile" --jq '.object.sha')" = 2494cf562a1371b25ebbb04b57737a8f86f62bda
+          verify crosspod-original-chapter-engine 7f66390066041999d5f0e40da25b02cc66e1cad9
+          verify crosspod-reader-main-integration cb5c7ef7d7fb10294767ac52de9c39e5fe269271
+          verify crosspod-reading-experience 7ff090d8a91b8cccd16712897a69b85d888fbe49
+          verify crosspod-renderer-linux-link 696e049a0252cb3df414da2c54deda93197decfc
+          verify crosspoint-gfxrenderer-compile 2494cf562a1371b25ebbb04b57737a8f86f62bda
+          for branch in crosspod-original-chapter-engine crosspod-reader-main-integration crosspod-reading-experience crosspod-renderer-linux-link crosspoint-gfxrenderer-compile; do
+            gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$branch"
+            echo "Deleted $branch"
+          done

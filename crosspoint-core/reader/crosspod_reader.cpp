@@ -1636,7 +1636,10 @@ class CardShelf {
 };
 
 int runCardApp(const std::string& bookDir) {
-  const std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  auto recent=crosspod::loadRecentBooks();
+  auto sortMode=crosspod::ShelfSortMode::Title;
+  crosspod::sortShelfBooks(books,sortMode,recent);
   crosspod::Q2SocketInput input;
   if(!input.open()) {
     std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
@@ -1644,8 +1647,8 @@ int runCardApp(const std::string& bookDir) {
   }
   std::signal(SIGINT,exitOnSignal);
   std::signal(SIGTERM,exitOnSignal);
-  size_t selection=0;
-  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection));
+  size_t selection=crosspod::lastOpenedIndex(books,recent);
+  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
   if(!shelf->open())return 4;
   shelf->present();
   crosspod::Q2Controls controls;
@@ -1753,7 +1756,9 @@ int runCardApp(const std::string& bookDir) {
       }
       if(action==crosspod::LogicalAction::Back) {
         reader.reset(); // close book/cache BEFORE reopening the card shelf
-        shelf.reset(new CardShelf(books,selection));
+        crosspod::sortShelfBooks(books,sortMode,recent);
+        selection=crosspod::lastOpenedIndex(books,recent);
+        shelf.reset(new CardShelf(books,selection,selection,sortMode));
         if(!shelf->open())return 6;
         shelf->present();
         continue;
@@ -1775,6 +1780,19 @@ int runCardApp(const std::string& bookDir) {
     bool activate=action==crosspod::LogicalAction::Confirm;
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
+    if(shelf->sortChosen()) {
+      sortMode=sortMode==crosspod::ShelfSortMode::Title?
+          crosspod::ShelfSortMode::Recent:
+          (sortMode==crosspod::ShelfSortMode::Recent?
+          crosspod::ShelfSortMode::RecentlyAdded:
+          crosspod::ShelfSortMode::Title);
+      crosspod::sortShelfBooks(books,sortMode,recent);
+      selection=crosspod::lastOpenedIndex(books,recent);
+      shelf.reset(new CardShelf(books,selection,selection,sortMode));
+      if(!shelf->open())return 6;
+      shelf->present();
+      continue;
+    }
     if(shelf->browseChosen()) {
       shelf->enterBrowser();
       shelf->present();
@@ -1790,6 +1808,11 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
+      // A successful open updates Continue Reading; rejected/corrupt EPUBs
+      // never become the current title. Atomic history costs one SD write
+      // per opened book, never one write per page turn.
+      if(crosspod::recordRecentBook(chosen))
+        recent=crosspod::loadRecentBooks();
       shelf.reset();
       reader=std::move(next);
       reader->present();

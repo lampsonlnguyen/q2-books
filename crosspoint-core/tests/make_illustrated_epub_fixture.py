@@ -36,7 +36,7 @@ def main(out):
 <html xmlns="http://www.w3.org/1999/xhtml"><head><link rel="stylesheet" href="../styles/book.css"/></head><body>
 <h1>Illustrated chapter</h1><p class="image-caption">Before the image.</p>
 <img src="../images/test.png" alt="Four colored squares"/>\n<img src="../images/sample.jpg" alt="JPEG sample"/>
-<p class="boxed" style="margin-top: 18px; margin-bottom: 12px; margin-left: 15px; text-indent: 2em; page-break-after: always">After the image.</p>\n<ol><li>First item</li><li>Second item</li></ol>\n<p>Before break<br/>After break</p></body></html>"""
+<p class="boxed" style="margin-top: 18px; margin-bottom: 12px; margin-left: 15px; text-indent: 2em; page-break-after: always">After the image.</p>\n<ol><li>First item</li><li>Second item</li></ol>\n<ol start="5"><li>Fifth item</li><li>Sixth item</li></ol>\n<p>Before break<br/>After break</p></body></html>"""
     container = """<?xml version="1.0"?>
 <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0">
 <rootfiles><rootfile full-path="OEBPS/content.opf"

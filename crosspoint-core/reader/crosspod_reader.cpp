@@ -471,6 +471,8 @@ class Reader {
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
+  mutable bool positionDirty_=false;
+  mutable std::chrono::steady_clock::time_point lastPositionSync_{};
   int lineHeight() const { return std::max(27,typography_.size*2); }
   size_t pageCount() const {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
@@ -673,7 +675,10 @@ class Reader {
       metadata_(temporary_.path()),renderer_(display_),
       bodyFont_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
-  ~Reader() { ImageBlock::setExtractor(nullptr,nullptr); }
+  ~Reader() {
+    flushPosition();
+    ImageBlock::setExtractor(nullptr,nullptr);
+  }
   bool open() {
     (void)crosspod::loadReaderPreferences(preferences_);
     if (temporary_.path().empty()) {
@@ -751,10 +756,22 @@ class Reader {
       return;
     }
     currentPage_=std::min(saved.page,pageCount()-1);
+    positionDirty_=false;
+    lastPositionSync_=std::chrono::steady_clock::now();
   }
-  void persistPosition() const {
-    if(resumeEnabled_)
-      (void)crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_});
+  void persistPosition(bool force=false) const {
+    if(!resumeEnabled_ || currentSpine_<0)return;
+    positionDirty_=true;
+    const auto now=std::chrono::steady_clock::now();
+    if(!force && lastPositionSync_.time_since_epoch().count()!=0 &&
+       now-lastPositionSync_<std::chrono::seconds(5))return;
+    if(crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_})) {
+      lastPositionSync_=now;
+      positionDirty_=false;
+    }
+  }
+  void flushPosition() const {
+    if(positionDirty_)persistPosition(true);
   }
   bool configureTypography(crosspod::Typography requested) {
     if(!crosspod::validTypography(requested))return false;
@@ -1282,20 +1299,26 @@ int runCardApp(const std::string& bookDir) {
   bool showingBookmarks=false;
   int navigationSelection=0;
   int typeSelection=0;
+  auto nextBuildTick=std::chrono::steady_clock::now();
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
-      if(reader && !typeMenu && !navigationMenu && reader->isBuilding()) {
-        // No background thread touches the framebuffer or shared font
-        // cache: build on the same event-loop thread between input events.
-        // Render only when the section page count changes.
-        const bool grew=reader->buildNextPages(1);
-        if(grew)reader->present();
+      if(reader)reader->flushPosition();
+      const auto now=std::chrono::steady_clock::now();
+      if(reader && !typeMenu && !navigationMenu && reader->isBuilding() &&
+         now>=nextBuildTick) {
+        // One small Section step, no framebuffer refresh: growing the page
+        // cache must not flash the current page or monopolize the click wheel.
+        (void)reader->buildNextPages(1);
+        nextBuildTick=std::chrono::steady_clock::now()+
+                      std::chrono::milliseconds(150);
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
     }
     const auto action=controls.translate(event).action;
+    nextBuildTick=std::chrono::steady_clock::now()+
+                  std::chrono::milliseconds(300);
     if(reader) {
       if(navigationMenu) {
         const int count=static_cast<int>(showingBookmarks?

@@ -1584,10 +1584,17 @@ class CardShelf {
         renderer_.fillRect(12,204,350,37,true);
       renderer_.drawText(1,22,211,"Browse files",
           homeSelection_!=1 && !books_.empty());
-      if(homeSelection_==2)renderer_.fillRect(12,244,350,23,true);
       std::string sortText="Sort: ";
       sortText+=crosspod::shelfSortLabel(sortMode_);
       drawCompactLabel(22,259,sortText.c_str(),170);
+      if(homeSelection_==2) {
+        // Invert the completed text raster, not just its background.
+        auto* pixels=display_.getFrameBuffer();
+        if(pixels)for(int y=244;y<267;++y)
+          for(int x=12;x<362;++x)
+            pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
+                static_cast<uint8_t>(0x80u>>(x&7));
+      }
     } else {
       char count[64];
       std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());

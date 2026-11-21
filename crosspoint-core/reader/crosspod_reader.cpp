@@ -1857,7 +1857,7 @@ int runCardApp(const std::string& bookDir) {
       if(shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
         const auto result=crosspod::indexShelfBook(book);
-        if(result.metadata || result.cover) {
+        if(result.updated) {
           shelf->onIndexedBook(book);
           shelf->present();
         }

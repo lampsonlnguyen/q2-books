@@ -238,6 +238,7 @@ cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/No
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.
 python3 crosspoint-core/tests/make_reader_links_epub.py "$work/reader/page-links.epub"
+cp "$work/reader/page-links.epub" "$card/Books/CrossPod-Links-and-Footnotes-Test.epub"
 CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-page-links "$work/reader/page-links.epub" \
   | tee "$work/page-links.log"

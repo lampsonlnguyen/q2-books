@@ -32,6 +32,7 @@
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
 #include "ShelfIndexer.hpp"
+#include "ReaderLinks.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -928,6 +929,100 @@ class Reader {
       std::printf("toc=%d spine=%d depth=%u title=%s anchor=%s\n",
           i,t.spineIndex,t.level,t.title.c_str(),t.anchor.c_str());
     }
+  }
+  // The original CrossPoint Page already serializes clickable link boxes
+  // and EPUB footnote references. These APIs only adapt Q2 input to them.
+  std::vector<std::string> pageLinks() {
+    std::vector<std::string> hrefs;
+    if(!upstreamSection_)return hrefs;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return hrefs;
+    for(const auto& link:page->links) {
+      if(!link.href[0])continue;
+      const std::string href=link.href;
+      if(std::find(hrefs.begin(),hrefs.end(),href)==hrefs.end())
+        hrefs.push_back(href);
+    }
+    for(const auto& note:page->footnotes) {
+      if(!note.href[0])continue;
+      const std::string href=note.href;
+      if(std::find(hrefs.begin(),hrefs.end(),href)==hrefs.end())
+        hrefs.push_back(href);
+    }
+    return hrefs;
+  }
+  std::vector<crosspod::Bookmark> jumpHistory_;
+  bool followLink(const std::string& href) {
+    if(currentSpine_<0 || !upstreamSection_ || !upstreamEpub_)return false;
+    const auto current=metadata_.getSpineEntry(currentSpine_).href;
+    const auto destination=crosspod::resolveInternalLink(current,href);
+    if(!destination.valid)return false;
+    int target=-1;
+    for(int i=0;i<metadata_.getSpineCount();++i) {
+      if(metadata_.getSpineEntry(i).href==destination.path) {
+        target=i;break;
+      }
+    }
+    if(target<0)return false;
+    if(jumpHistory_.size()>=16)jumpHistory_.erase(jumpHistory_.begin());
+    const auto original=crosspod::Bookmark{
+        currentSpine_,currentPage_,upstreamSection_->getVisibleTextOffsetForPage(
+          static_cast<uint16_t>(currentPage_)).value_or(0)};
+    if(target!=currentSpine_ && !loadSpine(target,1))return false;
+    if(!destination.anchor.empty()) {
+      if(!upstreamSection_)return false;
+      auto page=upstreamSection_->findAnchor(destination.anchor);
+      // Don't stall reading for unbounded chapters or unresolved links.
+      for(int steps=0;!page && upstreamSection_->isBuilding() && steps<128;++steps) {
+        if(!upstreamSection_->buildSomeMore(2))break;
+        page=upstreamSection_->findAnchor(destination.anchor);
+      }
+      if(!page)return false;
+      currentPage_=*page;
+    } else currentPage_=0;
+    jumpHistory_.push_back(original);
+    clearRasterCache();
+    persistPosition();
+    return true;
+  }
+  bool goBackFromLink() {
+    if(jumpHistory_.empty())return false;
+    const auto mark=jumpHistory_.back();
+    if(!goToBookmark(mark))return false;
+    jumpHistory_.pop_back();
+    clearRasterCache();
+    return true;
+  }
+  bool hasLinkHistory() const {return !jumpHistory_.empty();}
+  bool followTouchedLink(int touchX,int touchY) {
+    if(!upstreamSection_ || touchY<TOP || touchY>=BOTTOM)return false;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return false;
+    for(const auto& link:page->links) {
+      if(!link.href[0])continue;
+      if(link.contains(touchX-preferences_.margin,touchY-TOP,5,20))
+        return followLink(link.href);
+    }
+    return false;
+  }
+  void showLinksMenu(int selected) {
+    render();
+    renderer_.fillRect(10,38,355,258,true);
+    renderer_.fillRect(12,40,351,254,false);
+    drawMenuText(22,48,"Links and footnotes");
+    const auto links=pageLinks();
+    if(links.empty())drawMenuText(22,118,"No links on this page",1);
+    for(int row=0;row<8;++row) {
+      const int index=(selected/8)*8+row;
+      if(index>=static_cast<int>(links.size()))break;
+      const int y=76+row*24;
+      const auto label=clippedLabel(
+          std::to_string(index+1)+". "+links[index],48);
+      drawMenuText(23,y,label.c_str());
+      if(index==selected)invertMenuRect(18,y-3,337,21);
+    }
+    drawMenuText(22,278,"Wheel: select  Center: follow");
+    display_.displayBuffer();
   }
   bool rememberPage() {
     const uint32_t offset=upstreamSection_?

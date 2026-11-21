@@ -164,6 +164,8 @@ assert all("fallback" not in log for log in logs), logs
 print("MIPS Q2 font switching and rendering: PASS")
 PY
 rm -f "$card/.crosspod/typography.conf"
+# Never ship QEMU-generated Section/page caches from the CI sample book.
+rm -rf -- "$card/.crosspod/cache"
 chmod +x "$card/.crosspod/q2-crosspod" "$card/.crosspod/crosspod-engine"
 (cd "$card" && zip -q -r "$base/dist/crosspod-q2-reader-alpha.zip" .crosspod Books)
 sha256sum "$base/dist/crosspod-q2-reader-alpha.zip" > "$base/dist/crosspod-q2-reader-alpha.zip.sha256"

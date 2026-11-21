@@ -33,6 +33,10 @@
 #include "ShelfCover.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
+#include "Highlights.hpp"
+#include "SelectionGeometry.hpp"
+#include "OfflineDictionary.hpp"
+#include "FootnotePreview.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -494,6 +498,11 @@ class Reader {
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
+  std::vector<crosspod::Highlight> highlights_;
+  bool highlightsLoaded_=false;
+  std::vector<crosspod::SelectedWord> selectedWords_;
+  int selectionAnchor_=-1;
+  int selectionFocus_=-1;
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
@@ -994,6 +1003,52 @@ class Reader {
     return true;
   }
   bool hasLinkHistory() const {return !jumpHistory_.empty();}
+  bool isFootnoteLink(const std::string& href) {
+    if(!upstreamSection_)return false;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return false;
+    for(const auto& note:page->footnotes)
+      if(href==note.href)
+        return !footnotePreview(href).empty();
+    return false;
+  }
+  std::string touchedLink(int touchX,int touchY) {
+    if(!upstreamSection_ || touchY<TOP || touchY>=BOTTOM)return {};
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return {};
+    for(const auto& link:page->links)
+      if(link.href[0] &&
+         link.contains(touchX-preferences_.margin,touchY-TOP,5,20))
+        return link.href;
+    return {};
+  }
+  std::string footnotePreview(const std::string& href) {
+    if(currentSpine_<0)return {};
+    return crosspod::loadFootnotePreview(archive_,
+      metadata_.getSpineEntry(currentSpine_).href,href);
+  }
+  void showFootnotePopup(const std::string& href) {
+    std::string note=footnotePreview(href);
+    render();
+    renderer_.fillRect(10,58,355,250,true);
+    renderer_.fillRect(12,60,351,246,false);
+    renderer_.drawText(2,20,70,"Footnote");
+    if(note.empty())note="Preview unavailable. Center: open note";
+    size_t cursor=0;
+    for(int line=0;line<9 && cursor<note.size();++line) {
+      size_t end=std::min(note.size(),cursor+43);
+      if(end<note.size()) {
+        const size_t space=note.rfind(' ',end);
+        if(space!=std::string::npos && space>cursor)end=space;
+      }
+      renderer_.drawText(2,20,101+line*19,
+          clippedLabel(note.substr(cursor,end-cursor),42).c_str());
+      cursor=end;
+      while(cursor<note.size() && note[cursor]==' ')++cursor;
+    }
+    drawMenuText(20,284,"Back: close   Center: jump",1);
+    display_.displayBuffer();
+  }
   bool followTouchedLink(int touchX,int touchY) {
     if(!upstreamSection_ || touchY<TOP || touchY>=BOTTOM)return false;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
@@ -1022,6 +1077,156 @@ class Reader {
       if(index==selected)invertMenuRect(18,y-3,337,21);
     }
     drawMenuText(22,278,"Wheel: select  Center: follow");
+    display_.displayBuffer();
+  }
+  const std::vector<crosspod::Highlight>& highlights() {
+    if(!highlightsLoaded_) {
+      highlights_=crosspod::loadHighlights(bookPath_);
+      highlightsLoaded_=true;
+    }
+    return highlights_;
+  }
+  bool beginTextSelection() {
+    if(!upstreamSection_)return false;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return false;
+    selectedWords_=crosspod::selectableWords(
+        *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
+    selectionAnchor_=selectedWords_.empty()?-1:0;
+    selectionFocus_=selectionAnchor_;
+    return selectionAnchor_>=0;
+  }
+  bool selectTouchWord(int x,int y,bool extend) {
+    if(!extend || selectedWords_.empty())
+      if(!beginTextSelection())return false;
+    const int picked=crosspod::hitSelectableWord(selectedWords_,x,y);
+    if(picked<0)return false;
+    if(!extend)selectionAnchor_=picked;
+    selectionFocus_=picked;
+    return true;
+  }
+  bool stepSelection(int direction,bool extend=false) {
+    if(selectedWords_.empty() && !beginTextSelection())return false;
+    selectionFocus_=std::clamp(selectionFocus_+direction,0,
+                              static_cast<int>(selectedWords_.size())-1);
+    if(!extend)selectionAnchor_=selectionFocus_;
+    return true;
+  }
+  void discardSelection() {
+    selectedWords_.clear();
+    selectionAnchor_=-1;selectionFocus_=-1;
+  }
+  bool selectionRange(uint32_t& begin,uint32_t& end) const {
+    if(selectionAnchor_<0||selectionFocus_<0 ||
+       selectionAnchor_>=static_cast<int>(selectedWords_.size()) ||
+       selectionFocus_>=static_cast<int>(selectedWords_.size()))return false;
+    begin=UINT32_MAX;end=0;
+    const int lo=std::min(selectionAnchor_,selectionFocus_);
+    const int hi=std::max(selectionAnchor_,selectionFocus_);
+    for(int i=lo;i<=hi;++i) {
+      begin=std::min(begin,selectedWords_[i].begin);
+      end=std::max(end,selectedWords_[i].end);
+    }
+    return begin<end;
+  }
+  std::string selectedText() const {
+    if(selectionAnchor_<0||selectionFocus_<0)return {};
+    const int lo=std::min(selectionAnchor_,selectionFocus_);
+    const int hi=std::max(selectionAnchor_,selectionFocus_);
+    std::string text;
+    for(int i=lo;i<=hi && text.size()<400;++i) {
+      if(!text.empty())text+=' ';
+      text+=selectedWords_[i].text;
+    }
+    return text.substr(0,400);
+  }
+  bool saveSelectionHighlight() {
+    uint32_t start=0,end=0;
+    if(!selectionRange(start,end) ||
+       !crosspod::addHighlight(bookPath_,{
+         static_cast<uint32_t>(currentSpine_),start,end}))return false;
+    highlightsLoaded_=false;
+    return true;
+  }
+  bool eraseSelectionHighlight() {
+    uint32_t start=0,end=0;
+    if(!selectionRange(start,end) ||
+       !crosspod::removeHighlightAt(bookPath_,
+         static_cast<uint32_t>(currentSpine_),start))return false;
+    highlightsLoaded_=false;
+    return true;
+  }
+  void paintHighlightOverlay() {
+    if(!upstreamSection_ || currentSpine_<0)return;
+    const auto& highlights=this->highlights();
+    if(highlights.empty() && selectionAnchor_<0)return;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return;
+    const auto words=crosspod::selectableWords(
+        *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
+    uint32_t start=0,end=0;
+    const bool active=selectionRange(start,end);
+    for(const auto& word:words) {
+      bool marked=active &&
+          crosspod::overlapsVisibleWord(word,start,end);
+      if(!marked)
+        for(const auto& h:highlights)
+          if(h.spine==static_cast<uint32_t>(currentSpine_) &&
+             crosspod::overlapsVisibleWord(word,h.begin,h.end)) {
+            marked=true;break;
+          }
+      if(marked)invertMenuRect(word.x-1,word.y+2,word.width+2,
+                              std::max(8,word.height-7));
+    }
+  }
+  void showSelectionPreview(bool extending=false) {
+    render();
+    renderer_.fillRect(10,254,355,47,true);
+    renderer_.fillRect(12,256,351,43,false);
+    drawMenuText(20,265,extending?
+        "Wheel: extend  Center: actions":
+        "Wheel: word   Center: start");
+    display_.displayBuffer();
+  }
+  void showTextSelectionMenu(int option) {
+    render();
+    renderer_.fillRect(10,207,355,96,true);
+    renderer_.fillRect(12,209,351,92,false);
+    renderer_.drawText(2,20,215,"Select text");
+    const auto text=clippedLabel(selectedText(),44);
+    renderer_.drawText(2,20,235,text.c_str());
+    const char* choices[]={"Highlight","Define","Remove","Cancel"};
+    for(int i=0;i<4;++i) {
+      const int x=20+i*85;
+      drawMenuText(x,270,choices[i],1);
+      if(option==i)invertMenuRect(x-3,265,83,23);
+    }
+    display_.displayBuffer();
+  }
+  void showDictionaryDefinition() {
+    const auto selected=selectedText();
+    const auto def=crosspod::lookupDefinition(selected);
+    render();
+    renderer_.fillRect(10,90,355,195,true);
+    renderer_.fillRect(12,92,351,191,false);
+    renderer_.drawText(2,20,103,"Offline dictionary");
+    renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
+    const std::string description=def.empty()?
+      "No match in dictionary.tsv":def;
+    // Break across a few display rows without modifying UTF-8 source text.
+    size_t cursor=0;
+    for(int line=0;line<5 && cursor<description.size();++line) {
+      size_t end=std::min(description.size(),cursor+43);
+      if(end<description.size()) {
+        const size_t space=description.rfind(' ',end);
+        if(space!=std::string::npos && space>cursor)end=space;
+      }
+      renderer_.drawText(2,20,158+line*20,
+          clippedLabel(description.substr(cursor,end-cursor),42).c_str());
+      cursor=end;
+      while(cursor<description.size() && description[cursor]==' ')++cursor;
+    }
+    drawMenuText(20,271,"Back: selected text",1);
     display_.displayBuffer();
   }
   bool rememberPage() {
@@ -1264,7 +1469,7 @@ class Reader {
     renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
-    constexpr int kItems=13;
+    constexpr int kItems=14;
     constexpr int kRows=9;
     constexpr int kRowTop=73;
     constexpr int kRowHeight=21;
@@ -1275,7 +1480,7 @@ class Reader {
     renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
-        "Page links","Return link"};
+        "Page links","Return link","Select text"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1286,7 +1491,7 @@ class Reader {
       preferences_.embeddedStyle?"On":"Off",
       preferences_.nightMode?"On":"Off",
       "Save page","Saved pages","Browse book","Footnotes / links",
-      hasLinkHistory()?"Go back":"No previous link"
+      hasLinkHistory()?"Go back":"No previous link","Highlight / define"
     };
     for(int row=0;row<kRows && first+row<kItems;++row) {
       const int item=first+row;
@@ -1454,6 +1659,7 @@ class Reader {
           lastRenderOk_=true;
           drawProgress();
           applyNightMode();
+          paintHighlightOverlay();
           return;
         }
     }
@@ -1490,6 +1696,7 @@ class Reader {
       }
       drawProgress();
       applyNightMode();
+      paintHighlightOverlay();
       return;
     }
     if(currentPage_>=pages_.size()) {
@@ -1517,6 +1724,7 @@ class Reader {
     cacheRenderedPage();
     drawProgress();
     applyNightMode();
+    paintHighlightOverlay();
   }
   void present() {
     render();
@@ -1937,6 +2145,16 @@ int runCardApp(const std::string& bookDir) {
   bool typeMenu=false;
   bool navigationMenu=false;
   bool linkMenu=false;
+  bool selectionChoosing=false;
+  bool selectionExtending=false;
+  bool selectionActions=false;
+  bool dictionaryOverlay=false;
+  bool footnoteOverlay=false;
+  std::string footnoteHref;
+  int selectionAction=0;
+  bool touchPressed=false;
+  int touchStartX=0,touchStartY=0;
+  std::chrono::steady_clock::time_point touchStartTime{};
   bool showingBookmarks=false;
   int navigationSelection=0;
   int typeSelection=0;
@@ -1963,6 +2181,7 @@ int runCardApp(const std::string& bookDir) {
             std::chrono::milliseconds(800);
       }
       if(reader && !typeMenu && !navigationMenu && !linkMenu &&
+         !selectionChoosing && !selectionActions && !dictionaryOverlay &&
          reader->needsPagePrefetch() && now>=nextBuildTick) {
         // Layout a bounded lookahead only when needed. Stop unnecessary
         // parser and SD-card activity once five pages are prepared.
@@ -1980,6 +2199,81 @@ int runCardApp(const std::string& bookDir) {
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     if(reader) {
+      if(footnoteOverlay) {
+        if(action==crosspod::LogicalAction::Back ||
+           (event.kind==crosspod::PhysicalKind::TouchUp && event.x<187)) {
+          footnoteOverlay=false;
+          reader->present();
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          footnoteOverlay=false;
+          const bool jumped=reader->followLink(footnoteHref);
+          if(jumped) {
+            linkMenu=false;typeMenu=false;reader->present();
+          } else reader->present();
+        }
+        continue;
+      }
+      if(dictionaryOverlay) {
+        if(action==crosspod::LogicalAction::Back ||
+           action==crosspod::LogicalAction::Confirm ||
+           event.kind==crosspod::PhysicalKind::TouchUp) {
+          dictionaryOverlay=false;
+          selectionActions=true;
+          reader->showTextSelectionMenu(selectionAction);
+        }
+        continue;
+      }
+      if(selectionActions) {
+        if(action==crosspod::LogicalAction::Back) {
+          selectionActions=false;reader->discardSelection();reader->present();
+        } else if(action==crosspod::LogicalAction::Next ||
+                  action==crosspod::LogicalAction::Previous) {
+          selectionAction=(selectionAction+
+              (action==crosspod::LogicalAction::Next?1:3))%4;
+          reader->showTextSelectionMenu(selectionAction);
+        } else if(action==crosspod::LogicalAction::Confirm ||
+                  event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(event.kind==crosspod::PhysicalKind::TouchUp) {
+            if(event.y<260||event.y>=302)continue;
+            selectionAction=std::clamp((event.x-20)/85,0,3);
+          }
+          if(selectionAction==1) {
+            selectionActions=false;dictionaryOverlay=true;
+            reader->showDictionaryDefinition();
+          } else {
+            if(selectionAction==0)(void)reader->saveSelectionHighlight();
+            if(selectionAction==2)(void)reader->eraseSelectionHighlight();
+            selectionActions=false;reader->discardSelection();reader->present();
+          }
+        }
+        continue;
+      }
+      if(selectionChoosing) {
+        if(action==crosspod::LogicalAction::Back) {
+          selectionChoosing=false;selectionExtending=false;
+          reader->discardSelection();reader->present();
+        } else if(action==crosspod::LogicalAction::Next ||
+                  action==crosspod::LogicalAction::Previous) {
+          (void)reader->stepSelection(
+              action==crosspod::LogicalAction::Next?1:-1,
+              selectionExtending);
+          reader->showSelectionPreview(selectionExtending);
+        } else if(action==crosspod::LogicalAction::Confirm) {
+          if(!selectionExtending) {
+            selectionExtending=true;
+            reader->showSelectionPreview(true);
+          } else {
+            selectionChoosing=false;selectionExtending=false;
+            selectionActions=true;selectionAction=0;
+            reader->showTextSelectionMenu(0);
+          }
+        } else if(event.kind==crosspod::PhysicalKind::TouchUp) {
+          if(reader->selectTouchWord(event.x,event.y,selectionExtending))
+            reader->showSelectionPreview(selectionExtending);
+        }
+        continue;
+      }
       if(linkMenu) {
         const auto links=reader->pageLinks();
         const int count=static_cast<int>(links.size());
@@ -1998,11 +2292,18 @@ int runCardApp(const std::string& bookDir) {
             navigationSelection=std::clamp(
                 (navigationSelection/8)*8+(event.y-76)/24,
                 0,std::max(0,count-1));
-          const bool jumped=count && navigationSelection<count &&
-              reader->followLink(links[navigationSelection]);
-          if(jumped) {
-            linkMenu=false;typeMenu=false;reader->present();
-          } else reader->showLinksMenu(navigationSelection);
+          if(count && navigationSelection<count &&
+             reader->isFootnoteLink(links[navigationSelection])) {
+            footnoteHref=links[navigationSelection];
+            footnoteOverlay=true;
+            reader->showFootnotePopup(footnoteHref);
+          } else {
+            const bool jumped=count && navigationSelection<count &&
+                reader->followLink(links[navigationSelection]);
+            if(jumped) {
+              linkMenu=false;typeMenu=false;reader->present();
+            } else reader->showLinksMenu(navigationSelection);
+          }
         }
         continue;
       }
@@ -2045,18 +2346,25 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:12))%13;
+              (action==crosspod::LogicalAction::Next?1:13))%14;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             typeSelection=std::clamp(
-                std::max(0,typeSelection-8)+(event.y-73)/21,0,12);
+                std::max(0,typeSelection-8)+(event.y-73)/21,0,13);
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection==11) {
             linkMenu=true;
             navigationSelection=0;
+          } else if(typeSelection==13) {
+            if(reader->beginTextSelection()) {
+              selectionChoosing=true;selectionExtending=false;
+              typeMenu=false;
+              reader->showSelectionPreview();
+              continue;
+            }
           } else if(typeSelection==12) {
             if(reader->goBackFromLink()) {
               typeMenu=false;
@@ -2084,6 +2392,28 @@ int runCardApp(const std::string& bookDir) {
         }
         continue;
       }
+      // Hold a word or drag between words to select text. Short taps retain
+      // the existing link and left/right page controls. Q2 socket reports
+      // touch down/move/up even though ordinary readers used only release.
+      if(event.kind==crosspod::PhysicalKind::TouchDown) {
+        touchPressed=true;touchStartX=event.x;touchStartY=event.y;
+        touchStartTime=std::chrono::steady_clock::now();
+        continue;
+      }
+      if(event.kind==crosspod::PhysicalKind::TouchUp && touchPressed) {
+        touchPressed=false;
+        const auto elapsed=std::chrono::steady_clock::now()-touchStartTime;
+        const int dx=event.x-touchStartX,dy=event.y-touchStartY;
+        const bool deliberate=elapsed>=std::chrono::milliseconds(450) ||
+             dx*dx+dy*dy>=28*28;
+        if(deliberate && touchStartY>=TOP && touchStartY<BOTTOM &&
+           reader->selectTouchWord(touchStartX,touchStartY,false)) {
+          (void)reader->selectTouchWord(event.x,event.y,true);
+          selectionAction=0;selectionActions=true;
+          reader->showTextSelectionMenu(0);
+          continue;
+        }
+      }
       if(action==crosspod::LogicalAction::Confirm ||
          (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
         typeMenu=true;
@@ -2105,8 +2435,15 @@ int runCardApp(const std::string& bookDir) {
       if(action==crosspod::LogicalAction::Next) changed=reader->move(1);
       if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
       if(event.kind==crosspod::PhysicalKind::TouchUp) {
-        changed=reader->followTouchedLink(event.x,event.y);
-        if(!changed)changed=reader->move(event.x>=187?1:-1);
+        const auto href=reader->touchedLink(event.x,event.y);
+        if(!href.empty()) {
+          if(reader->isFootnoteLink(href)) {
+            footnoteHref=href;footnoteOverlay=true;
+            reader->showFootnotePopup(href);
+            continue;
+          }
+          changed=reader->followLink(href);
+        } else changed=reader->move(event.x>=187?1:-1);
       }
       if(changed)reader->present();
       continue;
@@ -2216,6 +2553,38 @@ int main(int argc,char** argv) {
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-footnote-popup")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    for(const auto& link:reader.pageLinks()) {
+      if(!reader.isFootnoteLink(link))continue;
+      const auto preview=reader.footnotePreview(link);
+      if(preview.find("This footnote is a short note")==std::string::npos)
+        return 8;
+      reader.showFootnotePopup(link);
+      std::puts("CrossPod XHTML footnote popover: PASS");
+      return 0;
+    }
+    std::puts("CrossPod XHTML footnote noteref missing");
+    return 7;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-selection")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.beginTextSelection())return 7;
+    const auto selected=reader.selectedText();
+    if(selected.empty())return 8;
+    if(!reader.stepSelection(1))return 9;
+    if(!reader.saveSelectionHighlight())return 10;
+    const auto recorded=crosspod::loadHighlights(argv[2]);
+    if(recorded.empty() || recorded.front().begin>=recorded.front().end)
+      return 11;
+    reader.present(); // highlights must draw over actual Section page pixels
+    if(!reader.eraseSelectionHighlight())return 12;
+    if(!crosspod::loadHighlights(argv[2]).empty())return 13;
+    std::printf("CrossPod unicode selection and persistent highlight: PASS (%s)\n",
+                selected.c_str());
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-page-links")==0) {

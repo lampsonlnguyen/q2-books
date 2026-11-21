@@ -220,6 +220,10 @@ cp "$elf" "$card/.crosspod/crosspod-engine"
 cp crosspoint-core/platform/q2/crosspod-launcher.sh "$card/.crosspod/q2-crosspod"
 printf 'name=CrossPod\ngame=1\nrow=library\n' > "$card/.crosspod/q2app"
 cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
+# Optional user-editable offline word definitions (UTF-8 TSV). Do not
+# overwrite an existing personal dictionary when copying over an SD card.
+cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
+
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Mandatory font-visibility book in EVERY Q2 test-build ZIP. Do not put it
 # inside .crosspod, which the library scanner deliberately treats as hidden.
@@ -234,10 +238,23 @@ cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/No
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.
 python3 crosspoint-core/tests/make_reader_links_epub.py "$work/reader/page-links.epub"
+cp "$work/reader/page-links.epub" "$card/Books/CrossPod-Links-and-Footnotes-Test.epub"
 CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-page-links "$work/reader/page-links.epub" \
   | tee "$work/page-links.log"
 grep -q 'page link jump and return: PASS' "$work/page-links.log"
+# Selection must use the original rendered TextBlock source ranges, write
+# and re-read highlight records, then remove them without changing the EPUB.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --test-selection "$work/reader/page-links.epub" \
+  | tee "$work/selection.log"
+grep -q 'unicode selection and persistent highlight: PASS' "$work/selection.log"
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+  qemu-mipsel -L "$root" "$elf" --test-footnote-popup "$work/reader/page-links.epub" \
+  | tee "$work/footnote-popup.log"
+grep -q 'XHTML footnote popover: PASS' "$work/footnote-popup.log"
+
+
 
 # Validate the generated EPUB on the actual Q2 MIPS application, with the
 # full SD cpfont bundle present. This checks structure/openability; visual

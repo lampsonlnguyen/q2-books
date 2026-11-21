@@ -10,7 +10,7 @@ permissions:
   actions: read
 concurrency:
   group: crosspod-v060-beta-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   publish:
     runs-on: ubuntu-24.04
@@ -28,7 +28,8 @@ jobs:
           set -euo pipefail
           tested=24be782986d9601272be6bf113bb6b9e8f30aeb5
           merged=25a3b8ccb5a01db442cd305c598ded0e8ae4ddee
-          test "$(git rev-parse HEAD^)" = "$merged"
+          git merge-base --is-ancestor "$merged" HEAD
+          test "$(git diff --name-only "$merged" HEAD)" = ".github/workflows/publish-crosspod-v060.yml"
           test "$(git rev-parse "$tested^{tree}")" = "$(git rev-parse "$merged^{tree}")"
           git merge-base --is-ancestor "$tested" "$merged"
           for id in 44937774555 44937778766; do

@@ -16,6 +16,12 @@ add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
 
 # SD-card reading settings/bookmarks are independent of CrossPoint engine.
 # Q2 preferences must reach original CrossPoint layout/cache validation.
+add_executable(crosspod_utf8_label_tests tests/utf8_label_test.cpp)
+target_include_directories(crosspod_utf8_label_tests PRIVATE reader)
+target_link_libraries(crosspod_utf8_label_tests PRIVATE crosspoint_utf8)
+target_compile_options(crosspod_utf8_label_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_multilingual_label_clipping COMMAND crosspod_utf8_label_tests)
+
 add_executable(crosspod_reading_layout_tests tests/reading_layout_test.cpp)
 target_include_directories(crosspod_reading_layout_tests PRIVATE reader lib/Epub)
 target_compile_options(crosspod_reading_layout_tests PRIVATE -UNDEBUG)

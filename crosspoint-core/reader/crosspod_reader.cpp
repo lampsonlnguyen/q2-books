@@ -2554,15 +2554,23 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:13))%14;
+              (action==crosspod::LogicalAction::Next?1:15))%16;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             typeSelection=std::clamp(
-                std::max(0,typeSelection-8)+(event.y-73)/21,0,13);
+                std::max(0,typeSelection-8)+(event.y-73)/21,0,15);
           if(typeSelection==8) {
             (void)reader->rememberPage();
+          } else if(typeSelection==14) {
+            (void)reader->pushReadingSync();
+          } else if(typeSelection==15) {
+            if(reader->pullReadingSync()) {
+              typeMenu=false;
+              reader->present();
+              continue;
+            }
           } else if(typeSelection==11) {
             linkMenu=true;
             navigationSelection=0;

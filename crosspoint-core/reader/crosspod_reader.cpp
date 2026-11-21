@@ -351,7 +351,8 @@ class ChapterXmlSink final : public Print {
   }
 };
 
-bool parseChapter(ZipFile& archive,const std::string& name,std::vector<Paragraph>& out) {
+bool parseChapter(ZipFile& archive,const std::string& bookPath,
+                  const std::string& name,std::vector<Paragraph>& out) {
   size_t size=0;
   if(!archive.getInflatedFileSize(name.c_str(),&size)||!size||size>MAX_XML_BYTES) {
     std::fprintf(stderr,"CrossPod: unsupported XHTML chapter length: %s (%zu)\n",name.c_str(),size);
@@ -364,7 +365,10 @@ bool parseChapter(ZipFile& archive,const std::string& name,std::vector<Paragraph
   XML_SetElementHandler(parser,HtmlCollector::start,HtmlCollector::end);
   XML_SetCharacterDataHandler(parser,HtmlCollector::data);
   ChapterXmlSink sink(parser);
-  const bool inflated=archive.readFileToStream(name.c_str(),sink,1024);
+  // CSS <link> callbacks also read from the archive. Do not seek the ZIP
+  // currently being inflated: use a separate ZipFile cursor for streaming.
+  ZipFile chapterStream(bookPath);
+  const bool inflated=chapterStream.readFileToStream(name.c_str(),sink,1024);
   const bool ok=inflated && sink.finish();
   if(!ok)std::fprintf(stderr,"CrossPod: XHTML stream/parse error %s: %s\n",
       name.c_str(),XML_ErrorString(XML_GetErrorCode(parser)));
@@ -684,7 +688,7 @@ class Reader {
     while (index>=0 && index<n) {
       const auto entry=metadata_.getSpineEntry(index);
       std::vector<Paragraph> paragraphs;
-      if (parseChapter(archive_,entry.href,paragraphs) && paginate(paragraphs)) {
+      if (parseChapter(archive_,bookPath_,entry.href,paragraphs) && paginate(paragraphs)) {
         currentSpine_=index;
         currentPage_=direction<0 ? pages_.size()-1 : 0;
         std::printf("CrossPod: spine %d/%d %s, %zu page(s)\n",
@@ -1053,7 +1057,7 @@ int main(int argc,char** argv) {
     ZipFile zip(epubPath);
     if(!zip.loadAllFileStatSlims())return 3;
     std::vector<Paragraph> paragraphs;
-    if(!parseChapter(zip,argv[3],paragraphs))return 4;
+    if(!parseChapter(zip,epubPath,argv[3],paragraphs))return 4;
     for(size_t i=0;i<paragraphs.size();++i) {
       const auto& p=paragraphs[i];
       bool bold=false,italic=false;

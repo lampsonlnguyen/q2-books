@@ -1633,7 +1633,16 @@ int main(int argc,char** argv) {
       // Exercise real page/spine transitions and the backward boundary.
       // Limit iterations defensively for corrupt EPUBs.
       size_t forward=0,backward=0;
-      while(forward<65536 && reader.move(1))++forward;
+      while(forward<65536) {
+        if(reader.move(1)) {++forward;continue;}
+        // A page may not have been produced by the latest incremental
+        // parse chunk; don't mistake its temporary watermark for EOF.
+        if(reader.isBuilding()) {
+          (void)reader.buildNextPages(4);
+          continue;
+        }
+        break;
+      }
       if(forward>=65536)return 7;
       while(backward<65536 && reader.move(-1))++backward;
       if(backward>=65536||forward!=backward)return 8;

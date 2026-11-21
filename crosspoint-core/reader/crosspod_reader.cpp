@@ -497,6 +497,10 @@ class Reader {
     for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
+    // CJK font coverage changes line measurement and pagination. Never reuse
+    // Section layout cache from a Latin-only build after enabling CJK.
+    mix(0x434a4b01ull);
+    mix(static_cast<uint64_t>(cjkFallbackId_));
     const char* state=std::getenv("CROSSPOD_STATE_DIR");
     struct stat cardDir{};
     const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&

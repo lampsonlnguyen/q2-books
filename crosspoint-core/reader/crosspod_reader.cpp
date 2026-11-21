@@ -1008,7 +1008,8 @@ class Reader {
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
     if(!page)return false;
     for(const auto& note:page->footnotes)
-      if(href==note.href)return true;
+      if(href==note.href)
+        return !footnotePreview(href).empty();
     return false;
   }
   std::string touchedLink(int touchX,int touchY) {
@@ -2560,8 +2561,6 @@ int main(int argc,char** argv) {
     for(const auto& link:reader.pageLinks()) {
       if(!reader.isFootnoteLink(link))continue;
       const auto preview=reader.footnotePreview(link);
-      std::fprintf(stderr,"CrossPod footnote debug: href='%s' preview='%s'\n",
-                   link.c_str(),preview.c_str());
       if(preview.find("This footnote is a short note")==std::string::npos)
         return 8;
       reader.showFootnotePopup(link);

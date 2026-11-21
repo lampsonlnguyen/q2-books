@@ -210,6 +210,16 @@ void GfxRenderer::ensureSdCardFontReady(const int fontId, const char* const* seg
   // and the page is batch-warmed by the render scan (see the other overload).
 }
 
+GfxRenderer::~GfxRenderer() {
+#if defined(CROSSPOD_LINUX)
+  // The Q2 destroys and recreates renderers when returning to the bookshelf.
+  // Clear callbacks that capture this; otherwise a later memory-reclaim call
+  // can invoke a dangling font-cache / SdCardFont pointer.
+  freeink::MemoryManager::instance().clearSinks();
+#endif
+  freeBwBufferChunks();
+}
+
 void GfxRenderer::begin() {
   frameBuffer = display.getFrameBuffer();
   if (!frameBuffer) {
@@ -229,6 +239,11 @@ void GfxRenderer::begin() {
   // deliberately NOT a sink: evicting it mid-paragraph would make later
   // measurements in the same layout pass return 0-width advances.
   auto& memoryManager = freeink::MemoryManager::instance();
+#if defined(CROSSPOD_LINUX)
+  // Only one display renderer is active on the Q2. A previous shelf/reader
+  // may have been replaced since its last render.
+  memoryManager.clearSinks();
+#endif
   memoryManager.registerSink({"gfx.renderGlyphCache", 50, [this](size_t) -> size_t {
                                 if (!fontCacheManager_ || fontCacheManager_->isScanning()) return 0;
                                 const size_t before = freeink::MemoryManager::instance().freeBytes();

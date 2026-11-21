@@ -353,9 +353,17 @@ inline HttpResponse httpRequest(const std::string& original,
        value.find_first_not_of("0123456789")!=std::string::npos) {
       result.error="Invalid response length";return result;
     }
-    const unsigned long long bytes=std::strtoull(value.c_str(),nullptr,10);
-    if(bytes>maxBytes) {result.error="Download too large";return result;}
-    if(!input.bytes(static_cast<size_t>(bytes),sink,result.bytes,maxBytes)) {
+    // Clang's modern Linux headers redirect strtoull to __isoc23_strtoull,
+    // absent from Q2's older stock glibc. Parse bounded decimal ourselves.
+    size_t bytes=0;
+    for(char c:value) {
+      const size_t digit=static_cast<size_t>(c-'0');
+      if(bytes>(maxBytes-digit)/10) {
+        result.error="Download too large";return result;
+      }
+      bytes=bytes*10+digit;
+    }
+    if(!input.bytes(bytes,sink,result.bytes,maxBytes)) {
       result.error="Truncated response";return result;
     }
   } else if(!input.untilClose(sink,result.bytes,maxBytes)) {

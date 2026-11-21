@@ -98,6 +98,12 @@ cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
+# The default must now use the extended multilingual Sans 12 pack, not just
+# the much smaller built-in UI glyph set.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --render "$work/reader/vietnamese-prose.epub" "$work/default-extended.pgm" \
+  | tee "$work/default-extended.log"
+grep -q 'CrossPod font source: original CrossPoint extended cpfont' "$work/default-extended.log"
 # Run the compiled Q2 reader twice to verify typography selection and raster.
 for setting in "sans 16" "serif 18"; do
   echo "CROSSPOD-TYPE1 $setting" > "$card/.crosspod/typography.conf"

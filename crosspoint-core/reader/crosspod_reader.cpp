@@ -781,6 +781,9 @@ class Reader {
     const auto previous=typography_;
     const int spine=currentSpine_;
     const size_t page=currentPage_;
+    const auto offset=upstreamSection_?
+      upstreamSection_->getVisibleTextOffsetForPage(
+        static_cast<uint16_t>(currentPage_)):std::nullopt;
     if(!useTypography(requested)) {
       typographyNotice_="Font file not installed";
       return false;
@@ -791,7 +794,16 @@ class Reader {
       typographyNotice_="Could not repaginate";
       return false;
     }
-    if(spine>=0 && pageCount())currentPage_=std::min(page,pageCount()-1);
+    if(spine>=0 && pageCount()) {
+      if(upstreamSection_ && offset) {
+        while(upstreamSection_->isBuilding() &&
+              !upstreamSection_->buildReachedVisibleTextOffset(*offset)) {
+          if(!upstreamSection_->buildSomeMore(2))break;
+        }
+        currentPage_=upstreamSection_->getPageForVisibleTextOffset(*offset)
+            .value_or(static_cast<uint16_t>(std::min(page,pageCount()-1)));
+      } else currentPage_=std::min(page,pageCount()-1);
+    }
     if(!crosspod::saveTypography(typography_))
       typographyNotice_="Settings not saved to SD";
     else typographyNotice_.clear();
@@ -867,7 +879,8 @@ class Reader {
     return crosspod::loadBookmarks(bookPath_);
   }
   bool goToBookmark(const crosspod::Bookmark& mark) {
-    if(!goToChapter(mark.spine))return false;
+    // Bookmark chapter numbers are OPF spine indices, not TOC entry ordinals.
+    if(mark.spine<0 || !loadSpine(mark.spine,1))return false;
     if(upstreamSection_ && mark.textOffset) {
       while(upstreamSection_->isBuilding() &&
            !upstreamSection_->buildReachedVisibleTextOffset(mark.textOffset)) {

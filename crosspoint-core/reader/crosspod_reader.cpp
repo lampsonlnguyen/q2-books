@@ -1385,7 +1385,7 @@ class Reader {
         // Direct bitmap menu glyphs work even when the SD-book font has
         // failed; leave a visible diagnostic instead of a silent white page.
         drawMenuText(20,140,"Page text unavailable",1);
-        std::fprintf(stderr,"CrossPod: no body ink after glyph retry at spine %d page %zu\\n",
+        std::fprintf(stderr,"CrossPod: no body ink after glyph retry at spine %d page %zu\n",
                      currentSpine_,currentPage_);
       }
       drawProgress();

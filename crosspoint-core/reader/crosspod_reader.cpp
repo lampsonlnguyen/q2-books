@@ -25,6 +25,7 @@
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
+#include "ReadingLayout.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -496,19 +497,8 @@ class Reader {
            (value.size-12)/2;
   }
   ReaderRenderSpec upstreamSpec() const {
-    ReaderRenderSpec spec;
-    spec.fontId=upstreamFontId_;
-    spec.viewportWidth=static_cast<uint16_t>(375-2*preferences_.margin-2);
-    spec.viewportHeight=BOTTOM-TOP;
-    spec.lineCompression=preferences_.linePercent/100.0f;
-    spec.paragraphAlignment=static_cast<uint8_t>(preferences_.alignment);
-    spec.hyphenationEnabled=preferences_.hyphenation;
-    spec.embeddedStyle=preferences_.embeddedStyle;
-    spec.lineCompression=1.0f;
-    spec.embeddedStyle=true;
-    spec.imageRendering=0;
-    spec.hyphenationEnabled=false;
-    return spec;
+    return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
+        static_cast<uint16_t>(375),static_cast<uint16_t>(BOTTOM-TOP));
   }
   std::string upstreamCachePath() const {
     struct stat st{};
@@ -1300,6 +1290,8 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          drawProgress();
+          applyNightMode();
           return;
         }
     }
@@ -1307,9 +1299,9 @@ class Reader {
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+      cacheRenderedPage();
       drawProgress();
       applyNightMode();
-      cacheRenderedPage();
       return;
     }
     const auto& page=pages_[currentPage_];
@@ -1329,9 +1321,9 @@ class Reader {
         }
       }
     }
+    cacheRenderedPage();
     drawProgress();
     applyNightMode();
-    cacheRenderedPage();
   }
   void present() {
     render();

@@ -171,6 +171,19 @@ struct HtmlCollector {
     if(n=="ol" || n=="ul") {
       scope.listKind=n=="ol"?2:1;
       scope.nextItemNumber=1;
+      // Honor EPUB ordered-list start values with bounded numeric parsing.
+      if(n=="ol") {
+        const auto startValue=attribute(attrs,"start");
+        if(!startValue.empty() && startValue.size()<=5) {
+          unsigned number=0;
+          bool valid=true;
+          for(const unsigned char digit:startValue) {
+            if(digit<'0' || digit>'9') {valid=false;break;}
+            number=number*10+digit-'0';
+          }
+          if(valid && number>0 && number<=99999)scope.nextItemNumber=number;
+        }
+      }
     }
     const std::string_view cls=attribute(attrs,"class");
     const std::string_view id=attribute(attrs,"id");

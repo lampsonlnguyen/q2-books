@@ -9,6 +9,7 @@ import hashlib
 import pathlib
 import sys
 import urllib.request
+from crosspoint_script_fonts import RELEASE as SCRIPT_RELEASE, SCRIPT_FONTS
 
 RELEASE = "https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4"
 SHA256 = {
@@ -66,6 +67,24 @@ def main() -> int:
             raise RuntimeError(f"{name}: digest/size mismatch: {digest}, {len(data)}")
         dest.write_bytes(data)
         print(f"Verified {name}: {len(data)} bytes")
+    # All script families published by the upstream CrossPoint release:
+    # Hangul, Devanagari, Bengali, Gujarati, Gurmukhi, Kannada,
+    # Malayalam, Odia, Sinhala, Tamil, Telugu, Arabic and Hebrew.
+    # Disk-resident .cpfont files: only coverage intervals/needed glyphs
+    # are loaded by the Q2 reader, not the full pixel data for all fonts.
+    for slug, (family, description, sizes) in SCRIPT_FONTS.items():
+        for point_size in (12, 14, 16, 18):
+            expected, expected_size = sizes[str(point_size)]
+            source = f"{SCRIPT_RELEASE}/{family}_{point_size}.cpfont"
+            dest = out / f"{slug}-{point_size}.cpfont"
+            with urllib.request.urlopen(source, timeout=120) as response:
+                data = response.read(expected_size + 1)
+            digest = hashlib.sha256(data).hexdigest()
+            if digest != expected or len(data) != expected_size:
+                raise RuntimeError(
+                    f"{family}_{point_size}: digest/size mismatch {digest} ({len(data)})")
+            dest.write_bytes(data)
+            print(f"Verified {slug} {point_size}pt ({description}): {len(data)} bytes")
     return 0
 
 

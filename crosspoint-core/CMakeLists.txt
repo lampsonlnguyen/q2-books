@@ -59,6 +59,7 @@ endforeach()
 # CrossPoint ZIP reader: original upstream ZipFile source, Linux storage adapter
 # and a bounded zlib streaming replacement for the ESP32 miniz implementation.
 find_package(ZLIB REQUIRED)
+find_package(JPEG REQUIRED)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_library(crosspoint_zip STATIC
     lib/ZipFile/ZipFile.cpp
@@ -373,7 +374,7 @@ set_target_properties(crosspod_epub_page_preview PROPERTIES CXX_STANDARD 20 CXX_
 target_link_libraries(crosspod_epub_page_preview PRIVATE
     crosspoint_zip crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
 target_compile_options(crosspod_epub_page_preview PRIVATE -UNDEBUG)
 add_dependencies(crosspod_epub_page_preview epub_fixture)
 add_test(NAME crosspoint_real_epub_text_page_preview
@@ -396,6 +397,7 @@ add_test(NAME crosspoint_vietnamese_book_page_preview
 # remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
 add_executable(crosspod-reader
     reader/crosspod_reader.cpp
+    reader/JpegPreview.c
     lib/Epub/ParsedText.cpp
     lib/Epub/blocks/TextBlock.cpp
     $<TARGET_OBJECTS:crosspoint_renderer_objects>)

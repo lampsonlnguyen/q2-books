@@ -496,7 +496,11 @@ class Reader {
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
     const char* state=std::getenv("CROSSPOD_STATE_DIR");
-    const std::string base=state&&*state?state:"/tmp";
+    struct stat cardDir{};
+    const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&
+                          S_ISDIR(cardDir.st_mode);
+    const std::string base=state&&*state?state:
+                           (cardMounted?"/mnt/mmc/.crosspod":"/tmp");
     const std::string cache=base+"/cache";
     Storage.mkdir(cache.c_str());
     char folder[44];
@@ -657,6 +661,7 @@ class Reader {
       metadata_(temporary_.path()),renderer_(display_),
       bodyFont_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
+  ~Reader() { ImageBlock::setExtractor(nullptr,nullptr); }
   bool open() {
     if (temporary_.path().empty()) {
       std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;

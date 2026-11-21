@@ -596,5 +596,6 @@ target_link_libraries(crosspoint_original_engine_link_tests PRIVATE
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
 add_dependencies(crosspoint_original_engine_link_tests epub_fixture illustrated_epub_fixture)
+target_compile_options(crosspoint_original_engine_link_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_original_engine_real_layout
     COMMAND crosspoint_original_engine_link_tests "${EPUB_FIXTURE}")

@@ -978,9 +978,17 @@ class Reader {
   }
   void showTypographyMenu(int selected) {
     render();
+    // The Q2 has a 360x320 logical viewport. Keep the heading and footer
+    // outside a bounded list; never paint eleven oversized rows at once.
+    constexpr int kItems=11;
+    constexpr int kRows=9;
+    constexpr int kRowTop=76;
+    constexpr int kRowHeight=21;
+    const int first=std::min(std::max(0,selected-kRows+1),kItems-kRows);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
-    renderer_.drawText(1,23,43,"Reading settings");
+    renderer_.drawText(1,22,48,"Reading settings");
+    renderer_.fillRect(18,67,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters"};
     const std::string values[]={
@@ -992,17 +1000,27 @@ class Reader {
       preferences_.hyphenation?"On":"Off",
       preferences_.embeddedStyle?"On":"Off",
       preferences_.nightMode?"On":"Off",
-      "Save this page","Open saved pages","Browse book"
+      "Save page","Saved pages","Browse book"
     };
-    for(int row=0;row<11;++row) {
-      const int y=62+row*19;
-      if(selected==row)renderer_.fillRect(18,y-3,337,19,true);
-      const std::string text=std::string(labels[row])+": "+values[row];
-      renderer_.drawText(1,27,y,text.c_str(),selected!=row);
+    for(int row=0;row<kRows && first+row<kItems;++row) {
+      const int item=first+row;
+      const int y=kRowTop+row*kRowHeight;
+      const bool active=selected==item;
+      if(active)renderer_.fillRect(18,y-2,337,kRowHeight,true);
+      // Separate columns prevent long values from colliding with labels.
+      const std::string label=clippedLabel(labels[item],17);
+      const std::string value=clippedLabel(values[item],17);
+      renderer_.drawText(1,16,24,y,label.c_str(),!active);
+      renderer_.drawText(1,16,188,y,value.c_str(),!active);
     }
-    renderer_.drawText(1,24,263,"Wheel: select  Center: change");
-    if(!typographyNotice_.empty())
-      renderer_.drawText(1,24,282,typographyNotice_.c_str());
+    renderer_.fillRect(18,268,337,1,true);
+    const std::string position=std::to_string(selected+1)+"/"+
+      std::to_string(kItems)+"  Wheel: scroll  Center: select";
+    renderer_.drawText(1,13,23,275,position.c_str());
+    if(!typographyNotice_.empty()) {
+      const std::string notice=clippedLabel(typographyNotice_,46);
+      renderer_.drawText(1,12,23,291,notice.c_str());
+    }
     display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {

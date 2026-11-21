@@ -919,9 +919,18 @@ class Reader {
       case 4: next.alignment=1-next.alignment;break;
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
+      case 7: next.nightMode=!next.nightMode;break;
       default:return false;
     }
     if(!crosspod::validReaderPreferences(next))return false;
+    if(option==7) {
+      // Inversion is a framebuffer setting; no new Section layout and no
+      // SD cache invalidation are necessary.
+      preferences_=next;
+      const bool saved=crosspod::saveReaderPreferences(preferences_);
+      typographyNotice_=saved?"":"Reading settings not saved";
+      return true;
+    }
     const auto previous=preferences_;
     const int spine=currentSpine_;
     const size_t priorPage=currentPage_;
@@ -960,7 +969,7 @@ class Reader {
     renderer_.fillRect(12,39,351,254,false);
     renderer_.drawText(1,23,43,"Reading settings");
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
-        "Hyphenation","Book CSS","Add bookmark","Go to bookmarks","Chapters"};
+        "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -969,10 +978,11 @@ class Reader {
       preferences_.alignment?"Justify":"Book default",
       preferences_.hyphenation?"On":"Off",
       preferences_.embeddedStyle?"On":"Off",
+      preferences_.nightMode?"On":"Off",
       "Save this page","Open saved pages","Browse book"
     };
-    for(int row=0;row<10;++row) {
-      const int y=64+row*20;
+    for(int row=0;row<11;++row) {
+      const int y=62+row*19;
       if(selected==row)renderer_.fillRect(18,y-3,337,19,true);
       const std::string text=std::string(labels[row])+": "+values[row];
       renderer_.drawText(1,27,y,text.c_str(),selected!=row);
@@ -1083,6 +1093,13 @@ class Reader {
     if(changed)persistPosition();
     return changed;
   }
+  void applyNightMode() {
+    if(!preferences_.nightMode)return;
+    auto* buffer=display_.getFrameBuffer();
+    if(!buffer)return;
+    for(size_t i=0;i<display_.getBufferSize();++i)
+      buffer[i]=static_cast<uint8_t>(~buffer[i]);
+  }
   void drawProgress() {
     const int totalChapters=metadata_.getSpineCount();
     if(totalChapters<=0 || currentSpine_<0)return;
@@ -1100,6 +1117,7 @@ class Reader {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
       drawProgress();
+      applyNightMode();
       return;
     }
     const auto& page=pages_[currentPage_];
@@ -1120,6 +1138,7 @@ class Reader {
       }
     }
     drawProgress();
+    applyNightMode();
   }
   void present() {
     render();
@@ -1412,16 +1431,16 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:9))%10;
+              (action==crosspod::LogicalAction::Next?1:10))%11;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
-            typeSelection=std::clamp((event.y-64)/20,0,9);
-          if(typeSelection==7) {
+            typeSelection=std::clamp((event.y-62)/19,0,10);
+          if(typeSelection==8) {
             (void)reader->rememberPage();
-          } else if(typeSelection>=8) {
-            showingBookmarks=typeSelection==8;
+          } else if(typeSelection>=9) {
+            showingBookmarks=typeSelection==9;
             navigationMenu=true;
             navigationSelection=showingBookmarks?0:reader->currentChapter();
           } else if(typeSelection>=2)(void)reader->adjustPreference(typeSelection);

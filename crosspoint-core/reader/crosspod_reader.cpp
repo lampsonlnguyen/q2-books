@@ -1576,7 +1576,7 @@ int runCardApp(const std::string& bookDir) {
             if(typeSelection==0) {
               next.family=next.family==crosspod::Typography::Family::Sans?
                 crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-            } else next.size=next.size==8?10:(next.size==10?12:8);
+            } else next.size=12; // Only 12pt fonts are verified in the Q2 package.
             (void)reader->configureTypography(next);
           }
           if(navigationMenu)
@@ -1814,7 +1814,7 @@ int main(int argc,char** argv) {
           if(typeSelection==0)
             next.family=next.family==crosspod::Typography::Family::Sans?
               crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-          else next.size=next.size==8?10:(next.size==10?12:8);
+          else next.size=12; // Only 12pt fonts are verified in the Q2 package.
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection);

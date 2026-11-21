@@ -220,6 +220,10 @@ cp "$elf" "$card/.crosspod/crosspod-engine"
 cp crosspoint-core/platform/q2/crosspod-launcher.sh "$card/.crosspod/q2-crosspod"
 printf 'name=CrossPod\ngame=1\nrow=library\n' > "$card/.crosspod/q2app"
 cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
+# Optional user-editable offline word definitions (UTF-8 TSV). Do not
+# overwrite an existing personal dictionary when copying over an SD card.
+cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
+
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Mandatory font-visibility book in EVERY Q2 test-build ZIP. Do not put it
 # inside .crosspod, which the library scanner deliberately treats as hidden.

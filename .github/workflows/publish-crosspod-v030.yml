@@ -1,0 +1,92 @@
+name: Publish CrossPod v0.3.0 beta
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-crosspod-v030.yml"
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify tagged sources match passing Q2 alpha
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="core-v.0.3.0-beta"
+          passed="7ff090d8a91b8cccd16712897a69b85d888fbe49"
+          tagged="a4d0c2fb0bc35f9eacc5abc6f095c5b4c8c7a6d7"
+          git fetch --tags --force
+          test "$(git rev-parse "$tag^{commit}")" = "$tagged"
+          git merge-base --is-ancestor "$tagged" origin/main
+          test "$(git rev-parse "$tagged^{tree}")" = "$(git rev-parse "$passed^{tree}")" || {
+            echo "::error::Tagged source tree differs from validated Q2 alpha."
+            exit 1
+          }
+          test "$(gh api "repos/$GH_REPO/actions/runs/44883702628" --jq '.conclusion')" = success
+          test "$(gh api "repos/$GH_REPO/actions/runs/44883702628" --jq '.head_sha')" = "$passed"
+          test "$(gh api "repos/$GH_REPO/actions/runs/44883702628/artifacts" --jq '.artifacts[] | select(.name=="crosspod-q2-reader-alpha") | .expired')" = false
+      - name: Download and verify validated Q2 build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh run download 44883702628 -R "$GH_REPO" -n crosspod-q2-reader-alpha -D dist
+          cd dist
+          sha256sum -c crosspod-q2-reader-alpha.zip.sha256
+          unzip -t crosspod-q2-reader-alpha.zip
+          unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx '.crosspod/crosspod'
+          unzip -Z1 crosspod-q2-reader-alpha.zip | grep -Fx '.crosspod/q2-crosspod'
+          mv crosspod-q2-reader-alpha.zip crosspod-q2-reader-v0.3.0-beta.zip
+          sha256sum crosspod-q2-reader-v0.3.0-beta.zip > crosspod-q2-reader-v0.3.0-beta.zip.sha256
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cat > dist/RELEASE_NOTES.md <<'NOTES'
+          ## CrossPod v0.3.0 beta — Shanling Q2
+          
+          Beta of the CrossPoint-based EPUB reader port, with the compact home
+          dashboard, file browser, crisp fixed-size reading settings menu,
+          improved selected-row alignment, and Q2 click-wheel/touch navigation.
+          
+          Reading font size is capped at 12pt, while the menu font remains
+          independent of book typography. The reader includes incremental EPUB
+          pagination, a small rendered-page cache, multilingual CrossPoint font
+          support, bookmarks, and reading-position persistence.
+          
+          **Package:** `crosspod-q2-reader-v0.3.0-beta.zip`. This is an
+          SD-card reader application package, **not flashable firmware**.
+          It does not replace the Shanling/Q2 Pod system firmware.
+          
+          **Validation:** Built and tested by the passing Q2 hardware alpha
+          workflow #44883702628 (MIPS cross-build, QEMU reader checks). The
+          tagged source tree is identical to the validated source tree.
+          Physical-device stability and all EPUB feature coverage have not
+          been certified. Back up your SD card and reading state before testing.
+          
+          **Known limitations:** Complex EPUB styling, complete font/script
+          support, advanced CrossPoint bookshelf features and performance
+          remain in development.
+          NOTES
+          if gh release view core-v.0.3.0-beta -R "$GH_REPO" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing to overwrite assets."
+            exit 1
+          fi
+          gh release create core-v.0.3.0-beta             dist/crosspod-q2-reader-v0.3.0-beta.zip             dist/crosspod-q2-reader-v0.3.0-beta.zip.sha256             -R "$GH_REPO" --verify-tag --prerelease             --title "CrossPod v0.3.0 Beta (Shanling Q2)"             --notes-file dist/RELEASE_NOTES.md

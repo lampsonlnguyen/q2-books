@@ -8,8 +8,8 @@ The workflow can also be launched with **Actions → CrossPod Q2 reader hardware
 1. Open the most recent **successful** workflow run.
 2. Download the **crosspod-q2-reader-alpha** artifact, then extract its outer GitHub artifact ZIP.
 3. Inside is `crosspod-q2-reader-alpha.zip`. Extract this second ZIP to the **root of your Q2 microSD card**.
-4. Confirm `.crosspod/q2app`, `.crosspod/q2-crosspod`, `.crosspod/crosspod-engine`, and `Books/vietnamese-prose.epub` exist on the card.
-5. Start **Library → CrossPod** in Q2 Pod. The CrossPod menu should discover the included sample EPUB.
+4. Confirm `.crosspod/q2app`, `.crosspod/q2-crosspod`, `.crosspod/crosspod-engine`, `.crosspod/fonts/sans-16.cpfont`, `.crosspod/fonts/serif-18.cpfont`, and `Books/vietnamese-prose.epub` exist on the card.
+5. Start **Library → CrossPod** in Q2 Pod. The CrossPod menu should discover the included sample EPUB. While reading, press Centre to open Reading appearance and change Sans/Serif and 12/14/16/18 pt.
 6. Test wheel forward/backward, Centre, touchscreen, and Back-to-exit. Do not overwrite stock Books or install this as firmware.
 
 This is a removable Q2 Pod **card app**. There is no `update.tar` or firmware flashing involved.
@@ -26,7 +26,7 @@ This is a removable Q2 Pod **card app**. There is no `update.tar` or firmware fl
 - Physical Q2 hardware validation is still required; QEMU is not a framebuffer/touchscreen replacement.
 - The XHTML collector is transitional, not the entire upstream CrossPoint chapter/Section rendering pipeline.
 - Full CJK/Arabic/Hebrew fonts, complex CSS and broader image support are not yet complete.
-- The ZIP includes a sample EPUB and builtin Sans renderer, but does not currently bundle the optional external `.cpfont` font-size packs.
+- The ZIP now includes the original CrossPoint extended Sans and Serif `.cpfont` families at 12, 14, 16 and 18 pt (8 files). Every font is SHA-256 checked against the official CrossPoint font release. Under QEMU the installed 16 pt Sans and 18 pt Serif produced distinct page rasters without fallback. Full language coverage depends on each font’s glyph set.
 - If opening fails, retrieve `.crosspod/startup.log` from your SD card; it records loader errors.
 
 ## Rebuilding without WSL

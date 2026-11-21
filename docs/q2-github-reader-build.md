@@ -31,3 +31,11 @@ This is a removable Q2 Pod **card app**. There is no `update.tar` or firmware fl
 
 ## Rebuilding without WSL
 This is entirely hosted on GitHub Actions: no local MIPS compiler, sysroot, or firmware ZIP is needed. The workflow is fail-closed; failures show logs and do not upload a purported working reader.
+
+## XHTML streaming and nested-content milestone
+
+The active reader now feeds CrossPoint's original `ZipFile::readFileToStream` to Expat in 1024-byte chunks, instead of materializing the entire inflated XHTML chapter. XML and visible-text safety limits remain 4 MiB and 2 MiB, respectively. Stylesheet callbacks use a separate ZIP cursor to avoid invalidating the active inflater.
+
+The transitional XHTML collector also retains text before/after nested paragraphs, section/div containers, and table header/data cells as a stacked reading flow. It is **not** a CSS grid/table layout engine and does not yet replace the upstream `ChapterHtmlSlimParser` and `Section` classes.
+
+CI includes a 3 MiB XML-comment streaming test, malformed XML and oversized-chapter rejection, plus nested structure assertions. The Q2 GitHub workflow runs the same stress test on MIPS QEMU and uploads the card app only after success.

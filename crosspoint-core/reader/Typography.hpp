@@ -17,7 +17,7 @@ struct Typography {
 inline bool validTypography(const Typography& t) {
   return (t.family==Typography::Family::Sans ||
           t.family==Typography::Family::Serif) &&
-         (t.size==8 || t.size==10 || t.size==12);
+         (t.size==12);
 }
 inline const char* typographyFamilyName(Typography::Family f) {
   return f==Typography::Family::Serif?"Serif":"Sans";
@@ -35,7 +35,7 @@ inline std::string typographyFontPath(Typography t) {
 // Shared CJK fallback is the original CrossPoint NotoSansCJKJP .cpfont v4.
 // This does not replace the reader's selected Sans/Serif face for Latin text.
 inline std::string typographyCjkFontPath(int size) {
-  if(size!=8 && size!=10 && size!=12)return {};
+  if(size!=12)return {};
   return typographyRoot()+"/fonts/cjk-"+std::to_string(size)+".cpfont";
 }
 inline bool loadTypography(Typography& value) {

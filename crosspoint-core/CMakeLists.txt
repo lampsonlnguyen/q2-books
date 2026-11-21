@@ -405,6 +405,8 @@ add_executable(crosspod-reader
     reader/crosspod_reader.cpp
     reader/JpegPreview.c
     platform/posix/EpubRuntime.cpp
+    lib/Epub/parsers/TocNavParser.cpp
+    lib/Epub/parsers/TocNcxParser.cpp
     platform/posix/ImageDecoderFactory.cpp
     lib/Epub/converters/ImageDimsProbe.cpp
     lib/Epub/htmlEntities.cpp
@@ -623,6 +625,8 @@ add_executable(crosspoint_original_engine_link_tests
     tests/original_section_runtime_test.cpp
     lib/Epub/blocks/ImageBlock.cpp
     platform/posix/EpubRuntime.cpp
+    lib/Epub/parsers/TocNavParser.cpp
+    lib/Epub/parsers/TocNcxParser.cpp
     platform/posix/ImageDecoderFactory.cpp
     reader/JpegPreview.c
     lib/Epub/converters/ImageDimsProbe.cpp

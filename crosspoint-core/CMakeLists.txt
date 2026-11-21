@@ -386,6 +386,12 @@ add_dependencies(crosspod_epub_page_preview epub_fixture)
 add_test(NAME crosspoint_real_epub_text_page_preview
     COMMAND crosspod_epub_page_preview "${EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-epub-preview.pgm")
 
+# Original CrossPoint EPUB 3 NAV/EPUB 2 NCX parsing and anchor mapping.
+add_test(NAME crosspod_real_nav_ncx_toc
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/toc_metadata_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+
 # Separate self-contained original Vietnamese prose EPUB fixture for native
 # glyph raster QA. Does not change the existing multilingual test's OPF spine.
 set(VIETNAMESE_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/vietnamese-prose.epub")

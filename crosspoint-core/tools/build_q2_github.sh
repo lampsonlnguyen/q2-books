@@ -223,6 +223,8 @@ cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
 # Optional user-editable offline word definitions (UTF-8 TSV). Do not
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
+cp crosspoint-core/assets/connected.conf.example "$card/.crosspod/connected.conf.example"
+
 
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Mandatory font-visibility book in EVERY Q2 test-build ZIP. Do not put it
@@ -253,6 +255,16 @@ CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-footnote-popup "$work/reader/page-links.epub" \
   | tee "$work/footnote-popup.log"
 grep -q 'XHTML footnote popover: PASS' "$work/footnote-popup.log"
+# Connected-library integration under the exact MIPS Q2 ABI. The local
+# Python mock serves OPDS Atom, chunked XML, EPUB ZIP and KOReader API.
+# Never ship mock credentials or network test progress state on the SD ZIP.
+CROSSPOD_Q2_FONTS="$card/.crosspod/fonts" timeout 180s \
+  python3 crosspoint-core/tests/test_connected_network.py \
+    "$elf" "$work/reader/page-links.epub" "$root" \
+  | tee "$work/connected-library.log"
+grep -q 'CrossPod OPDS, download, partial-MD5 and KOSync: PASS' \
+  "$work/connected-library.log"
+
 
 
 

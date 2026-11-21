@@ -93,6 +93,16 @@ echo "C++ ABI requirements:"
 mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || true
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --walk "$work/reader/multilingual.epub"
+
+# Exercise the same bounded streaming path on actual Q2 MIPS ABI, including
+# multi-megabyte comments, invalid XML and oversized chapter rejection.
+cat > "$work/reader-qemu" <<EOF
+#!/bin/sh
+exec qemu-mipsel -L "$root" "$elf" "\$@"
+EOF
+chmod +x "$work/reader-qemu"
+python3 crosspoint-core/tests/xhtml_streaming_test.py \
+  "$work/reader-qemu" "$work/reader/illustrated.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" "$work/vietnamese.pgm"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render-images "$work/reader/illustrated.epub" "$work/illustrated.pgm" | tee "$work/images.log"
 grep -q "CrossPod rendered images: 2" "$work/images.log"

@@ -120,6 +120,8 @@ struct HtmlCollector {
     CssTextAlign align=CssTextAlign::Justify;
     bool paragraph=false;
     bool stylesheet=false;
+    int listKind=0; // 0 none, 1 unordered, 2 ordered
+    unsigned nextItemNumber=1;
   };
   std::vector<Scope> scopes;
   Paragraph current;
@@ -162,6 +164,10 @@ struct HtmlCollector {
     Scope scope=parent;
     scope.paragraph=false;
     scope.stylesheet=false;
+    if(n=="ol" || n=="ul") {
+      scope.listKind=n=="ol"?2:1;
+      scope.nextItemNumber=1;
+    }
     const std::string_view cls=attribute(attrs,"class");
     const std::string_view id=attribute(attrs,"id");
     if(n=="link") {
@@ -199,10 +205,26 @@ struct HtmlCollector {
       s.current.align=scope.align;
       s.current.rtl=scope.rtl;
       s.current.heading=n.size()==2 && n[0]=='h';
+      if(n=="li") {
+        // Preserve list structure instead of silently concatenating item text.
+        std::string markerText="- ";
+        if(scope.listKind==2) {
+          const unsigned number=s.scopes.back().nextItemNumber++;
+          markerText=std::to_string(number)+". ";
+        }
+        s.current.runs.push_back({std::move(markerText),EpdFontFamily::REGULAR});
+      }
     }
     s.scopes.push_back(scope);
-    if(n=="br" && s.collectingDepth && !scope.hidden)
-      s.current.runs.push_back({" ",EpdFontFamily::REGULAR});
+    if(n=="br" && s.collectingDepth && !scope.hidden) {
+      // A hard XHTML line break is not a space: commit the current visual
+      // line and continue with a new block, retaining inherited styling.
+      if(!s.current.runs.empty() && s.items.size()<MAX_BLOCKS)
+        s.items.push_back(std::move(s.current));
+      s.current=Paragraph{};
+      s.current.align=scope.align;
+      s.current.rtl=scope.rtl;
+    }
     if((n=="img" || n=="image") && !scope.hidden) {
       const auto uri=attribute(attrs,n=="img"?"src":"href");
       // An EPUB image may live in a sibling directory (../images).

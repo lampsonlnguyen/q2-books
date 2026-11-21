@@ -981,9 +981,9 @@ class Reader {
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
     constexpr int kItems=11;
-    constexpr int kRows=9;
+    constexpr int kRows=7;
     constexpr int kRowTop=76;
-    constexpr int kRowHeight=21;
+    constexpr int kRowHeight=27;
     const int first=std::min(std::max(0,selected-kRows+1),kItems-kRows);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
@@ -1008,18 +1008,18 @@ class Reader {
       const bool active=selected==item;
       if(active)renderer_.fillRect(18,y-2,337,kRowHeight,true);
       // Separate columns prevent long values from colliding with labels.
-      const std::string label=clippedLabel(labels[item],17);
-      const std::string value=clippedLabel(values[item],17);
-      renderer_.drawText(1,16,24,y,label.c_str(),!active);
-      renderer_.drawText(1,16,188,y,value.c_str(),!active);
+      const std::string label=clippedLabel(labels[item],12);
+      const std::string value=clippedLabel(values[item],12);
+      renderer_.drawText(1,24,y,label.c_str(),!active);
+      renderer_.drawText(1,192,y,value.c_str(),!active);
     }
     renderer_.fillRect(18,268,337,1,true);
     const std::string position=std::to_string(selected+1)+"/"+
       std::to_string(kItems)+"  Wheel: scroll  Center: select";
-    renderer_.drawText(1,13,23,275,position.c_str());
+    renderer_.drawText(1,23,275,clippedLabel(position,32).c_str());
     if(!typographyNotice_.empty()) {
       const std::string notice=clippedLabel(typographyNotice_,46);
-      renderer_.drawText(1,12,23,291,notice.c_str());
+      renderer_.drawText(1,23,291,clippedLabel(notice,32).c_str());
     }
     display_.displayBuffer();
   }

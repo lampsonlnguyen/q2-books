@@ -1355,13 +1355,28 @@ class CardShelf {
     return true;
   }
   void setNotice(std::string notice) {notice_=std::move(notice);}
+  // Draw compact ASCII interface labels using CrossPoint's existing
+  // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
+  void drawCompactLabel(int x,int baseline,const char* label,int scale=192) {
+    for(const unsigned char* cp=
+          reinterpret_cast<const unsigned char*>(label);*cp;++cp) {
+      if(*cp>=0x80)continue; // these fixed UI labels are ASCII
+      x+=renderer_.drawScaledCodepoint(1,*cp,
+          EpdFontFamily::REGULAR,x,baseline,scale);
+    }
+  }
   void paint() {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
-    renderer_.fillRect(0,0,375,39,true);
-    renderer_.drawText(1,16,10,"CrossPod",false);
+    // Draw at 75% of the native 12pt font, then invert only the header
+    // raster so the compact text stays white against the dark title bar.
+    drawCompactLabel(16,23,"CrossPod");
+    uint8_t* fb=display_.getFrameBuffer();
+    for(int y=0;y<39;++y)
+      for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
+        fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+byte]^=0xff;
     if(!browsing_) {
-      renderer_.drawText(1,16,47,"Home");
+      drawCompactLabel(16,61,"Home");
       renderer_.drawLine(15,74,359,74,true);
       // A compact current-book panel, inspired by CrossPoint's home page.
       // Do not invent book-cover artwork or draw filenames outside the panel.
@@ -1389,7 +1404,7 @@ class CardShelf {
     } else {
       char count[64];
       std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());
-      renderer_.drawText(1,16,47,count);
+      drawCompactLabel(16,61,count);
       renderer_.drawLine(15,72,359,72,true);
       if(books_.empty()) {
         renderer_.drawText(1,16,102,"No EPUB books found");

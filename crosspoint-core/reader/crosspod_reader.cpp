@@ -933,6 +933,104 @@ class Reader {
     } else if(!loadSpine(chapter,1))return false;
     persistPosition();return true;
   }
+  // Sync uses the original CrossPoint XPath/visible-text mapper. Never
+  // translate a remote page number directly: each device repaginates EPUBs.
+  std::string syncDocumentHash() const {
+    return crosspod::koReaderPartialMd5(bookPath_);
+  }
+  bool pushReadingSync() {
+    const auto config=crosspod::loadConnectedConfig();
+    if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
+      typographyNotice_="Enable sync in connected.conf";
+      return false;
+    }
+    const auto hash=syncDocumentHash();
+    if(hash.empty()) {
+      typographyNotice_="Cannot hash EPUB";
+      return false;
+    }
+    CrossPointPosition position{};
+    position.spineIndex=currentSpine_;
+    position.pageNumber=static_cast<int>(currentPage_);
+    position.totalPages=static_cast<int>(std::max<size_t>(1,pageCount()));
+    if(auto offset=upstreamSection_->getVisibleTextOffsetForPage(
+         static_cast<uint16_t>(currentPage_))) {
+      position.visibleTextOffset=*offset;
+      position.hasVisibleTextOffset=true;
+    }
+    const auto mapped=ProgressMapper::toSavedProgress(upstreamEpub_,position);
+    if(mapped.xpath.empty()) {
+      typographyNotice_="Cannot map text position";
+      return false;
+    }
+    crosspod::RemoteProgress remote{};
+    std::string error;
+    if(!crosspod::pullKoreaderProgress(config,hash,remote,error)) {
+      typographyNotice_="Sync check: "+error;
+      return false;
+    }
+    // Never silently overwrite a newer/further location from another
+    // device. The reader's own local position stays intact on conflicts.
+    if(remote.exists &&
+       remote.percentage>mapped.percentage+0.002f &&
+       remote.progress!=mapped.xpath) {
+      typographyNotice_="Remote ahead. Pull first.";
+      return false;
+    }
+    const crosspod::RemoteProgress local{
+        mapped.xpath,std::clamp(mapped.percentage,0.f,1.f),true};
+    if(!crosspod::pushKoreaderProgress(config,hash,local,error)) {
+      typographyNotice_="Sync upload: "+error;
+      return false;
+    }
+    typographyNotice_="Progress uploaded";
+    return true;
+  }
+  bool pullReadingSync() {
+    const auto config=crosspod::loadConnectedConfig();
+    if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
+      typographyNotice_="Enable sync in connected.conf";
+      return false;
+    }
+    const auto hash=syncDocumentHash();
+    if(hash.empty()) {
+      typographyNotice_="Cannot hash EPUB";
+      return false;
+    }
+    crosspod::RemoteProgress remote{};
+    std::string error;
+    if(!crosspod::pullKoreaderProgress(config,hash,remote,error)) {
+      typographyNotice_="Sync download: "+error;
+      return false;
+    }
+    if(!remote.exists) {
+      typographyNotice_="No remote progress";
+      return false;
+    }
+    SavedProgressPosition saved{remote.progress,remote.percentage};
+    const auto mapped=ProgressMapper::toCrossPoint(
+        upstreamEpub_,saved,renderer_,currentSpine_,
+        static_cast<int>(pageCount()));
+    // Do not apply rough percentage estimates as though they were exact
+    // KOReader positions. A font or screen size change shifts page numbers.
+    if(!mapped.hasResolvedSpineIndex ||
+       (!mapped.hasVisibleTextOffset && !mapped.hasMappedPage) ||
+       mapped.spineIndex<0 ||
+       mapped.spineIndex>=metadata_.getSpineCount()) {
+      typographyNotice_="Remote text location unsupported";
+      return false;
+    }
+    if(!goToBookmark({mapped.spineIndex,
+           static_cast<size_t>(std::max(0,mapped.pageNumber)),
+           mapped.hasVisibleTextOffset?mapped.visibleTextOffset:0u})) {
+      typographyNotice_="Could not open synced position";
+      return false;
+    }
+    clearRasterCache();
+    persistPosition(true);
+    typographyNotice_="Remote position applied";
+    return true;
+  }
   void dumpToc() {
     if(!upstreamEpub_)return;
     const int count=upstreamEpub_->getTocItemsCount();
@@ -1473,7 +1571,7 @@ class Reader {
     renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
-    constexpr int kItems=14;
+    constexpr int kItems=16;
     constexpr int kRows=9;
     constexpr int kRowTop=73;
     constexpr int kRowHeight=21;
@@ -1484,7 +1582,7 @@ class Reader {
     renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
-        "Page links","Return link","Select text"};
+        "Page links","Return link","Select text","Sync: upload","Sync: download"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1495,7 +1593,8 @@ class Reader {
       preferences_.embeddedStyle?"On":"Off",
       preferences_.nightMode?"On":"Off",
       "Save page","Saved pages","Browse book","Footnotes / links",
-      hasLinkHistory()?"Go back":"No previous link","Highlight / define"
+      hasLinkHistory()?"Go back":"No previous link","Highlight / define",
+      "Save position","Use remote position"
     };
     for(int row=0;row<kRows && first+row<kItems;++row) {
       const int item=first+row;

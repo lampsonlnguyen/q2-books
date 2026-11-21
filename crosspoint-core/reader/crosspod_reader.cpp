@@ -60,6 +60,7 @@ constexpr size_t MAX_PAGES_PER_SPINE = 512;
 constexpr int SCREEN_H = 320, LEFT = 14, TOP = 16;
 constexpr int TEXT_WIDTH = 345, BOTTOM = 306;
 volatile std::sig_atomic_t interrupted = 0;
+std::string clippedLabel(const std::string&,size_t);
 void exitOnSignal(int) { interrupted = 1; }
 
 std::string_view localName(std::string_view tag) {
@@ -799,25 +800,59 @@ class Reader {
   }
   crosspod::Typography typography() const {return typography_;}
   crosspod::ReaderPreferences preferences() const {return preferences_;}
-  size_t chapterCount() const {return static_cast<size_t>(metadata_.getSpineCount());}
-  int currentChapter() const {return currentSpine_;}
+  size_t chapterCount() const {
+    if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0)
+      return static_cast<size_t>(upstreamEpub_->getTocItemsCount());
+    return static_cast<size_t>(metadata_.getSpineCount());
+  }
+  int currentChapter() const {
+    if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0 &&
+       upstreamSection_) {
+      const int item=upstreamSection_->getTocIndexForPage(
+        static_cast<int>(currentPage_));
+      if(item>=0 && item<upstreamEpub_->getTocItemsCount())return item;
+    }
+    return currentSpine_;
+  }
   size_t currentPage() const {return currentPage_;}
   std::string chapterName(size_t index) {
     if(index>=chapterCount())return {};
+    if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0)
+      return upstreamEpub_->getTocItem(static_cast<int>(index)).title;
     const auto entry=metadata_.getSpineEntry(static_cast<int>(index));
     std::string title=entry.href;
     const size_t slash=title.find_last_of('/');
     if(slash!=std::string::npos)title.erase(0,slash+1);
-    if(title.size()>5) {
-      const size_t ext=title.find_last_of('.');
-      if(ext!=std::string::npos)title.resize(ext);
-    }
+    const size_t ext=title.find_last_of('.');
+    if(ext!=std::string::npos)title.resize(ext);
     return title;
   }
-  bool goToChapter(int spine) {
-    if(spine<0 || static_cast<size_t>(spine)>=chapterCount())return false;
-    if(!loadSpine(spine,1))return false;
+  bool goToChapter(int chapter) {
+    if(chapter<0||static_cast<size_t>(chapter)>=chapterCount())return false;
+    if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0) {
+      const auto item=upstreamEpub_->getTocItem(chapter);
+      if(item.spineIndex<0)return false;
+      if(!loadSpine(item.spineIndex,1))return false;
+      if(upstreamSection_ && !item.anchor.empty()) {
+        auto target=upstreamSection_->findAnchor(item.anchor);
+        while(!target && upstreamSection_->isBuilding()) {
+          if(!upstreamSection_->buildSomeMore(2))break;
+          target=upstreamSection_->findAnchor(item.anchor);
+        }
+        if(target && *target<pageCount())currentPage_=*target;
+      }
+    } else if(!loadSpine(chapter,1))return false;
     persistPosition();return true;
+  }
+  void dumpToc() {
+    if(!upstreamEpub_)return;
+    const int count=upstreamEpub_->getTocItemsCount();
+    std::printf("CrossPod TOC entries: %d\\n",count);
+    for(int i=0;i<count;++i) {
+      const auto t=upstreamEpub_->getTocItem(i);
+      std::printf("toc=%d spine=%d depth=%u title=%s anchor=%s\\n",
+          i,t.spineIndex,t.level,t.title.c_str(),t.anchor.c_str());
+    }
   }
   bool rememberPage() {
     const uint32_t offset=upstreamSection_?
@@ -866,7 +901,7 @@ class Reader {
         label="Ch "+std::to_string(mark.spine+1)+
           " - Page "+std::to_string(mark.page+1);
       } else label=std::to_string(item+1)+". "+chapterName(item);
-      if(label.size()>40)label.resize(40);
+      label=clippedLabel(label,34);
       renderer_.drawText(1,24,y,label.c_str(),!active);
     }
     renderer_.drawText(1,23,265,"Wheel: select  Center: go");
@@ -1473,6 +1508,12 @@ int main(int argc,char** argv) {
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {
     const auto books=scanCardBooks(argv[2]);
     for(const auto& b:books)std::printf("%s\n",b.path.c_str());
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--inspect-toc")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    reader.dumpToc();
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--render-images")==0) {

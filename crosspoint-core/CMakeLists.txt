@@ -576,6 +576,8 @@ add_executable(crosspoint_original_engine_link_tests
     tests/original_chapter_parser_interface_test.cpp
     lib/Epub/blocks/ImageBlock.cpp
     platform/posix/EpubRuntime.cpp
+    platform/posix/ImageDecoderFactory.cpp
+    reader/JpegPreview.c
     lib/Epub/converters/ImageDimsProbe.cpp
     lib/Epub/htmlEntities.cpp
     $<TARGET_OBJECTS:crosspoint_xhtml_parser_objects>
@@ -585,7 +587,7 @@ add_executable(crosspoint_original_engine_link_tests
 target_include_directories(crosspoint_original_engine_link_tests PRIVATE
     lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
     lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
-    lib/Memory lib/Serialization lib/XmlParserUtils platform/posix platform/q2)
+    lib/Memory lib/Serialization lib/XmlParserUtils reader platform/posix platform/q2)
 target_compile_definitions(crosspoint_original_engine_link_tests PRIVATE CROSSPOD_LINUX=1)
 set_target_properties(crosspoint_original_engine_link_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(crosspoint_original_engine_link_tests PRIVATE

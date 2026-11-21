@@ -28,6 +28,7 @@
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
+#include "ShelfSort.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -1467,16 +1468,24 @@ class CardShelf {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   size_t selected_ = 0;
+  size_t current_ = 0;
+  crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
   bool browsing_ = false;
   int homeSelection_ = 0;
   std::string notice_;
   static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
 
  public:
-  explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0):
+  explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
+                     size_t current=0,
+                     crosspod::ShelfSortMode sortMode=crosspod::ShelfSortMode::Title):
       books_(books),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
-    if(!books_.empty())selected_=std::min(selection,books_.size()-1);
+    sortMode_=sortMode;
+    if(!books_.empty()) {
+      selected_=std::min(selection,books_.size()-1);
+      current_=std::min(current,books_.size()-1);
+    }
   }
   bool open() {
     display_.begin();
@@ -1490,17 +1499,18 @@ class CardShelf {
     renderer_.setFontCacheManager(&fontCache_);
     return true;
   }
-  size_t selected() const {return selected_;}
+  size_t selected() const {return browsing_?selected_:current_;}
   bool empty() const {return books_.empty();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
+  bool sortChosen() const {return !browsing_ && homeSelection_==2;}
   void enterBrowser() {browsing_=true;notice_.clear();}
   void goHome() {browsing_=false;homeSelection_=0;notice_.clear();}
-  const std::string& bookPath() const {return books_[selected_].path;}
+  const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,1);
+      const int next=std::clamp(homeSelection_+direction,0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -1516,6 +1526,7 @@ class CardShelf {
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
+      else if(y>=244&&y<267)homeSelection_=2;
       else return false;
       return true;
     }
@@ -1563,7 +1574,7 @@ class CardShelf {
         renderer_.drawText(1,65,119,"No books yet");
       else
         renderer_.drawText(1,65,119,
-            clippedLabel(books_[selected_].label,20).c_str());
+            clippedLabel(books_[current_].label,20).c_str());
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
         if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
@@ -1573,6 +1584,10 @@ class CardShelf {
         renderer_.fillRect(12,204,350,37,true);
       renderer_.drawText(1,22,211,"Browse files",
           homeSelection_!=1 && !books_.empty());
+      if(homeSelection_==2)renderer_.fillRect(12,244,350,23,true);
+      std::string sortText="Sort: ";
+      sortText+=crosspod::shelfSortLabel(sortMode_);
+      drawCompactLabel(22,259,sortText.c_str(),170);
     } else {
       char count[64];
       std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());

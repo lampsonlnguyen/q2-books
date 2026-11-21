@@ -22,6 +22,7 @@
 #include <Q2Controls.hpp>
 #include <SdCardFont.h>
 #include "Typography.hpp"
+#include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -455,8 +456,7 @@ class Reader {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   std::unique_ptr<SdCardFont> selectedFont_;
-  std::unique_ptr<SdCardFont> cjkFallbackFont_;
-  int cjkFallbackId_=0;
+  crosspod::ScriptFontFallback scriptFonts_;
   // Keep the complete upstream EPUB parser/Section lifecycle alive for this
   // book. CrossPod's prior collector remains a fail-safe fallback.
   std::shared_ptr<Epub> upstreamEpub_;
@@ -500,7 +500,7 @@ class Reader {
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
     mix(0x434a4b01ull);
-    mix(static_cast<uint64_t>(cjkFallbackId_));
+    mix(static_cast<uint64_t>(scriptFonts_.coverageMask()));
     const char* state=std::getenv("CROSSPOD_STATE_DIR");
     struct stat cardDir{};
     const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&
@@ -533,25 +533,11 @@ class Reader {
         return false;
       next.reset();
     }
-    // Original CrossPoint font files store Unicode coverage intervals and
-    // can fault bitmap glyphs from SD. Do not substitute a Latin glyph for
-    // a missing CJK character (the source of the black-diamond screenshot).
-    std::unique_ptr<SdCardFont> cjk;
-    const char* disabled=std::getenv("CROSSPOD_DISABLE_CJK");
-    if(!disabled || std::strcmp(disabled,"1")!=0) {
-      auto candidate=std::make_unique<SdCardFont>();
-      if(candidate->load(crosspod::typographyCjkFontPath(settings.size).c_str()) &&
-         candidate->getEpdFont() &&
-         candidate->getEpdFont()->hasCodepoint(0x4e2d) &&
-         candidate->getEpdFont()->hasCodepoint(0x65e5) &&
-         candidate->getEpdFont()->hasCodepoint(0x3042)) {
-        cjk=std::move(candidate);
-      }
-    }
-    renderer_.clearFallbackFonts();
+    // Drop SD glyph registrations BEFORE their owning font handles. Rebuild
+    // this size's script-coverage index without loading font bitmaps into RAM.
+    scriptFonts_.clear(renderer_);
     renderer_.removeFont(1);
     if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
-    if(cjkFallbackId_)renderer_.removeFont(cjkFallbackId_);
     const int nextFontId=fontIdForTypography(settings);
     if(next) {
       renderer_.insertFont(1,EpdFontFamily(settings.size,next->getEpdFont()));
@@ -562,21 +548,10 @@ class Reader {
       renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
       renderer_.insertFont(nextFontId,EpdFontFamily(12,&bodyFont_));
     }
-    const int nextCjkId=200+(settings.size-12)/2;
-    if(cjk) {
-      renderer_.insertFont(nextCjkId,EpdFontFamily(settings.size,cjk->getEpdFont()));
-      renderer_.registerSdCardFont(nextCjkId,cjk.get());
-      renderer_.setFallbackFont(1,nextCjkId);
-      renderer_.setFallbackFont(nextFontId,nextCjkId);
-    }
     selectedFont_=std::move(next);
-    cjkFallbackFont_=std::move(cjk);
-    cjkFallbackId_=cjkFallbackFont_?nextCjkId:0;
     upstreamFontId_=nextFontId;
+    scriptFonts_.load(renderer_,settings.size,{1,nextFontId});
     typography_=settings;
-    std::printf("CrossPod CJK fallback: %s %dpt\n",
-        cjkFallbackFont_?"original CrossPoint NotoSansCJKJP cpfont":"unavailable",
-        settings.size);
     return true;
   }
 
@@ -1010,7 +985,7 @@ class CardShelf {
   HalDisplay display_;
   GfxRenderer renderer_;
   EpdFont font_;
-  std::unique_ptr<SdCardFont> cjkFont_;
+  crosspod::ScriptFontFallback scriptFonts_;
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   size_t selected_ = 0;
@@ -1028,15 +1003,8 @@ class CardShelf {
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
     renderer_.insertFont(1,EpdFontFamily(12,&font_));
-    // The book shelf also needs script fallback for Chinese/Japanese titles.
-    auto cjk=std::make_unique<SdCardFont>();
-    if(cjk->load(crosspod::typographyCjkFontPath(12).c_str()) &&
-       cjk->getEpdFont()) {
-      renderer_.insertFont(201,EpdFontFamily(12,cjk->getEpdFont()));
-      renderer_.registerSdCardFont(201,cjk.get());
-      renderer_.setFallbackFont(1,201);
-      cjkFont_=std::move(cjk);
-    }
+    // All scripts in EPUB filenames use the same SD font fallback machinery.
+    scriptFonts_.load(renderer_,12,{1});
     if(!decompressor_.init())return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);

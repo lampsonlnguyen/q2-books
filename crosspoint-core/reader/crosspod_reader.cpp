@@ -26,6 +26,7 @@
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
 #include "ReadingLayout.hpp"
+#include "Utf8Label.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -1446,18 +1447,7 @@ std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
   return books;
 }
 std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
-  std::string out;
-  size_t pos=0,count=0;
-  while(pos<label.size() && count<maxCodepoints) {
-    unsigned char c=static_cast<unsigned char>(label[pos]);
-    size_t len=c<0x80?1:(c>=0xC2&&c<0xE0?2:(c<0xF0?3:4));
-    if(pos+len>label.size())break;
-    out.append(label,pos,len);
-    pos+=len;
-    ++count;
-  }
-  if(pos<label.size())out+="...";
-  return out;
+  return crosspod::clippedUiLabel(label,maxCodepoints);
 }
 
 class CardShelf {

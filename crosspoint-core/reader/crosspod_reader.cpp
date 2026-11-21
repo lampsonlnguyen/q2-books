@@ -20,6 +20,7 @@
 #include "Typography.hpp"
 #include "ReadingPosition.hpp"
 #include "PngPreview.hpp"
+#include "JpegPreview.hpp"
 #include <Q2SocketInput.hpp>
 #include <ZipFile.h>
 #include <builtinFonts/notosans_12_regular.h>
@@ -105,7 +106,7 @@ struct Paragraph {
   bool rtl = false;
   bool heading = false;
   BlockStyle block; // original CrossPoint CSS box style
-  std::string imagePath; // EPUB ZIP path, set only for resolved PNG resources.
+  std::string imagePath; // EPUB ZIP path, bounded PNG or JPEG resource.
 };
 struct HtmlCollector {
   // The full upstream ChapterHtmlSlimParser is being integrated separately.
@@ -247,9 +248,10 @@ struct HtmlCollector {
       const std::string resolved=resolveEpubResource(s.chapterDir,uri);
       if(!resolved.empty() && s.items.size()<MAX_BLOCKS) {
         const auto ext=resolved.find_last_of('.');
-        const bool png=ext!=std::string::npos &&
-          resolved.compare(ext,4,".png")==0;
-        if(png) {
+        std::string extension=ext==std::string::npos?"" :resolved.substr(ext);
+        std::transform(extension.begin(),extension.end(),extension.begin(),
+                       [](unsigned char c){return static_cast<char>(std::tolower(c));});
+        if(extension==".png" || extension==".jpg" || extension==".jpeg") {
           if(s.collectingDepth && !s.current.runs.empty()) {
             s.items.push_back(std::move(s.current));
             s.current=Paragraph{};
@@ -430,7 +432,15 @@ class Reader {
         std::unique_ptr<uint8_t,decltype(&std::free)> resource(
           archive_.readFileToMemory(p.imagePath.c_str(),&bytes,false),&std::free);
         crosspod::PngPreview png;
-        if(!resource || !crosspod::decodePngPreview(resource.get(),bytes,png))continue;
+        if(!resource)continue;
+        const size_t dot=p.imagePath.find_last_of('.');
+        std::string extension=dot==std::string::npos?"" :p.imagePath.substr(dot);
+        std::transform(extension.begin(),extension.end(),extension.begin(),
+                       [](unsigned char c){return static_cast<char>(std::tolower(c));});
+        const bool loaded=extension==".png"?
+            crosspod::decodePngPreview(resource.get(),bytes,png):
+            crosspod::decodeJpegPreview(resource.get(),bytes,png);
+        if(!loaded)continue;
         const int width=std::min<int>(TEXT_WIDTH,png.width);
         const int height=std::max<int>(1,static_cast<int>(
           static_cast<int64_t>(png.height)*width/png.width));

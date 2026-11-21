@@ -13,6 +13,7 @@
 #include <builtinFonts/notosans_12_regular.h>
 #include <cassert>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <memory>
 #include <string>

@@ -2,6 +2,7 @@
 #include "ShelfHistory.hpp"
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
+#include "ShelfCover.hpp"
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -45,12 +46,22 @@ int main() {
   crosspod::ShelfDetails details;
   assert(crosspod::loadShelfDetails(a,details));
   assert(details.title==u8"Tiếng Việt" && details.author==u8"Nguyễn Văn A");
+  crosspod::PngPreview picture;
+  picture.width=2;
+  picture.height=2;
+  picture.gray={0,255,255,0};
+  crosspod::ShelfCover cover,loadedCover;
+  assert(crosspod::makeShelfCover(picture,cover));
+  assert(crosspod::saveShelfCover(a,cover));
+  assert(crosspod::loadShelfCover(a,loadedCover));
+  assert(cover.ink==loadedCover.ink);
   // Overwriting an EPUB must invalidate cached title/author metadata.
   FILE* f=std::fopen(a.c_str(),"ab");
   assert(f);
   assert(std::fputs("changed",f)>=0);
   assert(std::fclose(f)==0);
   assert(!crosspod::loadShelfDetails(a,details));
+  assert(!crosspod::loadShelfCover(a,loadedCover));
   // Ignore malformed history rather than trusting arbitrary SD bytes.
   f=std::fopen(crosspod::recentBooksFile().c_str(),"wb");
   assert(f);

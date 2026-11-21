@@ -207,9 +207,25 @@ cp crosspoint-core/platform/q2/crosspod-launcher.sh "$card/.crosspod/q2-crosspod
 printf 'name=CrossPod\ngame=1\nrow=library\n' > "$card/.crosspod/q2app"
 cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
+# Mandatory font-visibility book in EVERY Q2 test-build ZIP. Do not put it
+# inside .crosspod, which the library scanner deliberately treats as hidden.
+# One compact XHTML paragraph per language; no external web fonts required.
+python3 crosspoint-core/tests/make_language_visibility_epub.py \
+  "$card/Books/CrossPod-Multilingual-Visibility-Test.epub"
+python3 crosspoint-core/tests/make_language_visibility_epub.py \
+  "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" --check
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
+# Validate the generated EPUB on the actual Q2 MIPS application, with the
+# full SD cpfont bundle present. This checks structure/openability; visual
+# correctness is still assessed by eye on the real Shanling LCD.
+CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --validate "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" \
+  | tee "$work/language-visibility.log"
+grep -q 'CrossPod original Section:' "$work/language-visibility.log"
+
+
 
 # Full script pack must load on MIPS, not just be copied into the ZIP.
 CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \

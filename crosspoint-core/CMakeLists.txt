@@ -10,6 +10,14 @@ add_library(crosspoint_utf8 STATIC
 target_include_directories(crosspoint_utf8 PUBLIC lib/Utf8)
 
 enable_testing()
+# Deterministic standalone EPUB with one visibility paragraph per language
+# and coverage for all 14 actual CrossPod fallback script families.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME crosspod_multilingual_visibility_epub
+  COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/make_language_visibility_epub.py
+    ${CMAKE_CURRENT_BINARY_DIR}/CrossPod-Multilingual-Visibility-Test.epub
+)
 add_executable(crosspoint_core_tests tests/utf8_test.cpp)
 target_link_libraries(crosspoint_core_tests PRIVATE crosspoint_utf8)
 add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)

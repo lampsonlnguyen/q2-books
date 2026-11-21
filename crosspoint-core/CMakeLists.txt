@@ -33,6 +33,11 @@ target_compile_options(crosspod_q2_memory_sink_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_q2_renderer_sink_lifecycle COMMAND crosspod_q2_memory_sink_tests)
 
 # Nested EPUB folder enumeration and NFC-aware bookshelf search.
+add_executable(crosspod_reader_links_tests tests/reader_links_test.cpp)
+target_include_directories(crosspod_reader_links_tests PRIVATE reader)
+target_compile_options(crosspod_reader_links_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_reader_internal_epub_href COMMAND crosspod_reader_links_tests)
+
 add_executable(crosspod_shelf_search_tests tests/shelf_search_test.cpp)
 target_include_directories(crosspod_shelf_search_tests PRIVATE reader)
 target_link_libraries(crosspod_shelf_search_tests PRIVATE crosspoint_utf8)
@@ -481,6 +486,18 @@ add_test(NAME crosspod_reader_unopened_shelf_index
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shelf_indexer.py"
     "$<TARGET_FILE:crosspod-reader>"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_shelf_index_epub.py")
+
+set(CROSSPOD_LINKS_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/crosspod-page-links.epub")
+add_custom_command(OUTPUT "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+    COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
+        "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
+    VERBATIM)
+add_custom_target(crosspod_links_fixture DEPENDS "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+add_dependencies(crosspod-reader crosspod_links_fixture)
+add_test(NAME crosspod_reader_real_page_links
+    COMMAND crosspod-reader --test-page-links "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

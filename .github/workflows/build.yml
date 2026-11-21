@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, v0.5.0-lazy-metadata-index]
+    branches: [main, v0.6.0-links-footnotes]
   pull_request:
     branches: [main]
   workflow_dispatch:

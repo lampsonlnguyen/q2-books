@@ -1865,7 +1865,13 @@ int main(int argc,char** argv) {
   }
   if(dry) {
     if(benchmark) {
-      const auto started=std::chrono::steady_clock::now();
+      const auto openEnd=std::chrono::steady_clock::now();
+      reader.render(); // includes the first page's SD read and glyph paint
+      const auto firstRenderEnd=std::chrono::steady_clock::now();
+      // Reuse the identical raster; never repeatedly inflate EPUB pages.
+      constexpr int REPEAT_FRAMES=32;
+      for(int i=0;i<REPEAT_FRAMES;++i)reader.render();
+      const auto repeatedEnd=std::chrono::steady_clock::now();
       size_t advanced=0;
       constexpr size_t SAMPLE_PAGES=64;
       while(advanced<SAMPLE_PAGES) {
@@ -1877,12 +1883,22 @@ int main(int argc,char** argv) {
       struct rusage usage{};
       (void)getrusage(RUSAGE_SELF,&usage);
       const auto openMs=std::chrono::duration_cast<std::chrono::milliseconds>(
-        started-openStart).count();
+        openEnd-openStart).count();
+      const auto firstRenderUs=std::chrono::duration_cast<std::chrono::microseconds>(
+        firstRenderEnd-openEnd).count();
+      const auto cachedRenderUs=std::chrono::duration_cast<std::chrono::microseconds>(
+        repeatedEnd-firstRenderEnd).count()/REPEAT_FRAMES;
       const auto turnMs=std::chrono::duration_cast<std::chrono::milliseconds>(
-        elapsed-started).count();
-      std::printf("CrossPod benchmark: open_ms=%lld sample_pages=%zu walk_ms=%lld maxrss_kb=%ld\n",
-        static_cast<long long>(openMs),advanced,
-        static_cast<long long>(turnMs),usage.ru_maxrss);
+        elapsed-repeatedEnd).count();
+      std::printf(
+        "CrossPod benchmark: open_ms=%lld first_render_us=%lld "
+        "cached_render_us=%lld sample_pages=%zu walk_ms=%lld "
+        "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld\\n",
+        static_cast<long long>(openMs),
+        static_cast<long long>(firstRenderUs),
+        static_cast<long long>(cachedRenderUs),
+        advanced,static_cast<long long>(turnMs),
+        usage.ru_maxrss,usage.ru_inblock,usage.ru_oublock);
       return 0;
     }
     if(walk) {

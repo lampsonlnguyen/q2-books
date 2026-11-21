@@ -25,6 +25,7 @@
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
+#include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
 #include <Q2SocketInput.hpp>
@@ -780,6 +781,78 @@ class Reader {
   }
   crosspod::Typography typography() const {return typography_;}
   crosspod::ReaderPreferences preferences() const {return preferences_;}
+  size_t chapterCount() const {return static_cast<size_t>(metadata_.getSpineCount());}
+  int currentChapter() const {return currentSpine_;}
+  size_t currentPage() const {return currentPage_;}
+  std::string chapterName(size_t index) const {
+    if(index>=chapterCount())return {};
+    const auto entry=metadata_.getSpineEntry(static_cast<int>(index));
+    std::string title=entry.href;
+    const size_t slash=title.find_last_of('/');
+    if(slash!=std::string::npos)title.erase(0,slash+1);
+    if(title.size()>5) {
+      const size_t ext=title.find_last_of('.');
+      if(ext!=std::string::npos)title.resize(ext);
+    }
+    return title;
+  }
+  bool goToChapter(int spine) {
+    if(spine<0 || static_cast<size_t>(spine)>=chapterCount())return false;
+    if(!loadSpine(spine,1))return false;
+    persistPosition();return true;
+  }
+  bool rememberPage() {
+    const uint32_t offset=upstreamSection_?
+      upstreamSection_->getVisibleTextOffsetForPage(
+        static_cast<uint16_t>(currentPage_)).value_or(0):0;
+    return crosspod::addBookmark(bookPath_,{currentSpine_,currentPage_,offset});
+  }
+  std::vector<crosspod::Bookmark> bookmarks() const {
+    return crosspod::loadBookmarks(bookPath_);
+  }
+  bool goToBookmark(const crosspod::Bookmark& mark) {
+    if(!goToChapter(mark.spine))return false;
+    if(upstreamSection_ && mark.textOffset) {
+      while(upstreamSection_->isBuilding() &&
+           !upstreamSection_->buildReachedVisibleTextOffset(mark.textOffset)) {
+        if(!upstreamSection_->buildSomeMore(2))break;
+      }
+      currentPage_=upstreamSection_->getPageForVisibleTextOffset(
+        mark.textOffset).value_or(static_cast<uint16_t>(
+          std::min(mark.page,pageCount()-1)));
+    } else currentPage_=std::min(mark.page,pageCount()-1);
+    persistPosition();
+    return true;
+  }
+  void showNavigationMenu(bool showingBookmarks,int selected) {
+    render();
+    renderer_.fillRect(9,38,357,255,true);
+    renderer_.fillRect(11,40,353,251,false);
+    renderer_.drawText(1,23,48,showingBookmarks?"Bookmarks":"Chapters");
+    const auto marks=showingBookmarks?bookmarks():
+      std::vector<crosspod::Bookmark>{};
+    const size_t count=showingBookmarks?marks.size():chapterCount();
+    if(!count)renderer_.drawText(1,25,127,"No bookmarks yet");
+    const int start=selected<0?0:(selected/7)*7;
+    for(int row=0;row<7 && start+row<static_cast<int>(count);++row) {
+      const int item=start+row;
+      const int y=81+row*25;
+      const bool active=item==selected;
+      if(active)renderer_.fillRect(17,y-3,341,22,true);
+      std::string label;
+      if(showingBookmarks) {
+        const auto& mark=marks[item];
+        label="Ch "+std::to_string(mark.spine+1)+
+          " - Page "+std::to_string(mark.page+1);
+      } else label=std::to_string(item+1)+". "+chapterName(item);
+      if(label.size()>40)label.resize(40);
+      renderer_.drawText(1,24,y,label.c_str(),!active);
+    }
+    renderer_.drawText(1,23,265,"Wheel: select  Center: go");
+    renderer_.drawText(1,23,286,"Back: reading settings");
+    display_.displayBuffer();
+  }
+
   bool adjustPreference(int option) {
     crosspod::ReaderPreferences next=preferences_;
     switch(option) {
@@ -829,8 +902,9 @@ class Reader {
     render();
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
-    renderer_.drawText(1,23,47,"Reading settings");
-    const char* labels[]={"Font","Size","Line spacing","Margins","Alignment","Hyphenation","Book CSS"};
+    renderer_.drawText(1,23,43,"Reading settings");
+    const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
+        "Hyphenation","Book CSS","Add bookmark","Go to bookmarks","Chapters"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -838,15 +912,16 @@ class Reader {
       std::to_string(preferences_.margin)+"px",
       preferences_.alignment?"Justify":"Book default",
       preferences_.hyphenation?"On":"Off",
-      preferences_.embeddedStyle?"On":"Off"
+      preferences_.embeddedStyle?"On":"Off",
+      "Save this page","Open saved pages","Browse book"
     };
-    for(int row=0;row<7;++row) {
-      const int y=77+row*25;
-      if(selected==row)renderer_.fillRect(18,y-3,337,22,true);
+    for(int row=0;row<10;++row) {
+      const int y=64+row*20;
+      if(selected==row)renderer_.fillRect(18,y-3,337,19,true);
       const std::string text=std::string(labels[row])+": "+values[row];
       renderer_.drawText(1,27,y,text.c_str(),selected!=row);
     }
-    renderer_.drawText(1,24,259,"Wheel: select  Center: change");
+    renderer_.drawText(1,24,263,"Wheel: select  Center: change");
     if(!typographyNotice_.empty())
       renderer_.drawText(1,24,282,typographyNotice_.c_str());
     display_.displayBuffer();

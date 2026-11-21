@@ -19,16 +19,28 @@ struct FootnoteCapture {
   bool capturing=false;
   bool finished=false;
 };
-inline void XMLCALL footnoteStart(void* user,const XML_Char*,
+inline void XMLCALL footnoteStart(void* user,const XML_Char* name,
                                   const XML_Char** attrs) {
   auto& c=*static_cast<FootnoteCapture*>(user);
   if(c.finished)return;
   if(c.capturing) {++c.depth;return;}
+  bool target=false,declaredNote=false;
+  const std::string tag(name?name:"");
+  // CrossPoint's Page::footnotes also contains ordinary <a href> links.
+  // Only actual semantic note elements should open an excerpt popup.
+  const bool aside=tag=="aside" ||
+      (tag.size()>6 && tag.compare(tag.size()-6,6,":aside")==0);
   for(size_t i=0;attrs && attrs[i] && attrs[i+1];i+=2) {
-    const std::string key(attrs[i]);
-    if((key=="id"||key=="xml:id") && c.anchor==attrs[i+1]) {
-      c.capturing=true;c.depth=1;return;
-    }
+    const std::string key(attrs[i]),value(attrs[i+1]);
+    if((key=="id"||key=="xml:id") && c.anchor==value)target=true;
+    if((key=="epub:type" && (value.find("footnote")!=std::string::npos ||
+                              value.find("endnote")!=std::string::npos)) ||
+       (key=="role" && (value.find("doc-footnote")!=std::string::npos ||
+                         value.find("doc-endnote")!=std::string::npos)))
+      declaredNote=true;
+  }
+  if(target && (aside||declaredNote)) {
+    c.capturing=true;c.depth=1;
   }
 }
 inline void XMLCALL footnoteEnd(void* user,const XML_Char*) {

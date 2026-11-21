@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "ReaderPreferences.hpp"
+#include "Typography.hpp"
 #include "Bookmarks.hpp"
 #include <cassert>
 #include <cstdio>
@@ -19,6 +20,21 @@ int main() {
   assert(std::fwrite("book",1,4,f)==4);
   assert(std::fclose(f)==0);
 
+  // UI font is independent; persisted oversized reader settings migrate to 12pt.
+  crosspod::Typography textSize{};
+  assert(crosspod::validTypography(textSize));
+  assert(!crosspod::validTypography({crosspod::Typography::Family::Sans,14}));
+  assert(!crosspod::validTypography({crosspod::Typography::Family::Serif,18}));
+  {
+    const std::string oldSetting=std::string(dir)+"/typography.conf";
+    FILE* old=std::fopen(oldSetting.c_str(),"wb");
+    assert(old);
+    assert(std::fputs("CROSSPOD-TYPE1 sans 18\\n",old)>0);
+    assert(std::fclose(old)==0);
+    assert(crosspod::loadTypography(textSize));
+    assert(textSize.size==12);
+    std::remove(oldSetting.c_str());
+  }
   crosspod::ReaderPreferences defaults;
   assert(!crosspod::loadReaderPreferences(defaults));
   assert(defaults.margin==14 && defaults.linePercent==100);

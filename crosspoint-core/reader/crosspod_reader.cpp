@@ -470,6 +470,18 @@ class Reader {
   crosspod::ReaderPreferences preferences_{};
   std::string typographyNotice_;
   std::vector<RenderPage> pages_;
+  // A bounded 3-page 1-bpp raster cache (~45 KB) avoids repeated SD-page
+  // decompression, layout painting and glyph lookups when moving back/forward.
+  struct CachedRaster {
+    int spine=-1;
+    size_t page=0;
+    std::vector<uint8_t> pixels;
+  };
+  std::array<CachedRaster,3> rasterCache_{};
+  size_t nextRasterSlot_=0;
+  void clearRasterCache() {
+    for(auto& item:rasterCache_)item.spine=-1;
+  }
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
@@ -563,6 +575,7 @@ class Reader {
     upstreamFontId_=nextFontId;
     scriptFonts_.load(renderer_,settings.size,{1,nextFontId});
     typography_=settings;
+    clearRasterCache();
     return true;
   }
 
@@ -942,6 +955,7 @@ class Reader {
       // Inversion is a framebuffer setting; no new Section layout and no
       // SD cache invalidation are necessary.
       preferences_=next;
+      clearRasterCache();
       const bool saved=crosspod::saveReaderPreferences(preferences_);
       typographyNotice_=saved?"":"Reading settings not saved";
       return true;
@@ -953,8 +967,10 @@ class Reader {
       upstreamSection_->getVisibleTextOffsetForPage(
         static_cast<uint16_t>(currentPage_)):std::nullopt;
     preferences_=next;
+    clearRasterCache();
     if(spine>=0 && (!loadSpine(spine,1)||currentSpine_!=spine)) {
       preferences_=previous;
+      clearRasterCache();
       (void)loadSpine(spine,1);
       currentPage_=std::min(priorPage,pageCount()-1);
       typographyNotice_="Could not update page layout";
@@ -1171,13 +1187,32 @@ class Reader {
     renderer_.drawLine(14,314,361,314,true);
     if(filled>0)renderer_.fillRect(14,312,filled,3,true);
   }
+  void cacheRenderedPage() {
+    const uint8_t* framebuffer=display_.getFrameBuffer();
+    if(!framebuffer || currentSpine_<0)return;
+    auto& slot=rasterCache_[nextRasterSlot_++%rasterCache_.size()];
+    slot.spine=currentSpine_;
+    slot.page=currentPage_;
+    slot.pixels.assign(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
+  }
   void render() {
+    uint8_t* framebuffer=display_.getFrameBuffer();
+    constexpr size_t kBytes=HalDisplay::BUFFER_SIZE;
+    if(framebuffer) {
+      for(const auto& cached:rasterCache_)
+        if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
+           cached.pixels.size()==kBytes) {
+          std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          return;
+        }
+    }
     renderer_.clearScreen(0xff);
     if(upstreamSection_) {
       auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
       if(page)page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
       drawProgress();
       applyNightMode();
+      cacheRenderedPage();
       return;
     }
     const auto& page=pages_[currentPage_];
@@ -1199,6 +1234,7 @@ class Reader {
     }
     drawProgress();
     applyNightMode();
+    cacheRenderedPage();
   }
   void present() {
     render();

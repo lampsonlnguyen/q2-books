@@ -3,6 +3,7 @@
 // Per-book cached title/author from the original CrossPoint OPF metadata.
 // Book identity invalidates stale metadata when an EPUB is replaced.
 #include "ReadingPosition.hpp"
+#include "ShelfIdentity.hpp"
 #include "ShelfHistory.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -29,17 +30,8 @@ inline bool loadShelfDetails(const std::string& path,ShelfDetails& details) {
                   std::fgets(author,sizeof(author),f);
   std::fclose(f);
   if(!read)return false;
-  constexpr char magic[]="CROSSPOD-SHELF1 ";
-  if(std::strncmp(header,magic,sizeof(magic)-1)!=0)return false;
-  const char* cur=header+sizeof(magic)-1;
-  char* end=nullptr;
-  errno=0;
-  const unsigned long long bytes=std::strtoull(cur,&end,10);
-  if(errno!=0 || end==cur || *end!=' ')return false;
-  cur=end+1;
-  errno=0;
-  const unsigned long long modified=std::strtoull(cur,&end,10);
-  if(errno!=0 || end==cur || (*end!='\n' && *end!='\0') ||
+  unsigned long long bytes=0,modified=0;
+  if(!parseShelfIdentityHeader(header,"CROSSPOD-SHELF1",bytes,modified) ||
      bytes!=static_cast<unsigned long long>(st.st_size) ||
      modified!=static_cast<unsigned long long>(st.st_mtime))return false;
   // Decode hexadecimal UTF-8 metadata without applying path rules.

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <system_error>
+#include <new>
 
 namespace std {
 from_chars_result from_chars(const char* first, const char* last,
@@ -47,3 +48,11 @@ from_chars_result from_chars(const char* first, const char* last,
   return {first + used, errc{}};
 }
 } // namespace std
+
+// GCC 12 headers emit this helper (GLIBCXX_3.4.29); the Q2 C++ runtime
+// predates it but already supports the standard exception type.
+namespace std {
+[[noreturn]] void __throw_bad_array_new_length() {
+  throw bad_array_new_length();
+}
+}

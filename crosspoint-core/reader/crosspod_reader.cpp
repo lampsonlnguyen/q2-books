@@ -70,7 +70,7 @@ bool skipTag(std::string_view n) {
 std::string resolveEpubResource(const std::string& chapterDir,std::string_view uri) {
   if(uri.empty() || uri.front()=='/' || uri.front()=='\\' ||
      uri.find(':')!=std::string_view::npos ||
-     uri.find('\\\\')!=std::string_view::npos ||
+     uri.find(static_cast<char>(92))!=std::string_view::npos ||
      uri.find('?')!=std::string_view::npos ||
      uri.find('#')!=std::string_view::npos)return {};
   std::vector<std::string> segments;

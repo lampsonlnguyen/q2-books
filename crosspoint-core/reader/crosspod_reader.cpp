@@ -27,6 +27,10 @@
 #include "ReaderPreferences.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
+#include "ShelfHistory.hpp"
+#include "ShelfSort.hpp"
+#include "ShelfDetails.hpp"
+#include "ShelfCover.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -37,6 +41,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <ctime>
 #include <csignal>
 #include <climits>
 #include <cstdio>
@@ -836,6 +841,34 @@ class Reader {
     persistPosition();
     return true;
   }
+  crosspod::ShelfDetails shelfDetails() const {
+    return {metadata_.coreMetadata.title,metadata_.coreMetadata.author};
+  }
+  // Generate a tiny cover once, only after the user has already opened
+  // the EPUB. Never inflate cover JPEG/PNG for every bookshelf row or turn.
+  bool cacheShelfCover() {
+    crosspod::ShelfCover existing;
+    if(crosspod::loadShelfCover(bookPath_,existing))return true;
+    const std::string& coverPath=metadata_.coreMetadata.coverItemHref;
+    if(coverPath.empty()||coverPath.size()>1024 ||
+       coverPath.front()=='/' || coverPath.find("..")!=std::string::npos)
+      return false;
+    size_t size=0;
+    if(!archive_.getInflatedFileSize(coverPath.c_str(),&size) ||
+       size<8 || size>4u*1024u*1024u)return false;
+    std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
+        archive_.readFileToMemory(coverPath.c_str(),&size,false),&std::free);
+    if(!bytes || size<8 || size>4u*1024u*1024u)return false;
+    crosspod::PngPreview decoded;
+    bool okay=crosspod::decodePngPreview(bytes.get(),size,decoded);
+    if(!okay && bytes.get()[0]==0xff && bytes.get()[1]==0xd8)
+      okay=crosspod::decodeJpegPreview(bytes.get(),size,decoded);
+    if(!okay)return false;
+    crosspod::ShelfCover thumbnail;
+    return crosspod::makeShelfCover(decoded,thumbnail) &&
+           crosspod::saveShelfCover(bookPath_,thumbnail);
+  }
+
   crosspod::Typography typography() const {return typography_;}
   crosspod::ReaderPreferences preferences() const {return preferences_;}
   size_t chapterCount() const {
@@ -1399,6 +1432,7 @@ class Reader {
 struct ShelfEntry {
   std::string path;
   std::string label;
+  std::time_t modified=0;
 };
 std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
   std::vector<ShelfEntry> books;
@@ -1425,7 +1459,7 @@ std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
       if (name.size()<6)continue;
       const std::string_view ending(name.data()+name.size()-5,5);
       if (!(ending==".epub"||ending==".EPUB"||ending==".Epub")) continue;
-      books.push_back({path,name.substr(0,name.size()-5)});
+      books.push_back({path,name.substr(0,name.size()-5),st.st_mtime});
     }
     closedir(d);
     return subfolders;
@@ -1465,16 +1499,31 @@ class CardShelf {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   size_t selected_ = 0;
+  size_t current_ = 0;
+  crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
+  std::vector<crosspod::ShelfDetails> cachedDetails_;
+  std::vector<bool> detailsChecked_;
+  crosspod::ShelfCover currentCover_{};
+  bool currentCoverChecked_=false;
+  bool currentCoverAvailable_=false;
   bool browsing_ = false;
   int homeSelection_ = 0;
   std::string notice_;
   static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
 
  public:
-  explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0):
+  explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
+                     size_t current=0,
+                     crosspod::ShelfSortMode sortMode=crosspod::ShelfSortMode::Title):
       books_(books),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
-    if(!books_.empty())selected_=std::min(selection,books_.size()-1);
+    sortMode_=sortMode;
+    cachedDetails_.resize(books_.size());
+    detailsChecked_.resize(books_.size(),false);
+    if(!books_.empty()) {
+      selected_=std::min(selection,books_.size()-1);
+      current_=std::min(current,books_.size()-1);
+    }
   }
   bool open() {
     display_.begin();
@@ -1488,17 +1537,18 @@ class CardShelf {
     renderer_.setFontCacheManager(&fontCache_);
     return true;
   }
-  size_t selected() const {return selected_;}
+  size_t selected() const {return browsing_?selected_:current_;}
   bool empty() const {return books_.empty();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
+  bool sortChosen() const {return !browsing_ && homeSelection_==2;}
   void enterBrowser() {browsing_=true;notice_.clear();}
   void goHome() {browsing_=false;homeSelection_=0;notice_.clear();}
-  const std::string& bookPath() const {return books_[selected_].path;}
+  const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,1);
+      const int next=std::clamp(homeSelection_+direction,0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -1514,6 +1564,7 @@ class CardShelf {
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
+      else if(y>=244&&y<267)homeSelection_=2;
       else return false;
       return true;
     }
@@ -1523,6 +1574,35 @@ class CardShelf {
     if(index>=books_.size())return false;
     selected_=index;
     return true;
+  }
+  const crosspod::ShelfDetails& details(size_t index) {
+    if(!detailsChecked_[index]) {
+      detailsChecked_[index]=true;
+      (void)crosspod::loadShelfDetails(books_[index].path,cachedDetails_[index]);
+    }
+    return cachedDetails_[index];
+  }
+  void drawBookCover(int x,int y,size_t index) {
+    if(!currentCoverChecked_) {
+      currentCoverAvailable_=crosspod::loadShelfCover(books_[index].path,currentCover_);
+      currentCoverChecked_=true;
+    }
+    renderer_.drawLine(x-1,y-1,x+crosspod::ShelfCover::width,y-1,true);
+    renderer_.drawLine(x-1,y-1,x-1,y+crosspod::ShelfCover::height,true);
+    renderer_.drawLine(x+crosspod::ShelfCover::width,y-1,
+                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y+crosspod::ShelfCover::height,
+                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
+    if(!currentCoverAvailable_) {
+      renderer_.drawLine(x+7,y+12,x+39,y+12,true);
+      renderer_.drawLine(x+7,y+18,x+39,y+18,true);
+      return;
+    }
+    for(int py=0;py<crosspod::ShelfCover::height;++py)
+      for(int px=0;px<crosspod::ShelfCover::width;++px)
+        if(currentCover_.ink[py*crosspod::ShelfCover::stride+px/8] &
+           (0x80u>>(px&7)))
+          renderer_.drawPixel(x+px,y+py,true);
   }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
@@ -1548,20 +1628,25 @@ class CardShelf {
     if(!browsing_) {
       drawCompactLabel(16,61,"Home");
       renderer_.drawLine(15,74,359,74,true);
-      // A compact current-book panel, inspired by CrossPoint's home page.
-      // Do not invent book-cover artwork or draw filenames outside the panel.
-      renderer_.drawText(1,65,88,"Current book");
-      renderer_.drawLine(17,92,52,92,true);
-      renderer_.drawLine(17,92,17,138,true);
-      renderer_.drawLine(52,92,52,138,true);
-      renderer_.drawLine(17,138,52,138,true);
-      renderer_.drawLine(22,100,46,100,true);
-      renderer_.drawLine(22,106,46,106,true);
+      // Real EPUB cover thumb is decoded once when leaving the book;
+      // shelf startup only reads a 360-byte 1-bit cached image.
+      if(!books_.empty())drawBookCover(18,86,current_);
+      else {
+        renderer_.drawLine(17,85,66,85,true);
+        renderer_.drawLine(17,85,17,146,true);
+        renderer_.drawLine(66,85,66,146,true);
+        renderer_.drawLine(17,146,66,146,true);
+      }
+      renderer_.drawText(1,82,88,"Current book");
       if(books_.empty())
-        renderer_.drawText(1,65,119,"No books yet");
-      else
-        renderer_.drawText(1,65,119,
-            clippedLabel(books_[selected_].label,20).c_str());
+        renderer_.drawText(1,82,119,"No books yet");
+      else {
+        const auto& info=details(current_);
+        renderer_.drawText(1,82,110,
+            clippedLabel(info.title.empty()?books_[current_].label:info.title,19).c_str());
+        if(!info.author.empty())
+          renderer_.drawText(1,82,132,clippedLabel(info.author,20).c_str());
+      }
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
         if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
@@ -1571,6 +1656,17 @@ class CardShelf {
         renderer_.fillRect(12,204,350,37,true);
       renderer_.drawText(1,22,211,"Browse files",
           homeSelection_!=1 && !books_.empty());
+      std::string sortText="Sort: ";
+      sortText+=crosspod::shelfSortLabel(sortMode_);
+      drawCompactLabel(22,259,sortText.c_str(),170);
+      if(homeSelection_==2) {
+        // Invert the completed text raster, not just its background.
+        auto* pixels=display_.getFrameBuffer();
+        if(pixels)for(int y=244;y<267;++y)
+          for(int x=12;x<362;++x)
+            pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
+                static_cast<uint8_t>(0x80u>>(x&7));
+      }
     } else {
       char count[64];
       std::snprintf(count,sizeof(count),"Browse files (%zu)",books_.size());
@@ -1587,8 +1683,13 @@ class CardShelf {
           const bool active=index==selected_;
           if(active)renderer_.fillRect(12,y,350,36,true);
           else renderer_.drawLine(15,y+36,359,y+36,true);
-          const std::string label=clippedLabel(books_[index].label,22);
-          renderer_.drawText(1,22,y+7,label.c_str(),!active);
+          const auto& info=details(index);
+          const std::string label=clippedLabel(
+              info.title.empty()?books_[index].label:info.title,26);
+          renderer_.drawText(1,22,y+3,label.c_str(),!active);
+          if(!info.author.empty())
+            renderer_.drawText(1,22,y+21,
+                clippedLabel(info.author,29).c_str(),!active);
         }
       }
     }
@@ -1619,7 +1720,10 @@ class CardShelf {
 };
 
 int runCardApp(const std::string& bookDir) {
-  const std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  auto recent=crosspod::loadRecentBooks();
+  auto sortMode=crosspod::ShelfSortMode::Title;
+  crosspod::sortShelfBooks(books,sortMode,recent);
   crosspod::Q2SocketInput input;
   if(!input.open()) {
     std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
@@ -1627,8 +1731,8 @@ int runCardApp(const std::string& bookDir) {
   }
   std::signal(SIGINT,exitOnSignal);
   std::signal(SIGTERM,exitOnSignal);
-  size_t selection=0;
-  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection));
+  size_t selection=crosspod::lastOpenedIndex(books,recent);
+  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
   if(!shelf->open())return 4;
   shelf->present();
   crosspod::Q2Controls controls;
@@ -1735,8 +1839,11 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(action==crosspod::LogicalAction::Back) {
+        (void)reader->cacheShelfCover();
         reader.reset(); // close book/cache BEFORE reopening the card shelf
-        shelf.reset(new CardShelf(books,selection));
+        crosspod::sortShelfBooks(books,sortMode,recent);
+        selection=crosspod::lastOpenedIndex(books,recent);
+        shelf.reset(new CardShelf(books,selection,selection,sortMode));
         if(!shelf->open())return 6;
         shelf->present();
         continue;
@@ -1758,6 +1865,19 @@ int runCardApp(const std::string& bookDir) {
     bool activate=action==crosspod::LogicalAction::Confirm;
     if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
+    if(shelf->sortChosen()) {
+      sortMode=sortMode==crosspod::ShelfSortMode::Title?
+          crosspod::ShelfSortMode::Recent:
+          (sortMode==crosspod::ShelfSortMode::Recent?
+          crosspod::ShelfSortMode::RecentlyAdded:
+          crosspod::ShelfSortMode::Title);
+      crosspod::sortShelfBooks(books,sortMode,recent);
+      selection=crosspod::lastOpenedIndex(books,recent);
+      shelf.reset(new CardShelf(books,selection,selection,sortMode));
+      if(!shelf->open())return 6;
+      shelf->present();
+      continue;
+    }
     if(shelf->browseChosen()) {
       shelf->enterBrowser();
       shelf->present();
@@ -1773,6 +1893,12 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
+      // A successful open updates Continue Reading; rejected/corrupt EPUBs
+      // never become the current title. Atomic history costs one SD write
+      // per opened book, never one write per page turn.
+      (void)crosspod::saveShelfDetails(chosen,next->shelfDetails());
+      if(crosspod::recordRecentBook(chosen))
+        recent=crosspod::loadRecentBooks();
       shelf.reset();
       reader=std::move(next);
       reader->present();

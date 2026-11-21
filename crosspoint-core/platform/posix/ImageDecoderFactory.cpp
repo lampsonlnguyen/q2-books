@@ -3,8 +3,8 @@
 // Uses the bounded PNG and libjpeg decoders already verified under Q2 MIPS.
 // Only the framebuffer/SD-cache backend is adapted; no Q2-native reader code.
 #include "Epub/converters/ImageDecoderFactory.h"
-#include "reader/PngPreview.hpp"
-#include "reader/JpegPreview.hpp"
+#include "PngPreview.hpp"
+#include "JpegPreview.hpp"
 #include <GfxRenderer.h>
 #include <algorithm>
 #include <cctype>

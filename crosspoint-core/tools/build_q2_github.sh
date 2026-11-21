@@ -99,6 +99,26 @@ CROSSPOD_ENGINE=legacy timeout 60s qemu-mipsel -L "$root" "$elf" \
 grep -q "CrossPod legacy fallback:" "$work/legacy-validation.log"
 timeout 60s qemu-mipsel -L "$root" "$elf" --walk "$work/reader/multilingual.epub"
 
+# Real MIPS regression: show the first page before finishing a long chapter;
+# then traverse every page forward and backward without skipping an unfinished
+# Section watermark. No framebuffer simulation threads or busy waiting.
+timeout 120s qemu-mipsel -L "$root" "$elf" \
+  --validate "$work/reader/long-chapter.epub" | tee "$work/incremental-first-page.log"
+grep -q '(incremental)' "$work/incremental-first-page.log"
+timeout 120s qemu-mipsel -L "$root" "$elf" \
+  --walk "$work/reader/long-chapter.epub" | tee "$work/incremental-walk.log"
+python3 - "$work/incremental-walk.log" <<'PY'
+from pathlib import Path
+import re, sys
+match = re.search(r"CrossPod walked (\d+) pages forward and (\d+) backward",
+                  Path(sys.argv[1]).read_text())
+assert match, "No complete navigation trace"
+forward, backward = map(int, match.groups())
+assert forward >= 10 and forward == backward, (forward, backward)
+print(f"MIPS Q2 incremental long EPUB: PASS ({forward} page turns)")
+PY
+
+
 # Exercise the same bounded streaming path on actual Q2 MIPS ABI, including
 # multi-megabyte comments, invalid XML and oversized chapter rejection.
 cat > "$work/reader-qemu" <<EOF

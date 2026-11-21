@@ -31,6 +31,8 @@
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "ShelfLibrary.hpp"
+#include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
 #include "PngPreview.hpp"
 #include "JpegPreview.hpp"
@@ -1473,63 +1475,8 @@ class Reader {
 // Q2 Pod card-app launcher: the card executable receives no book-path argv.
 // The Books shelf is intentionally independent of the stock reader and only
 // discovers regular, non-hidden EPUB files from the SD card (one subdir deep).
-struct ShelfEntry {
-  std::string path;
-  std::string label;
-  std::time_t modified=0;
-};
-std::vector<ShelfEntry> scanCardBooks(const std::string& root) {
-  std::vector<ShelfEntry> books;
-  constexpr size_t MAX_CARD_BOOKS = 512;
-  const auto visit = [&](const std::string& dir, bool nested) {
-    // Iterative one-level walk: avoid recursion through attacker-controlled
-    // directory trees on removable media.
-    DIR* d = opendir(dir.c_str());
-    if (!d) return std::vector<std::string>{};
-    std::vector<std::string> subfolders;
-    for (dirent* entry; (entry=readdir(d)) != nullptr;) {
-      if (entry->d_name[0] == '.') continue;
-      const std::string name(entry->d_name);
-      if (name.size() > 240) continue;
-      const std::string path=dir+"/"+name;
-      if (path.size()>1000) continue;
-      struct stat st{};
-      if (lstat(path.c_str(),&st) != 0) continue;
-      if (S_ISDIR(st.st_mode)) {
-        if (!nested && subfolders.size()<128) subfolders.push_back(path);
-        continue;
-      }
-      if (!S_ISREG(st.st_mode) || books.size()>=MAX_CARD_BOOKS) continue;
-      if (name.size()<6)continue;
-      const std::string_view ending(name.data()+name.size()-5,5);
-      if (!(ending==".epub"||ending==".EPUB"||ending==".Epub")) continue;
-      books.push_back({path,name.substr(0,name.size()-5),st.st_mtime});
-    }
-    closedir(d);
-    return subfolders;
-  };
-  const auto folders=visit(root,false);
-  for(const auto& dir:folders) {
-    if(books.size()>=MAX_CARD_BOOKS)break;
-    (void)visit(dir,true);
-  }
-  const auto less=[](const ShelfEntry& a,const ShelfEntry& b){
-    // ASCII case-fold only for stable sort; retain Unicode bytes intact.
-    const std::string& x=a.label;
-    const std::string& y=b.label;
-    const size_t n=std::min(x.size(),y.size());
-    for(size_t i=0;i<n;++i) {
-      const unsigned char cx=static_cast<unsigned char>(x[i]);
-      const unsigned char cy=static_cast<unsigned char>(y[i]);
-      const auto lx=static_cast<unsigned char>(std::tolower(cx));
-      const auto ly=static_cast<unsigned char>(std::tolower(cy));
-      if(lx!=ly)return lx<ly;
-    }
-    return x.size()<y.size() || (x.size()==y.size() && a.path<b.path);
-  };
-  std::sort(books.begin(),books.end(),less);
-  return books;
-}
+using crosspod::ShelfEntry;
+using crosspod::scanCardBooks;
 std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
   return crosspod::clippedUiLabel(label,maxCodepoints);
 }

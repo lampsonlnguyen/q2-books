@@ -770,8 +770,8 @@ class Reader {
       positionDirty_=false;
     }
   }
-  void flushPosition() const {
-    if(positionDirty_)persistPosition(true);
+  void flushPosition(bool force=true) const {
+    if(positionDirty_)persistPosition(force);
   }
   bool configureTypography(crosspod::Typography requested) {
     if(!crosspod::validTypography(requested))return false;
@@ -1303,7 +1303,7 @@ int runCardApp(const std::string& bookDir) {
   while(!interrupted) {
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
-      if(reader)reader->flushPosition();
+      if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
       if(reader && !typeMenu && !navigationMenu && reader->isBuilding() &&
          now>=nextBuildTick) {

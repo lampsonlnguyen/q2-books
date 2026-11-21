@@ -33,6 +33,9 @@
 #include "ShelfCover.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
+#include "Highlights.hpp"
+#include "SelectionGeometry.hpp"
+#include "OfflineDictionary.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfSearch.hpp"
 #include "Bookmarks.hpp"
@@ -494,6 +497,9 @@ class Reader {
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
+  std::vector<crosspod::SelectedWord> selectedWords_;
+  int selectionAnchor_=-1;
+  int selectionFocus_=-1;
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
@@ -1022,6 +1028,135 @@ class Reader {
       if(index==selected)invertMenuRect(18,y-3,337,21);
     }
     drawMenuText(22,278,"Wheel: select  Center: follow");
+    display_.displayBuffer();
+  }
+  bool beginTextSelection() {
+    if(!upstreamSection_)return false;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return false;
+    selectedWords_=crosspod::selectableWords(
+        *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
+    selectionAnchor_=selectedWords_.empty()?-1:0;
+    selectionFocus_=selectionAnchor_;
+    return selectionAnchor_>=0;
+  }
+  bool selectTouchWord(int x,int y,bool extend) {
+    if(!extend || selectedWords_.empty())
+      if(!beginTextSelection())return false;
+    const int picked=crosspod::hitSelectableWord(selectedWords_,x,y);
+    if(picked<0)return false;
+    if(!extend)selectionAnchor_=picked;
+    selectionFocus_=picked;
+    return true;
+  }
+  bool stepSelection(int direction) {
+    if(selectedWords_.empty() && !beginTextSelection())return false;
+    selectionFocus_=std::clamp(selectionFocus_+direction,0,
+                              static_cast<int>(selectedWords_.size())-1);
+    return true;
+  }
+  void discardSelection() {
+    selectedWords_.clear();
+    selectionAnchor_=-1;selectionFocus_=-1;
+  }
+  bool selectionRange(uint32_t& begin,uint32_t& end) const {
+    if(selectionAnchor_<0||selectionFocus_<0 ||
+       selectionAnchor_>=static_cast<int>(selectedWords_.size()) ||
+       selectionFocus_>=static_cast<int>(selectedWords_.size()))return false;
+    begin=UINT32_MAX;end=0;
+    const int lo=std::min(selectionAnchor_,selectionFocus_);
+    const int hi=std::max(selectionAnchor_,selectionFocus_);
+    for(int i=lo;i<=hi;++i) {
+      begin=std::min(begin,selectedWords_[i].begin);
+      end=std::max(end,selectedWords_[i].end);
+    }
+    return begin<end;
+  }
+  std::string selectedText() const {
+    if(selectionAnchor_<0||selectionFocus_<0)return {};
+    const int lo=std::min(selectionAnchor_,selectionFocus_);
+    const int hi=std::max(selectionAnchor_,selectionFocus_);
+    std::string text;
+    for(int i=lo;i<=hi && text.size()<400;++i) {
+      if(!text.empty())text+=' ';
+      text+=selectedWords_[i].text;
+    }
+    return text.substr(0,400);
+  }
+  bool saveSelectionHighlight() {
+    uint32_t start=0,end=0;
+    return selectionRange(start,end) &&
+      crosspod::addHighlight(bookPath_,{
+          static_cast<uint32_t>(currentSpine_),start,end});
+  }
+  bool eraseSelectionHighlight() {
+    uint32_t start=0,end=0;
+    return selectionRange(start,end) &&
+      crosspod::removeHighlightAt(bookPath_,
+        static_cast<uint32_t>(currentSpine_),start);
+  }
+  void paintHighlightOverlay() {
+    if(!upstreamSection_ || currentSpine_<0)return;
+    const auto highlights=crosspod::loadHighlights(bookPath_);
+    if(highlights.empty() && selectionAnchor_<0)return;
+    auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
+    if(!page)return;
+    const auto words=crosspod::selectableWords(
+        *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
+    uint32_t start=0,end=0;
+    const bool active=selectionRange(start,end);
+    for(const auto& word:words) {
+      bool marked=active &&
+          crosspod::overlapsVisibleWord(word,start,end);
+      if(!marked)
+        for(const auto& h:highlights)
+          if(h.spine==static_cast<uint32_t>(currentSpine_) &&
+             crosspod::overlapsVisibleWord(word,h.begin,h.end)) {
+            marked=true;break;
+          }
+      if(marked)invertMenuRect(word.x-1,word.y+2,word.width+2,
+                              std::max(8,word.height-7));
+    }
+  }
+  void showTextSelectionMenu(int option) {
+    render();
+    renderer_.fillRect(10,207,355,96,true);
+    renderer_.fillRect(12,209,351,92,false);
+    renderer_.drawText(2,20,215,"Select text");
+    const auto text=clippedLabel(selectedText(),44);
+    renderer_.drawText(2,20,235,text.c_str());
+    const char* choices[]={"Highlight","Define","Remove","Cancel"};
+    for(int i=0;i<4;++i) {
+      const int x=20+i*85;
+      drawMenuText(x,270,choices[i],1);
+      if(option==i)invertMenuRect(x-3,265,83,23);
+    }
+    display_.displayBuffer();
+  }
+  void showDictionaryDefinition() {
+    const auto selected=selectedText();
+    const auto def=crosspod::lookupDefinition(selected);
+    render();
+    renderer_.fillRect(10,90,355,195,true);
+    renderer_.fillRect(12,92,351,191,false);
+    renderer_.drawText(2,20,103,"Offline dictionary");
+    renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
+    const std::string description=def.empty()?
+      "No match in dictionary.tsv":def;
+    // Break across a few display rows without modifying UTF-8 source text.
+    size_t cursor=0;
+    for(int line=0;line<5 && cursor<description.size();++line) {
+      size_t end=std::min(description.size(),cursor+43);
+      if(end<description.size()) {
+        const size_t space=description.rfind(' ',end);
+        if(space!=std::string::npos && space>cursor)end=space;
+      }
+      renderer_.drawText(2,20,158+line*20,
+          clippedLabel(description.substr(cursor,end-cursor),42).c_str());
+      cursor=end;
+      while(cursor<description.size() && description[cursor]==' ')++cursor;
+    }
+    drawMenuText(20,271,"Back: selected text",1);
     display_.displayBuffer();
   }
   bool rememberPage() {

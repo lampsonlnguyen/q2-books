@@ -1489,8 +1489,12 @@ class CardShelf {
   crosspod::ScriptFontFallback scriptFonts_;
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
-  size_t selected_ = 0;
-  size_t current_ = 0;
+  size_t selected_ = 0;  // index within filtered browsing rows
+  size_t current_ = 0;   // index within the unfiltered library
+  std::vector<size_t> visible_;
+  std::string searchQuery_;
+  bool searchEditing_=false;
+  size_t searchKey_=0;
   crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
   std::vector<crosspod::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
@@ -1511,6 +1515,7 @@ class CardShelf {
     sortMode_=sortMode;
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
+    refreshVisible();
     if(!books_.empty()) {
       selected_=std::min(selection,books_.size()-1);
       current_=std::min(current,books_.size()-1);
@@ -1528,30 +1533,88 @@ class CardShelf {
     renderer_.setFontCacheManager(&fontCache_);
     return true;
   }
-  size_t selected() const {return browsing_?selected_:current_;}
+  size_t selected() const {
+    return browsing_ && !visible_.empty()?visible_[selected_]:current_;
+  }
   bool empty() const {return books_.empty();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
-  void enterBrowser() {browsing_=true;notice_.clear();}
-  void goHome() {browsing_=false;homeSelection_=0;notice_.clear();}
+  bool searching() const {return browsing_ && searchEditing_;}
+  void enterBrowser() {browsing_=true;searchEditing_=false;notice_.clear();}
+  void goHome() {
+    browsing_=false;searchEditing_=false;homeSelection_=0;
+    searchQuery_.clear();refreshVisible();notice_.clear();
+  }
+  void enterSearch() {
+    browsing_=true;searchEditing_=true;searchKey_=0;
+    notice_.clear();
+  }
+  void endSearch() {searchEditing_=false;notice_.clear();}
+  static constexpr size_t SEARCH_KEY_COUNT=40;
+  static constexpr const char* SEARCH_LETTERS=
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  bool applySearchChoice() {
+    if(searchKey_<36) {
+      if(searchQuery_.size()<24)searchQuery_.push_back(SEARCH_LETTERS[searchKey_]);
+    } else if(searchKey_==36) {
+      if(searchQuery_.size()<24)searchQuery_+=' ';
+    } else if(searchKey_==37) {
+      if(!searchQuery_.empty())searchQuery_.pop_back();
+    } else if(searchKey_==38) {
+      endSearch();return true;
+    } else {
+      searchQuery_.clear();
+    }
+    refreshVisible();
+    selected_=0;
+    return true;
+  }
+  void refreshVisible() {
+    visible_.clear();
+    for(size_t i=0;i<books_.size();++i) {
+      if(searchQuery_.empty()) {visible_.push_back(i);continue;}
+      const auto& info=details(i);
+      if(crosspod::shelfSearchMatches(
+          searchQuery_,books_[i].label,info.title,info.author))
+        visible_.push_back(i);
+    }
+    if(visible_.empty() || selected_>=visible_.size())selected_=0;
+  }
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
+    if(searchEditing_) {
+      const auto before=searchKey_;
+      searchKey_=static_cast<size_t>((
+        static_cast<int>(searchKey_)+direction+
+        static_cast<int>(SEARCH_KEY_COUNT))%static_cast<int>(SEARCH_KEY_COUNT));
+      return searchKey_!=before;
+    }
     if(!browsing_) {
       const int next=std::clamp(homeSelection_+direction,0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
     }
-    if(books_.empty())return false;
+    if(visible_.empty())return false;
     const auto before=selected_;
-    if(direction>0 && selected_+1<books_.size())++selected_;
+    if(direction>0 && selected_+1<visible_.size())++selected_;
     else if(direction<0 && selected_>0)--selected_;
     return selected_!=before;
   }
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
+    if(searchEditing_) {
+      if(y>=269){endSearch();return true;}
+      if(y<88||y>=250||x<12||x>=362)return false;
+      const size_t column=static_cast<size_t>((x-12)/50);
+      const size_t row=static_cast<size_t>((y-88)/27);
+      const size_t option=row*7+column;
+      if(option>=SEARCH_KEY_COUNT)return false;
+      searchKey_=option;
+      return applySearchChoice();
+    }
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
@@ -1559,10 +1622,11 @@ class CardShelf {
       else return false;
       return true;
     }
-    if(books_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+    if(y>=39 && y<74) {enterSearch();return true;}
+    if(visible_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
     const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
-    if(index>=books_.size())return false;
+    if(index>=visible_.size())return false;
     selected_=index;
     return true;
   }

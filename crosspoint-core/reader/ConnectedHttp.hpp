@@ -24,7 +24,7 @@
 #include <fcntl.h>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 // The reader points this at its SIGINT/SIGTERM flag. A transfer checks it at
 // least every 250 ms (curl: every progress callback, about once a second or
 // sooner) and stops: Q2 Pod SIGKILLs a card app 3 s after its SIGTERM, and a
@@ -240,8 +240,8 @@ inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* con
   return length;
 }
 inline std::string httpsCaBundle() {
-  const char* state=std::getenv("CROSSPOD_STATE_DIR");
-  const std::string card=std::string(state&&*state?state:"/mnt/mmc/.crosspod")+"/ca-bundle.pem";
+  const char* state=std::getenv("BOOKS_STATE_DIR");
+  const std::string card=std::string(state&&*state?state:"/mnt/mmc/.books")+"/ca-bundle.pem";
   struct stat info{};
   if(::stat(card.c_str(),&info)==0 && S_ISREG(info.st_mode) && info.st_size>1024 &&
      ::access(card.c_str(),R_OK)==0)return card;
@@ -277,7 +277,7 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
   constexpr long httpsOnly=2L; // CURLPROTO_HTTPS
   bool settings=
       curl_easy_setopt(curl,urlOpt,original.c_str())==0 &&
-      curl_easy_setopt(curl,agentOpt,"CrossPod/0.9") ==0 &&
+      curl_easy_setopt(curl,agentOpt,"Books/0.9") ==0 &&
       curl_easy_setopt(curl,writeOpt,httpsBodyCallback)==0 &&
       curl_easy_setopt(curl,writeDataOpt,&stream)==0 &&
       curl_easy_setopt(curl,headerOpt,httpsHeaderCallback)==0 &&
@@ -294,18 +294,18 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
       curl_easy_setopt(curl,redirectProtocolsOpt,httpsOnly)==0 &&
       curl_easy_setopt(curl,peerOpt,1L)==0 &&
       curl_easy_setopt(curl,hostOpt,2L)==0;
-#ifdef CROSSPOD_Q2_RUNTIME
+#ifdef BOOKS_Q2_RUNTIME
   // Q2 Pod's /etc/scrobble-ca.pem holds only the 8 roots its scrobbler needs
   // (no Sectigo/ZeroSSL RSA, DigiCert G1, Amazon or SSL.com: Cloudflare's edge
   // certificates come from SSL.com too). The card ships Mozilla's root list as
-  // .crosspod/ca-bundle.pem, beside the reader binary it already trusts; that
+  // .books/ca-bundle.pem, beside the reader binary it already trusts; that
   // bundle is used when present, Q2 Pod's file otherwise. Verification itself
   // is never relaxed, and curl fails closed if the file is unusable.
   settings=settings && curl_easy_setopt(curl,caOpt,httpsCaBundle().c_str())==0;
 #else
   // Only host tests can substitute a certificate authority. Never compiled
   // into the device binary (which always uses the firmware-trusted roots).
-  const char* testCa=std::getenv("CROSSPOD_TEST_CA_BUNDLE");
+  const char* testCa=std::getenv("BOOKS_TEST_CA_BUNDLE");
   if(testCa && *testCa)settings=settings && curl_easy_setopt(curl,caOpt,testCa)==0;
 #endif
   for(const auto& [name,value]:extra) {
@@ -496,7 +496,7 @@ inline HttpResponse httpRequest(const std::string& original,
   std::string request=method+" "+url.target+" HTTP/1.1\r\nHost: "+url.host+
       (url.port=="80"?"":":"+url.port)+
       "\r\nAccept: application/atom+xml, application/epub+zip, application/json\r\n"
-      "Connection: close\r\nUser-Agent: CrossPod/0.9\r\n";
+      "Connection: close\r\nUser-Agent: Books/0.9\r\n";
   for(const auto& [key,value]:extra)request+=key+": "+value+"\r\n";
   if(method!="GET") {
     request+="Content-Length: "+std::to_string(body.size())+"\r\n";
@@ -608,4 +608,4 @@ inline HttpResponse httpGetText(const std::string& url,
   if(!result.ok())text.clear();
   return result;
 }
-} // namespace crosspod
+} // namespace books

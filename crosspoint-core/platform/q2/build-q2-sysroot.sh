@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CrossPod hardware diagnostic only. Never builds/flashes firmware or a reader.
+# Books hardware diagnostic only. Never builds/flashes firmware or a reader.
 set -euo pipefail
 
 : "${Q2_SYSROOT:=$HOME/.cache/q2/sysroot}"
@@ -32,5 +32,5 @@ cmake -S "$root" -B "$out" \
   -DCMAKE_CXX_FLAGS="-march=mips32r2 -mabi=32 -mfp64 -mnan=2008 -mabs=2008" \
   -DCMAKE_BUILD_TYPE=Release
 cmake --build "$out" --parallel 2
-file "$out/crosspod-hwcheck"
+file "$out/books-hwcheck"
 printf '\nDiagnostic only — verify device GLIBC/GLIBCXX versions using readelf -V before running.\n'

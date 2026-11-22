@@ -2855,7 +2855,7 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
 ChapterHtmlSlimParser::~ChapterHtmlSlimParser() { abortParse(); }
 
 bool ChapterHtmlSlimParser::openInput(HalFile& file) const {
-#ifdef CROSSPOD_LINUX
+#ifdef BOOKS_LINUX
   if (inputBytes_) {
     file = HalFile(::fmemopen(inputBytes_, inputSize_, "rb"));
     return file.isOpen();
@@ -2914,7 +2914,7 @@ bool ChapterHtmlSlimParser::beginParse(uint8_t* inputBytes, size_t inputSize) {
   // No external DTD or entity is read: there is no external-entity handler.
   XML_UseForeignDTD(xmlParser_, XML_TRUE);
 #if XML_MAJOR_VERSION > 2 || (XML_MAJOR_VERSION == 2 && XML_MINOR_VERSION >= 4)
-  // CrossPod: expat's entity-amplification guard starts only after 8 MiB of
+  // Books: expat's entity-amplification guard starts only after 8 MiB of
   // expanded text by default, and that much "billion laughs" text then laid
   // out as one word for minutes before the chapter failed. A real chapter
   // expands entities by a few bytes; refuse past 64 KiB at 100x amplification.

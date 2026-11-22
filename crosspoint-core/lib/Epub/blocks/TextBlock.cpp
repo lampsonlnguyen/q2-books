@@ -10,7 +10,7 @@
 #include <cstring>
 #include <string_view>
 
-#if !defined(CROSSPOD_LINUX)
+#if !defined(BOOKS_LINUX)
 // UI-only font identifiers belong to the ESP32 firmware; TextBlock uses
 // runtime section font IDs when built as a standalone Q2 reader.
 #include "../../../../src/fontIds.h"

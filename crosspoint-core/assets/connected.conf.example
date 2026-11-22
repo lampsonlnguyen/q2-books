@@ -1,15 +1,15 @@
-# CrossPod v0.9+ — Optional OPDS and KOReader sync
-# Copy this file to /mnt/mmc/.crosspod/connected.conf and edit it.
+# Books v0.9+ — Optional OPDS and KOReader sync
+# Copy this file to /mnt/mmc/.books/connected.conf and edit it.
 # Catalog search and "More results" paging (v0.11 development) need no
 # setting: they appear when the catalog's feed offers them.
 # Do not put real API keys/passwords in GitHub, issue reports or screenshots.
-# HTTPS uses Q2 Pod's libcurl and the Mozilla roots in .crosspod/ca-bundle.pem
+# HTTPS uses Q2 Pod's libcurl and the Mozilla roots in .books/ca-bundle.pem
 # (shipped in the card ZIP); /etc/scrobble-ca.pem is only a fallback.
 # Use https://your-server.example/... for remote access; the certificate
 # hostname must match and be trusted. Invalid/untrusted certificates FAIL.
 # The http:// examples below are for a private, trusted LAN ONLY.
 # Never put credentials in an HTTP URL on an untrusted Wi-Fi network.
-# Enable your Q2 Wi-Fi in Q2 Pod before opening CrossPod.
+# Enable your Q2 Wi-Fi in Q2 Pod before opening Books.
 #
 #
 # Example after configuring valid HTTPS on a private server/reverse proxy:
@@ -21,7 +21,7 @@
 opds_url=http://192.168.5.100:5150/api/opds/REPLACE_WITH_KAVITA_AUTH_KEY
 #
 # Optional two-way KOReader-compatible progress sync (Kavita 0.8.7+):
-# This is NOT a page-number sync. CrossPod maps source XHTML XPath offsets.
+# This is NOT a page-number sync. Books maps source XHTML XPath offsets.
 # For Kavita the KOReader sync URL is the /api/koreader/{authKey} endpoint.
 sync_url=http://192.168.5.100:5150/api/koreader/REPLACE_WITH_KAVITA_AUTH_KEY
 sync_username=REPLACE_WITH_YOUR_KAVITA_USERNAME

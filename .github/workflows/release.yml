@@ -47,16 +47,16 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          folder="crosspod-${RELEASE_TAG}-core-devkit"
+          folder="books-${RELEASE_TAG}-core-devkit"
           mkdir -p "dist/$folder/lib" "dist/$folder/platform"
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libcrosspod_q2_input.a build/crosspoint-core/libcrosspod_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a "dist/$folder/lib/"
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libbooks_q2_input.a build/crosspoint-core/libbooks_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a "dist/$folder/lib/"
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp "dist/$folder/platform/"
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
           cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE "dist/$folder/"
-          cp build/crosspoint-core/crosspod-epub-check "dist/$folder/"
+          cp build/crosspoint-core/books-epub-check "dist/$folder/"
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
-          CrossPod — CrossPoint Core development release
+          Books — CrossPoint Core development release
           Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
           This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
           The upstream EPUB rendering and Linux HAL integration remain under development.
@@ -68,7 +68,7 @@ jobs:
             sha256sum "$folder.zip" > "$folder.zip.sha256"
           )
           cat > dist/RELEASE_NOTES.md <<'NOTES'
-          CrossPod CrossPoint core development release.
+          Books CrossPoint core development release.
 
           **Not installable on the Shanling Q2.** This prerelease provides tested
           upstream CrossPoint Unicode/NFC and TXT conversion components,
@@ -90,9 +90,9 @@ jobs:
             echo "Release already exists: $RELEASE_TAG" >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 \
+          gh release create "$RELEASE_TAG" dist/books-*.zip dist/books-*.zip.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --prerelease \
-            --title "CrossPod $RELEASE_TAG (CrossPoint Core Dev Build)" \
+            --title "Books $RELEASE_TAG (CrossPoint Core Dev Build)" \
             --notes-file dist/RELEASE_NOTES.md

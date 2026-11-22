@@ -5,7 +5,7 @@
 #pragma once
 #include <string>
 #include <string_view>
-namespace crosspod {
+namespace books {
 enum class BookFormat { Unsupported, Txt, Epub };
 struct BookLaunch {
   std::string path;

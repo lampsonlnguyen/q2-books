@@ -1,4 +1,4 @@
-# CrossPod actual-EPUB text-page integration and visual QA
+# Books actual-EPUB text-page integration and visual QA
 
 **Status:** Verified host-side text-page smoke test only. Not a faithful EPUB
 chapter reader or Q2-installable binary.
@@ -48,8 +48,8 @@ cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release
 cmake --build build/crosspoint-core -j2
 ctest --test-dir build/crosspoint-core --output-on-failure
 python3 crosspoint-core/tools/pgm_to_png.py \
-  build/crosspoint-core/crosspod-epub-preview.pgm \
-  build/crosspoint-core/crosspod-epub-preview.png
+  build/crosspoint-core/books-epub-preview.pgm \
+  build/crosspoint-core/books-epub-preview.png
 ```
 
 The source EPUB is a deterministic test fixture created by

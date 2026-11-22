@@ -5,7 +5,7 @@
 #include <linux/fb.h>
 #include <string>
 
-namespace crosspod {
+namespace books {
 // Shanling Q2: native /dev/fb0 320x375x32bpp, two virtual pages.
 // CrossPoint's logical 375x320 pages are rotated into the native LCD.
 class Q2Framebuffer {
@@ -37,4 +37,4 @@ class Q2Framebuffer {
   unsigned original_yoffset_ = 0;
   unsigned back_yoffset_ = PanelHeight;
 };
-} // namespace crosspod
+} // namespace books

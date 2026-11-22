@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(crosspod_crosspoint_core LANGUAGES C CXX)
+project(books_crosspoint_core LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -11,12 +11,12 @@ target_include_directories(crosspoint_utf8 PUBLIC lib/Utf8)
 
 enable_testing()
 # Deterministic standalone EPUB with one visibility paragraph per language
-# and coverage for all 14 actual CrossPod fallback script families.
+# and coverage for all 14 actual Books fallback script families.
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-add_test(NAME crosspod_multilingual_visibility_epub
+add_test(NAME books_multilingual_visibility_epub
   COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/make_language_visibility_epub.py
-    ${CMAKE_CURRENT_BINARY_DIR}/CrossPod-Multilingual-Visibility-Test.epub
+    ${CMAKE_CURRENT_BINARY_DIR}/Books-Multilingual-Visibility-Test.epub
 )
 add_executable(crosspoint_core_tests tests/utf8_test.cpp)
 target_link_libraries(crosspoint_core_tests PRIVATE crosspoint_utf8)
@@ -27,65 +27,65 @@ add_test(NAME crosspoint_unicode COMMAND crosspoint_core_tests)
 # Persistent Q2 bookshelf history, metadata and sort regression.
 # Q2 renderer reclamation must not retain freed objects after repeated
 # bookshelf-to-reader transitions or unregister callbacks of active readers.
-add_executable(crosspod_q2_memory_sink_tests tests/q2_memory_sink_lifecycle_test.cpp)
-target_include_directories(crosspod_q2_memory_sink_tests PRIVATE platform/posix)
-target_compile_options(crosspod_q2_memory_sink_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_q2_renderer_sink_lifecycle COMMAND crosspod_q2_memory_sink_tests)
+add_executable(books_q2_memory_sink_tests tests/q2_memory_sink_lifecycle_test.cpp)
+target_include_directories(books_q2_memory_sink_tests PRIVATE platform/posix)
+target_compile_options(books_q2_memory_sink_tests PRIVATE -UNDEBUG)
+add_test(NAME books_q2_renderer_sink_lifecycle COMMAND books_q2_memory_sink_tests)
 
 # Nested EPUB folder enumeration and NFC-aware bookshelf search.
-add_executable(crosspod_advanced_reading_tests tests/advanced_reading_test.cpp)
-target_include_directories(crosspod_advanced_reading_tests PRIVATE
+add_executable(books_advanced_reading_tests tests/advanced_reading_test.cpp)
+target_include_directories(books_advanced_reading_tests PRIVATE
     reader lib/ZipFile lib/Epub platform/posix)
-target_link_libraries(crosspod_advanced_reading_tests PRIVATE
+target_link_libraries(books_advanced_reading_tests PRIVATE
     crosspoint_zip EXPAT::EXPAT)
-target_compile_options(crosspod_advanced_reading_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_advanced_reading_persistence_dictionary_footnote
-    COMMAND crosspod_advanced_reading_tests)
+target_compile_options(books_advanced_reading_tests PRIVATE -UNDEBUG)
+add_test(NAME books_advanced_reading_persistence_dictionary_footnote
+    COMMAND books_advanced_reading_tests)
 
-add_executable(crosspod_connected_tests tests/connected_library_test.cpp)
-target_include_directories(crosspod_connected_tests PRIVATE reader)
-target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT curl)
-target_compile_options(crosspod_connected_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_opds_kavita_and_koreader_transport_contract
-    COMMAND crosspod_connected_tests)
+add_executable(books_connected_tests tests/connected_library_test.cpp)
+target_include_directories(books_connected_tests PRIVATE reader)
+target_link_libraries(books_connected_tests PRIVATE EXPAT::EXPAT curl)
+target_compile_options(books_connected_tests PRIVATE -UNDEBUG)
+add_test(NAME books_opds_kavita_and_koreader_transport_contract
+    COMMAND books_connected_tests)
 
-add_executable(crosspod_reader_links_tests tests/reader_links_test.cpp)
-target_include_directories(crosspod_reader_links_tests PRIVATE reader)
-target_compile_options(crosspod_reader_links_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_reader_internal_epub_href COMMAND crosspod_reader_links_tests)
+add_executable(books_reader_links_tests tests/reader_links_test.cpp)
+target_include_directories(books_reader_links_tests PRIVATE reader)
+target_compile_options(books_reader_links_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reader_internal_epub_href COMMAND books_reader_links_tests)
 
-add_executable(crosspod_shelf_search_tests tests/shelf_search_test.cpp)
-target_include_directories(crosspod_shelf_search_tests PRIVATE reader)
-target_link_libraries(crosspod_shelf_search_tests PRIVATE crosspoint_utf8)
-target_compile_options(crosspod_shelf_search_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_shelf_recursive_search COMMAND crosspod_shelf_search_tests)
+add_executable(books_shelf_search_tests tests/shelf_search_test.cpp)
+target_include_directories(books_shelf_search_tests PRIVATE reader)
+target_link_libraries(books_shelf_search_tests PRIVATE crosspoint_utf8)
+target_compile_options(books_shelf_search_tests PRIVATE -UNDEBUG)
+add_test(NAME books_shelf_recursive_search COMMAND books_shelf_search_tests)
 
-add_executable(crosspod_shelf_library_tests tests/shelf_library_test.cpp)
-target_include_directories(crosspod_shelf_library_tests PRIVATE reader)
-target_compile_options(crosspod_shelf_library_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_shelf_library_history COMMAND crosspod_shelf_library_tests)
+add_executable(books_shelf_library_tests tests/shelf_library_test.cpp)
+target_include_directories(books_shelf_library_tests PRIVATE reader)
+target_compile_options(books_shelf_library_tests PRIVATE -UNDEBUG)
+add_test(NAME books_shelf_library_history COMMAND books_shelf_library_tests)
 
-add_executable(crosspod_utf8_label_tests tests/utf8_label_test.cpp)
-target_include_directories(crosspod_utf8_label_tests PRIVATE reader)
-target_link_libraries(crosspod_utf8_label_tests PRIVATE crosspoint_utf8)
-target_compile_options(crosspod_utf8_label_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_multilingual_label_clipping COMMAND crosspod_utf8_label_tests)
+add_executable(books_utf8_label_tests tests/utf8_label_test.cpp)
+target_include_directories(books_utf8_label_tests PRIVATE reader)
+target_link_libraries(books_utf8_label_tests PRIVATE crosspoint_utf8)
+target_compile_options(books_utf8_label_tests PRIVATE -UNDEBUG)
+add_test(NAME books_multilingual_label_clipping COMMAND books_utf8_label_tests)
 
-add_executable(crosspod_reading_layout_tests tests/reading_layout_test.cpp)
-target_include_directories(crosspod_reading_layout_tests PRIVATE reader lib/Epub)
-target_compile_options(crosspod_reading_layout_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_reading_layout_preferences COMMAND crosspod_reading_layout_tests)
+add_executable(books_reading_layout_tests tests/reading_layout_test.cpp)
+target_include_directories(books_reading_layout_tests PRIVATE reader lib/Epub)
+target_compile_options(books_reading_layout_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reading_layout_preferences COMMAND books_reading_layout_tests)
 
-add_executable(crosspod_reader_state_tests tests/reader_state_test.cpp)
-target_include_directories(crosspod_reader_state_tests PRIVATE reader)
-target_compile_options(crosspod_reader_state_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_reader_state_and_bookmarks COMMAND crosspod_reader_state_tests)
+add_executable(books_reader_state_tests tests/reader_state_test.cpp)
+target_include_directories(books_reader_state_tests PRIVATE reader)
+target_compile_options(books_reader_state_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reader_state_and_bookmarks COMMAND books_reader_state_tests)
 
-add_executable(crosspod_txt_package_tests tests/txt_package_test.cpp)
-target_include_directories(crosspod_txt_package_tests PRIVATE reader)
-target_link_libraries(crosspod_txt_package_tests PRIVATE crosspoint_txt crosspoint_zip)
-target_compile_options(crosspod_txt_package_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_txt_epub_package COMMAND crosspod_txt_package_tests)
+add_executable(books_txt_package_tests tests/txt_package_test.cpp)
+target_include_directories(books_txt_package_tests PRIVATE reader)
+target_link_libraries(books_txt_package_tests PRIVATE crosspoint_txt crosspoint_zip)
+target_compile_options(books_txt_package_tests PRIVATE -UNDEBUG)
+add_test(NAME books_txt_epub_package COMMAND books_txt_package_tests)
 
 # DI-01/DI-02 StarDict: plain and dictzip fixtures, synonyms, sidecar, fuzz.
 set(STARDICT_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/stardict-fixture")
@@ -95,18 +95,23 @@ add_custom_command(OUTPUT "${STARDICT_FIXTURE_DIR}/plain/plain.ifo"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_stardict_fixture.py"
     VERBATIM)
 add_custom_target(stardict_fixture ALL DEPENDS "${STARDICT_FIXTURE_DIR}/plain/plain.ifo")
-add_executable(crosspod_stardict_tests tests/stardict_test.cpp)
-target_include_directories(crosspod_stardict_tests PRIVATE reader)
-target_link_libraries(crosspod_stardict_tests PRIVATE ZLIB::ZLIB)
-target_compile_options(crosspod_stardict_tests PRIVATE -UNDEBUG)
-add_dependencies(crosspod_stardict_tests stardict_fixture)
-add_test(NAME crosspod_stardict_lookup_and_fuzz
-    COMMAND crosspod_stardict_tests "${STARDICT_FIXTURE_DIR}")
+add_executable(books_stardict_tests tests/stardict_test.cpp)
+target_include_directories(books_stardict_tests PRIVATE reader)
+target_link_libraries(books_stardict_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(books_stardict_tests PRIVATE -UNDEBUG)
+add_dependencies(books_stardict_tests stardict_fixture)
+add_test(NAME books_stardict_lookup_and_fuzz
+    COMMAND books_stardict_tests "${STARDICT_FIXTURE_DIR}")
 
-add_executable(crosspod_t9_keypad_tests tests/t9_keypad_test.cpp)
-target_include_directories(crosspod_t9_keypad_tests PRIVATE reader)
-target_compile_options(crosspod_t9_keypad_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_t9_search_keypad COMMAND crosspod_t9_keypad_tests)
+add_executable(books_legacy_migration_tests tests/legacy_state_migration_test.cpp)
+target_include_directories(books_legacy_migration_tests PRIVATE reader)
+target_compile_options(books_legacy_migration_tests PRIVATE -UNDEBUG)
+add_test(NAME books_legacy_state_migration COMMAND books_legacy_migration_tests)
+
+add_executable(books_t9_keypad_tests tests/t9_keypad_test.cpp)
+target_include_directories(books_t9_keypad_tests PRIVATE reader)
+target_compile_options(books_t9_keypad_tests PRIVATE -UNDEBUG)
+add_test(NAME books_t9_search_keypad COMMAND books_t9_keypad_tests)
 
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
@@ -180,11 +185,11 @@ add_test(NAME crosspoint_multilingual_epub_zip
     COMMAND crosspoint_epub_zip_tests "${EPUB_FIXTURE}")
 
 # Tiny native/Linux diagnostic executable; not a full graphical reader.
-add_executable(crosspod-epub-check tools/epub_check.cpp)
-target_link_libraries(crosspod-epub-check PRIVATE crosspoint_zip crosspoint_epub_container)
-add_dependencies(crosspod-epub-check epub_fixture)
+add_executable(books-epub-check tools/epub_check.cpp)
+target_link_libraries(books-epub-check PRIVATE crosspoint_zip crosspoint_epub_container)
+add_dependencies(books-epub-check epub_fixture)
 add_test(NAME crosspoint_epub_check_cli
-    COMMAND crosspod-epub-check "${EPUB_FIXTURE}")
+    COMMAND books-epub-check "${EPUB_FIXTURE}")
 
 # Original CrossPoint OPF manifest and spine parser. Temporary storage and
 # metadata-cache callback are POSIX transitional adapters (full cache to port).
@@ -221,23 +226,23 @@ target_link_libraries(crosspoint_opf PUBLIC crosspoint_book_cache)
 
 # Standalone Linux Q2 Pod input protocol and nonblocking UNIX datagram receiver.
 # No AWTK or ESP32 dependencies are needed for this interface.
-add_library(crosspod_q2_input STATIC platform/q2/Q2SocketInput.cpp)
-target_include_directories(crosspod_q2_input PUBLIC platform/q2)
+add_library(books_q2_input STATIC platform/q2/Q2SocketInput.cpp)
+target_include_directories(books_q2_input PUBLIC platform/q2)
 find_package(Threads REQUIRED)
-target_link_libraries(crosspod_q2_input PUBLIC Threads::Threads)
-add_executable(crosspod_q2_input_tests tests/socket_input_test.cpp)
-target_link_libraries(crosspod_q2_input_tests PRIVATE crosspod_q2_input)
-target_compile_options(crosspod_q2_input_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_q2_input_protocol COMMAND crosspod_q2_input_tests)
+target_link_libraries(books_q2_input PUBLIC Threads::Threads)
+add_executable(books_q2_input_tests tests/socket_input_test.cpp)
+target_link_libraries(books_q2_input_tests PRIVATE books_q2_input)
+target_compile_options(books_q2_input_tests PRIVATE -UNDEBUG)
+add_test(NAME books_q2_input_protocol COMMAND books_q2_input_tests)
 
 # Linux framebuffer backed by the Q2's two native portrait LCD pages.
 # Static ARGB rotation tests do not require access to /dev/fb0.
-add_library(crosspod_q2_framebuffer STATIC platform/q2/Q2Framebuffer.cpp)
-target_include_directories(crosspod_q2_framebuffer PUBLIC platform/q2)
-add_executable(crosspod_framebuffer_tests tests/framebuffer_test.cpp)
-target_link_libraries(crosspod_framebuffer_tests PRIVATE crosspod_q2_framebuffer)
-target_compile_options(crosspod_framebuffer_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_q2_framebuffer_rotation COMMAND crosspod_framebuffer_tests)
+add_library(books_q2_framebuffer STATIC platform/q2/Q2Framebuffer.cpp)
+target_include_directories(books_q2_framebuffer PUBLIC platform/q2)
+add_executable(books_framebuffer_tests tests/framebuffer_test.cpp)
+target_link_libraries(books_framebuffer_tests PRIVATE books_q2_framebuffer)
+target_compile_options(books_framebuffer_tests PRIVATE -UNDEBUG)
+add_test(NAME books_q2_framebuffer_rotation COMMAND books_framebuffer_tests)
 
 # Original CrossPoint bounded text arena (WordStore) and stylesheet parser.
 # Both compile untouched; only their ESP32 cache reclamation and filesystem
@@ -356,7 +361,7 @@ add_library(crosspoint_pagination_objects OBJECT
 # Recent upstream CrossPoint Memory.h uses C++20 constrained templates.
 set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD 20)
 set_property(TARGET crosspoint_pagination_objects PROPERTY CXX_STANDARD_REQUIRED ON)
-target_compile_definitions(crosspoint_pagination_objects PRIVATE CROSSPOD_LINUX=1)
+target_compile_definitions(crosspoint_pagination_objects PRIVATE BOOKS_LINUX=1)
 target_include_directories(crosspoint_pagination_objects PRIVATE
     lib
     lib/Epub
@@ -375,7 +380,7 @@ target_include_directories(crosspoint_pagination_objects PRIVATE
 add_library(crosspoint_q2_hal_display STATIC platform/posix/HalDisplay.cpp)
 target_include_directories(crosspoint_q2_hal_display PUBLIC
     platform/posix platform/q2)
-target_link_libraries(crosspoint_q2_hal_display PUBLIC crosspod_q2_framebuffer)
+target_link_libraries(crosspoint_q2_hal_display PUBLIC books_q2_framebuffer)
 add_executable(crosspoint_q2_hal_display_tests tests/q2_hal_display_test.cpp)
 target_link_libraries(crosspoint_q2_hal_display_tests PRIVATE crosspoint_q2_hal_display)
 target_compile_options(crosspoint_q2_hal_display_tests PRIVATE -UNDEBUG)
@@ -410,7 +415,7 @@ add_library(crosspoint_renderer_objects OBJECT
     platform/posix/FontAlloc.c
     platform/posix/FlashBlobCache.cpp
 )
-target_compile_definitions(crosspoint_renderer_objects PRIVATE CROSSPOD_LINUX=1)
+target_compile_definitions(crosspoint_renderer_objects PRIVATE BOOKS_LINUX=1)
 set_target_properties(crosspoint_renderer_objects PROPERTIES
     CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(crosspoint_renderer_objects PRIVATE
@@ -457,24 +462,24 @@ add_test(NAME crosspoint_opentype_table_bounds COMMAND crosspoint_ot_table_tests
 # Genuine upstream EPUB text-pagination and glyph-rendering integration gate.
 # The small XHTML extractor in the test is NOT part of the production reader;
 # complete ChapterHtmlSlimParser and CSS/images remain separately required.
-add_executable(crosspod_epub_page_preview
+add_executable(books_epub_page_preview
     tests/epub_page_preview.cpp
     lib/Epub/ParsedText.cpp
     lib/Epub/blocks/TextBlock.cpp
     $<TARGET_OBJECTS:crosspoint_renderer_objects>)
-target_include_directories(crosspod_epub_page_preview PRIVATE
+target_include_directories(books_epub_page_preview PRIVATE
     lib lib/Epub lib/Epub/blocks lib/Epub/css lib/EpdFont lib/GfxRenderer
     lib/Utf8 lib/MiniBidi lib/Memory lib/Serialization platform/posix)
-target_compile_definitions(crosspod_epub_page_preview PRIVATE CROSSPOD_LINUX=1)
-set_target_properties(crosspod_epub_page_preview PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(crosspod_epub_page_preview PRIVATE
+target_compile_definitions(books_epub_page_preview PRIVATE BOOKS_LINUX=1)
+set_target_properties(books_epub_page_preview PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(books_epub_page_preview PRIVATE
     crosspoint_zip crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB)
-target_compile_options(crosspod_epub_page_preview PRIVATE -UNDEBUG)
-add_dependencies(crosspod_epub_page_preview epub_fixture)
+target_compile_options(books_epub_page_preview PRIVATE -UNDEBUG)
+add_dependencies(books_epub_page_preview epub_fixture)
 add_test(NAME crosspoint_real_epub_text_page_preview
-    COMMAND crosspod_epub_page_preview "${EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-epub-preview.pgm")
+    COMMAND books_epub_page_preview "${EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/books-epub-preview.pgm")
 
 # Separate self-contained original Vietnamese prose EPUB fixture for native
 # glyph raster QA. Does not change the existing multilingual test's OPF spine.
@@ -484,15 +489,15 @@ add_custom_command(OUTPUT "${VIETNAMESE_EPUB_FIXTURE}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_vietnamese_epub_fixture.py"
     VERBATIM)
 add_custom_target(vietnamese_epub_fixture ALL DEPENDS "${VIETNAMESE_EPUB_FIXTURE}")
-add_dependencies(crosspod_epub_page_preview vietnamese_epub_fixture)
+add_dependencies(books_epub_page_preview vietnamese_epub_fixture)
 add_test(NAME crosspoint_vietnamese_book_page_preview
-    COMMAND crosspod_epub_page_preview "${VIETNAMESE_EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/crosspod-vietnamese-preview.pgm" "OEBPS/chapter1.xhtml")
+    COMMAND books_epub_page_preview "${VIETNAMESE_EPUB_FIXTURE}" "${CMAKE_CURRENT_BINARY_DIR}/books-vietnamese-preview.pgm" "OEBPS/chapter1.xhtml")
 
 # Native Q2 EPUB vertical slice: original CrossPoint ZIP/OPF/spine, ParsedText,
 # TextBlock and full linked GfxRenderer. The POSIX XHTML text-block collector
 # remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
-add_executable(crosspod-reader
-    reader/crosspod_reader.cpp
+add_executable(books-reader
+    reader/books_reader.cpp
     lib/KOReaderSync/ChapterXPathResolver.cpp
     lib/KOReaderSync/ProgressMapper.cpp
     lib/KOReaderSync/ProgressComparison.cpp
@@ -514,100 +519,101 @@ add_executable(crosspod-reader
 set_source_files_properties(lib/Epub/parsers/ChapterHtmlSlimParser.cpp
     lib/Epub/Section.cpp PROPERTIES
     COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/platform/posix/ArduinoCompat.h")
-target_include_directories(crosspod-reader PRIVATE
+target_include_directories(books-reader PRIVATE
     lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
     lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
     lib/Memory lib/Serialization lib/XmlParserUtils lib/KOReaderSync
     reader platform/posix platform/q2)
-target_compile_definitions(crosspod-reader PRIVATE CROSSPOD_LINUX=1)
-set_target_properties(crosspod-reader PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_link_libraries(crosspod-reader PRIVATE
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" BOOKS_VERSION LIMIT_COUNT 1)
+target_compile_definitions(books-reader PRIVATE BOOKS_LINUX=1 BOOKS_VERSION="${BOOKS_VERSION}")
+set_target_properties(books-reader PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(books-reader PRIVATE
     crosspoint_zip crosspoint_epub_container crosspoint_opf
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
-    crosspoint_q2_hal_display crosspod_q2_input
+    crosspoint_q2_hal_display books_q2_input
     crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
-add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
+add_dependencies(books-reader epub_fixture vietnamese_epub_fixture)
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
-add_test(NAME crosspod_reader_unopened_shelf_index
+add_test(NAME books_reader_unopened_shelf_index
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_shelf_indexer.py"
-    "$<TARGET_FILE:crosspod-reader>"
+    "$<TARGET_FILE:books-reader>"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_shelf_index_epub.py")
 
-set(CROSSPOD_LINKS_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/crosspod-page-links.epub")
-add_custom_command(OUTPUT "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+set(BOOKS_LINKS_EPUB_FIXTURE "${CMAKE_CURRENT_BINARY_DIR}/books-page-links.epub")
+add_custom_command(OUTPUT "${BOOKS_LINKS_EPUB_FIXTURE}"
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
-        "${CROSSPOD_LINKS_EPUB_FIXTURE}"
+        "${BOOKS_LINKS_EPUB_FIXTURE}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_reader_links_epub.py"
     VERBATIM)
-add_custom_target(crosspod_links_fixture DEPENDS "${CROSSPOD_LINKS_EPUB_FIXTURE}")
-add_dependencies(crosspod-reader crosspod_links_fixture)
-add_test(NAME crosspod_reader_real_page_links
-    COMMAND crosspod-reader --test-page-links "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+add_custom_target(books_links_fixture DEPENDS "${BOOKS_LINKS_EPUB_FIXTURE}")
+add_dependencies(books-reader books_links_fixture)
+add_test(NAME books_reader_real_page_links
+    COMMAND books-reader --test-page-links "${BOOKS_LINKS_EPUB_FIXTURE}")
 # Disposable localhost OPDS/Kavita mock: test Atom navigation, an actual
 # streamed EPUB ZIP, KOReader partial-MD5 and XPath push/pull against a real
 # crosspoint-reader process. No external server or credentials required.
-add_test(NAME crosspod_opds_paging_and_search
+add_test(NAME books_opds_paging_and_search
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_paging_search_test.py"
-    "$<TARGET_FILE:crosspod-reader>")
-add_test(NAME crosspod_connected_network_end_to_end
+    "$<TARGET_FILE:books-reader>")
+add_test(NAME books_connected_network_end_to_end
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
-    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+    "$<TARGET_FILE:books-reader>" "${BOOKS_LINKS_EPUB_FIXTURE}")
 
 # Exercise the same reader/OPDS/KOReader flows with a local TLS server.
 # Trust is injected only into the host build; the Q2 binary always uses the
 # firmware CA bundle and does not accept a test-CA environment override.
-add_test(NAME crosspod_connected_https_verify_and_sync
-  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+add_test(NAME books_connected_https_verify_and_sync
+  COMMAND "${CMAKE_COMMAND}" -E env BOOKS_TEST_HTTPS=1
     "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
-    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+    "$<TARGET_FILE:books-reader>" "${BOOKS_LINKS_EPUB_FIXTURE}")
 
 
 # Downloads across SIGTERM, a SIGKILL's leftover .part and a slow, steady link.
-add_test(NAME crosspod_opds_download_lifecycle
+add_test(NAME books_opds_download_lifecycle
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
-    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
-add_test(NAME crosspod_opds_download_lifecycle_https
-  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "$<TARGET_FILE:books-reader>" "${BOOKS_LINKS_EPUB_FIXTURE}")
+add_test(NAME books_opds_download_lifecycle_https
+  COMMAND "${CMAKE_COMMAND}" -E env BOOKS_TEST_HTTPS=1
     "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
-    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+    "$<TARGET_FILE:books-reader>" "${BOOKS_LINKS_EPUB_FIXTURE}")
 
-add_test(NAME crosspod_reader_real_epub_spine
-    COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
+add_test(NAME books_reader_real_epub_spine
+    COMMAND books-reader --validate "${EPUB_FIXTURE}")
 # Active card reader must preserve CrossPoint CSS alignment, emphasis and RTL.
-add_test(NAME crosspod_reader_original_css_cascade
+add_test(NAME books_reader_original_css_cascade
     COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/css_chapter_reader_test.py"
-        "$<TARGET_FILE:crosspod-reader>" "${EPUB_FIXTURE}")
-add_test(NAME crosspod_reader_vietnamese_epub
-    COMMAND crosspod-reader --render "${VIETNAMESE_EPUB_FIXTURE}"
-        "${CMAKE_CURRENT_BINARY_DIR}/crosspod-reader-vietnamese.pgm")
+        "$<TARGET_FILE:books-reader>" "${EPUB_FIXTURE}")
+add_test(NAME books_reader_vietnamese_epub
+    COMMAND books-reader --render "${VIETNAMESE_EPUB_FIXTURE}"
+        "${CMAKE_CURRENT_BINARY_DIR}/books-reader-vietnamese.pgm")
 
 # Exercise real page transitions and backwards traversal without Q2 hardware.
-add_test(NAME crosspod_reader_walk_multispine
-    COMMAND crosspod-reader --walk "${EPUB_FIXTURE}")
-add_test(NAME crosspod_reader_walk_vietnamese
-    COMMAND crosspod-reader --walk "${VIETNAMESE_EPUB_FIXTURE}")
+add_test(NAME books_reader_walk_multispine
+    COMMAND books-reader --walk "${EPUB_FIXTURE}")
+add_test(NAME books_reader_walk_vietnamese
+    COMMAND books-reader --walk "${VIETNAMESE_EPUB_FIXTURE}")
 
 # Bounded, atomic per-book reading-position persistence (POSIX Q2 adapter).
-add_executable(crosspod_reading_position_tests tests/reading_position_test.cpp)
-target_include_directories(crosspod_reading_position_tests PRIVATE reader)
-target_compile_options(crosspod_reading_position_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_reading_position_persistence COMMAND crosspod_reading_position_tests)
+add_executable(books_reading_position_tests tests/reading_position_test.cpp)
+target_include_directories(books_reading_position_tests PRIVATE reader)
+target_compile_options(books_reading_position_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reading_position_persistence COMMAND books_reading_position_tests)
 
 # Font-family/size preference serialization and input validation.
-add_executable(crosspod_typography_tests tests/typography_test.cpp)
-target_include_directories(crosspod_typography_tests PRIVATE reader)
-target_compile_options(crosspod_typography_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_two_font_preferences COMMAND crosspod_typography_tests)
+add_executable(books_typography_tests tests/typography_test.cpp)
+target_include_directories(books_typography_tests PRIVATE reader)
+target_compile_options(books_typography_tests PRIVATE -UNDEBUG)
+add_test(NAME books_two_font_preferences COMMAND books_typography_tests)
 
 # Preserve original CrossPoint non-visible XHTML filtering semantics.
 add_executable(crosspoint_visible_text_tests tests/visible_text_utils_test.cpp)
@@ -629,17 +635,17 @@ add_test(NAME crosspoint_original_chapter_parser_interface
 
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
-add_test(NAME crosspod_reader_card_empty_library
-    COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/empty-books")
-add_test(NAME crosspod_reader_card_list_fixture
-    COMMAND crosspod-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/books-test")
+add_test(NAME books_reader_card_empty_library
+    COMMAND books-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/empty-books")
+add_test(NAME books_reader_card_list_fixture
+    COMMAND books-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/books-test")
 
 # Bounded PNG decoding with grayscale, alpha and palette input common in EPUB.
-add_executable(crosspod_png_formats_tests tests/png_formats_test.cpp)
-target_include_directories(crosspod_png_formats_tests PRIVATE reader)
-target_link_libraries(crosspod_png_formats_tests PRIVATE ZLIB::ZLIB)
-target_compile_options(crosspod_png_formats_tests PRIVATE -UNDEBUG)
-add_test(NAME crosspod_png_formats_and_crc COMMAND crosspod_png_formats_tests)
+add_executable(books_png_formats_tests tests/png_formats_test.cpp)
+target_include_directories(books_png_formats_tests PRIVATE reader)
+target_link_libraries(books_png_formats_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(books_png_formats_tests PRIVATE -UNDEBUG)
+add_test(NAME books_png_formats_and_crc COMMAND books_png_formats_tests)
 
 # Alpha 2: illustrated EPUB fixture and actual original ZipFile PNG extraction.
 # This is an ingestion gate, not a claim that ImageBlock paints to the LCD.
@@ -650,54 +656,54 @@ add_custom_command(OUTPUT "${ILLUSTRATED_EPUB_FIXTURE}"
     VERBATIM)
 add_custom_target(illustrated_epub_fixture ALL DEPENDS "${ILLUSTRATED_EPUB_FIXTURE}")
 # Original CrossPoint EPUB 3 NAV/EPUB 2 NCX parsing and anchor mapping.
-add_test(NAME crosspod_real_nav_ncx_toc
+add_test(NAME books_real_nav_ncx_toc
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/toc_metadata_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+      "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
 
 
-add_executable(crosspod_illustrated_epub_resources
+add_executable(books_illustrated_epub_resources
     tests/illustrated_epub_resource_test.cpp)
-target_link_libraries(crosspod_illustrated_epub_resources PRIVATE crosspoint_zip)
-target_compile_options(crosspod_illustrated_epub_resources PRIVATE -UNDEBUG)
-add_dependencies(crosspod_illustrated_epub_resources illustrated_epub_fixture)
-add_test(NAME crosspod_original_zip_illustrated_epub
-    COMMAND crosspod_illustrated_epub_resources "${ILLUSTRATED_EPUB_FIXTURE}")
+target_link_libraries(books_illustrated_epub_resources PRIVATE crosspoint_zip)
+target_compile_options(books_illustrated_epub_resources PRIVATE -UNDEBUG)
+add_dependencies(books_illustrated_epub_resources illustrated_epub_fixture)
+add_test(NAME books_original_zip_illustrated_epub
+    COMMAND books_illustrated_epub_resources "${ILLUSTRATED_EPUB_FIXTURE}")
 # Verify the live XHTML collector can resolve ../styles relative to a nested
 # chapter while maintaining image/text sequence. Host CI tests this with both
 # GCC and Clang, not merely a separate parser stub.
-add_test(NAME crosspod_reader_relative_css_and_inline_image
+add_test(NAME books_reader_relative_css_and_inline_image
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/relative_epub_resource_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+      "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
 
 # Streaming parser regression: 3 MiB well-formed XHTML, malformed markup,
 # and the 4 MiB safety limit. The active reader must process XML incrementally.
-add_test(NAME crosspod_reader_bounded_xhtml_streaming
+add_test(NAME books_reader_bounded_xhtml_streaming
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/xhtml_streaming_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
+      "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}")
 
 # End-to-end illustrated EPUB: PNG extracted, decoded, placed and rasterized
-# into a 375x320 monochrome CrossPod page.
-add_dependencies(crosspod-reader illustrated_epub_fixture)
-add_test(NAME crosspod_reader_renders_epub_png
+# into a 375x320 monochrome Books page.
+add_dependencies(books-reader illustrated_epub_fixture)
+add_test(NAME books_reader_renders_epub_png
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_illustrated_render.py"
-      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
+      "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/illustrated-page.pgm")
 
 # Ensure real reader opens and rasterizes both PNG and JPEG inside the EPUB.
-add_test(NAME crosspod_reader_png_and_jpeg
+add_test(NAME books_reader_png_and_jpeg
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/epub_png_jpeg_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
+      "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/jpeg-png-page.pgm")
 # These open the same illustrated EPUB, and so the same Section cache, in the
 # default state folder: run them one at a time (ctest -j raced on the cache).
-set_tests_properties(crosspod_real_nav_ncx_toc crosspod_original_zip_illustrated_epub
-    crosspod_reader_relative_css_and_inline_image crosspod_reader_bounded_xhtml_streaming
-    crosspod_reader_renders_epub_png crosspod_reader_png_and_jpeg
+set_tests_properties(books_real_nav_ncx_toc books_original_zip_illustrated_epub
+    books_reader_relative_css_and_inline_image books_reader_bounded_xhtml_streaming
+    books_reader_renders_epub_png books_reader_png_and_jpeg
     PROPERTIES RESOURCE_LOCK illustrated_epub_cache)
 
 # Chinese/Japanese EPUB. Q2 hardware build renders this through the original
@@ -708,9 +714,9 @@ add_custom_command(OUTPUT "${CJK_EPUB_FIXTURE}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_cjk_epub_fixture.py"
     VERBATIM)
 add_custom_target(cjk_epub_fixture ALL DEPENDS "${CJK_EPUB_FIXTURE}")
-add_dependencies(crosspod-reader cjk_epub_fixture)
-add_test(NAME crosspod_reader_cjk_original_section
-    COMMAND crosspod-reader --validate "${CJK_EPUB_FIXTURE}")
+add_dependencies(books-reader cjk_epub_fixture)
+add_test(NAME books_reader_cjk_original_section
+    COMMAND books-reader --validate "${CJK_EPUB_FIXTURE}")
 
 # Script fixtures: Korean/Hindi are release gates, other upstream scripts
 # are parsed as real EPUBs to ensure UTF-8 survives the original Section path.
@@ -723,10 +729,10 @@ foreach(script korean devanagari bengali gujarati gurmukhi kannada malayalam
         "${script}" "${script_epub}"
       DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_multiscript_epub_fixture.py"
       VERBATIM)
-    add_custom_target("crosspod_fixture_${script}" ALL DEPENDS "${script_epub}")
-    add_dependencies(crosspod-reader "crosspod_fixture_${script}")
-    add_test(NAME "crosspod_original_script_${script}"
-      COMMAND crosspod-reader --validate "${script_epub}")
+    add_custom_target("books_fixture_${script}" ALL DEPENDS "${script_epub}")
+    add_dependencies(books-reader "books_fixture_${script}")
+    add_test(NAME "books_original_script_${script}"
+      COMMAND books-reader --validate "${script_epub}")
 endforeach()
 
 # Large chapter regression: first page before complete pagination,
@@ -739,26 +745,26 @@ add_custom_command(OUTPUT "${LONG_EPUB_FIXTURE}"
     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_long_epub_fixture.py"
     VERBATIM)
 add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
-add_dependencies(crosspod-reader long_epub_fixture)
-add_test(NAME crosspod_reader_txt_and_go_to_percent
+add_dependencies(books-reader long_epub_fixture)
+add_test(NAME books_reader_txt_and_go_to_percent
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/txt_progress_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
-add_test(NAME crosspod_reader_incremental_large_chapter
+      "$<TARGET_FILE:books-reader>" "${LONG_EPUB_FIXTURE}")
+add_test(NAME books_reader_incremental_large_chapter
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/incremental_reader_test.py"
-      "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
+      "$<TARGET_FILE:books-reader>" "${LONG_EPUB_FIXTURE}")
 # HTML entities in EPUB3 chapters; italic/bold in their own faces with word spaces intact
-# (the italic test needs CROSSPOD_TEST_FONTS, the card font folder, else it reports skipped).
-add_test(NAME crosspod_reader_epub3_html_entities
+# (the italic test needs BOOKS_TEST_FONTS, the card font folder, else it reports skipped).
+add_test(NAME books_reader_epub3_html_entities
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/markup_tolerance_test.py"
-      "$<TARGET_FILE:crosspod-reader>" entities)
-add_test(NAME crosspod_reader_italic_bold_faces
+      "$<TARGET_FILE:books-reader>" entities)
+add_test(NAME books_reader_italic_bold_faces
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/markup_tolerance_test.py"
-      "$<TARGET_FILE:crosspod-reader>" italic)
-set_tests_properties(crosspod_reader_italic_bold_faces PROPERTIES SKIP_RETURN_CODE 77)
+      "$<TARGET_FILE:books-reader>" italic)
+set_tests_properties(books_reader_italic_bold_faces PROPERTIES SKIP_RETURN_CODE 77)
 
 # CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
 # Compile only until missing FreeInk image codecs and reading activity
@@ -829,7 +835,7 @@ target_include_directories(crosspoint_original_engine_link_tests PRIVATE
     lib lib/Epub lib/Epub/Epub lib/Epub/parsers lib/Epub/blocks
     lib/Epub/css lib/EpdFont lib/GfxRenderer lib/Utf8 lib/MiniBidi
     lib/Memory lib/Serialization lib/XmlParserUtils reader platform/posix platform/q2)
-target_compile_definitions(crosspoint_original_engine_link_tests PRIVATE CROSSPOD_LINUX=1)
+target_compile_definitions(crosspoint_original_engine_link_tests PRIVATE BOOKS_LINUX=1)
 set_target_properties(crosspoint_original_engine_link_tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(crosspoint_original_engine_link_tests PRIVATE
     crosspoint_zip crosspoint_epub_container crosspoint_opf

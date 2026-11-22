@@ -6,26 +6,26 @@
 #include <setjmp.h>
 #include <jpeglib.h>
 
-struct CrosspodJpegError {
+struct BooksJpegError {
   struct jpeg_error_mgr base;
   jmp_buf jump;
 };
-static void crosspodJpegError(j_common_ptr cinfo) {
-  struct CrosspodJpegError* err =
-      (struct CrosspodJpegError*)cinfo->err;
+static void booksJpegError(j_common_ptr cinfo) {
+  struct BooksJpegError* err =
+      (struct BooksJpegError*)cinfo->err;
   longjmp(err->jump,1);
 }
 // Returns a malloc-owned grayscale buffer (must be freed by caller).
 // Reject malformed/oversized images; libjpeg's output always has one channel.
-int crosspodDecodeJpeg(const unsigned char* bytes,size_t length,
+int booksDecodeJpeg(const unsigned char* bytes,size_t length,
                        unsigned char** pixels,unsigned* width,unsigned* height) {
   if(!bytes||!pixels||!width||!height||length<16||length>4194304)return 0;
   *pixels=NULL;*width=0;*height=0;
   struct jpeg_decompress_struct cinfo;
-  struct CrosspodJpegError err;
+  struct BooksJpegError err;
   unsigned char* volatile image=NULL;
   cinfo.err=jpeg_std_error(&err.base);
-  err.base.error_exit=crosspodJpegError;
+  err.base.error_exit=booksJpegError;
   if(setjmp(err.jump)) {
     if(image)free((void*)image);
     jpeg_destroy_decompress(&cinfo);

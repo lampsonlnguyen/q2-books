@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// Bounded, atomic reading-history adapter for the Q2 CrossPod bookshelf.
+// Bounded, atomic reading-history adapter for the Q2 Books bookshelf.
 // History contains paths only; the EPUB reader and its Section cache are unchanged.
 #include <algorithm>
 #include <cstdint>
@@ -10,11 +10,11 @@
 #include <vector>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 constexpr size_t kMaxRecentBooks=20;
 inline std::string recentBooksFile() {
-  const char* state=std::getenv("CROSSPOD_STATE_DIR");
-  return std::string(state&&*state?state:"/mnt/mmc/.crosspod")+"/recent-books.conf";
+  const char* state=std::getenv("BOOKS_STATE_DIR");
+  return std::string(state&&*state?state:"/mnt/mmc/.books")+"/recent-books.conf";
 }
 inline std::string hexBookPath(const std::string& path) {
   static constexpr char digits[]="0123456789abcdef";
@@ -52,7 +52,7 @@ inline std::vector<std::string> loadRecentBooks() {
   if(!f)return items;
   char line[2048]{};
   if(!std::fgets(line,sizeof(line),f) ||
-     std::string(line)!="CROSSPOD-RECENT1\n") {
+     std::string(line)!="BOOKS-RECENT1\n") {
     std::fclose(f);
     return items;
   }
@@ -75,7 +75,7 @@ inline bool saveRecentBooks(const std::vector<std::string>& items) {
   const auto name=recentBooksFile(),tmp=name+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fputs("CROSSPOD-RECENT1\n",f)>=0;
+  bool ok=std::fputs("BOOKS-RECENT1\n",f)>=0;
   for(const auto& path:items) {
     std::string validated;
     if(path.size()>1000 || !parseHexBookPath(hexBookPath(path),validated) ||
@@ -97,4 +97,4 @@ inline bool recordRecentBook(const std::string& path) {
   if(recent.size()>kMaxRecentBooks)recent.resize(kMaxRecentBooks);
   return saveRecentBooks(recent);
 }
-} // namespace crosspod
+} // namespace books

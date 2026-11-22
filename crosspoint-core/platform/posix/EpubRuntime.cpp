@@ -99,7 +99,7 @@ bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
   };
   const bool tocLoaded=parseToc(tocNavPath,true)||
                        parseToc(tocNcxPath,false);
-  std::printf("CrossPod original TOC: %s\n",
+  std::printf("Books original TOC: %s\n",
               tocLoaded?"EPUB nav/NCX parsed":"spine-only fallback");
   if(!cache.endTocPass() || !cache.endWrite() ||
      !cache.buildBookBin(filepath,info) || !cache.load() ||

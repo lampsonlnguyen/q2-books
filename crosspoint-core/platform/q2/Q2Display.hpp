@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace crosspod {
+namespace books {
 class Q2Display {
 public:
     static constexpr int Width=375,Height=320;

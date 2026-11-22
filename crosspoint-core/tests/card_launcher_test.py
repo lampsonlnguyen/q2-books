@@ -7,23 +7,23 @@ import sys
 import tempfile
 
 script = pathlib.Path(sys.argv[1]).resolve()
-with tempfile.TemporaryDirectory(prefix="crosspod-boot-") as root:
+with tempfile.TemporaryDirectory(prefix="books-boot-") as root:
     app = pathlib.Path(root)
-    engine = app / "crosspod-engine"
+    engine = app / "books-engine"
     # Host ELF stand-in: launcher's success path must preserve exit status.
-    engine.write_text("#!/bin/sh\necho crosspod-engine-running\nexit 23\n")
+    engine.write_text("#!/bin/sh\necho books-engine-running\nexit 23\n")
     engine.chmod(0o755)
-    env = {**os.environ, "CROSSPOD_APP_DIR": root}
+    env = {**os.environ, "BOOKS_APP_DIR": root}
     completed = subprocess.run(["/bin/sh", str(script)], env=env, timeout=10)
     assert completed.returncode == 23, completed.returncode
     log = (app / "startup.log").read_text()
-    assert "CrossPod launch" in log and "crosspod-engine-running" in log, log
+    assert "Books launch" in log and "books-engine-running" in log, log
 
     engine.unlink()
     failed = subprocess.run(["/bin/sh", str(script)], env=env, timeout=10)
     assert failed.returncode != 0
     log = (app / "startup.log").read_text()
-    assert "crosspod-engine missing" in log, log
+    assert "books-engine missing" in log, log
     assert "not found" in log or "No such file" in log, log
 
     engine.write_text("#!/bin/sh\nexit 0\n")

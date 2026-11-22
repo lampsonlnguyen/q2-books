@@ -15,7 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 // Every style the .cpfont carries, not only regular: layout measures through the
 // SD font's own style resolution (registerSdCardFont), so a family holding regular
 // alone drew italic/bold words with regular glyphs at italic/bold advances, and the
@@ -70,11 +70,11 @@ class ScriptFontFallback {
   void load(GfxRenderer& renderer,int size,
             std::initializer_list<int> primaryIds) {
     clear(renderer);
-    const char* disabled=std::getenv("CROSSPOD_DISABLE_CJK");
+    const char* disabled=std::getenv("BOOKS_DISABLE_CJK");
     for(size_t i=0;i<scriptFontSpecs.size();++i) {
       if(i==0 && disabled && std::strcmp(disabled,"1")==0)continue;
       // Test/debug override to isolate one script without uninstalling fonts.
-      const char* excluded=std::getenv("CROSSPOD_DISABLE_SCRIPTS");
+      const char* excluded=std::getenv("BOOKS_DISABLE_SCRIPTS");
       if(excluded && *excluded) {
         const std::string list=std::string(",")+excluded+",";
         const std::string key=std::string(",")+scriptFontSpecs[i].slug+",";
@@ -94,11 +94,11 @@ class ScriptFontFallback {
       ids_.push_back(id);
       mask_|=uint32_t(1)<<i;
     }
-    std::printf("CrossPod CJK fallback: %s %dpt\n",
+    std::printf("Books CJK fallback: %s %dpt\n",
       hasScript(0)?"original CrossPoint NotoSansCJKJP cpfont":"unavailable",
       size);
-    std::printf("CrossPod multilingual fonts: %zu/%zu scripts loaded (%dpt)\n",
+    std::printf("Books multilingual fonts: %zu/%zu scripts loaded (%dpt)\n",
       loaded_.size(),scriptFontSpecs.size(),size);
   }
 };
-} // namespace crosspod
+} // namespace books

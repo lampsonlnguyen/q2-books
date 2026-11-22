@@ -17,7 +17,7 @@ echo "Mode: $mode"
 while IFS= read -r branch; do
   [[ -n "$branch" ]] || continue
   case "$branch" in
-    main|HEAD|crosspod-renderer-linux-link|crosspoint-gfxrenderer-compile)
+    main|HEAD|books-renderer-linux-link|crosspoint-gfxrenderer-compile)
       echo "KEEP: $branch"
       continue
       ;;

@@ -15,7 +15,7 @@ opf='''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
 <dc:title>Long Section Stress Test</dc:title>
-<dc:identifier>crosspod-large-chapter</dc:identifier>
+<dc:identifier>books-large-chapter</dc:identifier>
 <dc:language>en</dc:language></metadata>
 <manifest><item id="section" href="long.xhtml"
 media-type="application/xhtml+xml"/></manifest>

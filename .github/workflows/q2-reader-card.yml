@@ -1,4 +1,4 @@
-name: CrossPod Q2 card build and release
+name: Books Q2 card build and release
 on:
   # Every push to main builds and tests the card ZIP. A release is published
   # only by a manual run on main that names its tag; the tag must be new and
@@ -25,7 +25,7 @@ on:
 # Each new patch supersedes the previous alpha; avoid running multiple
 # expensive Q2 toolchain/font downloads for obsolete commits.
 concurrency:
-  group: crosspod-q2-reader-${{ github.ref }}
+  group: books-q2-reader-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -69,17 +69,17 @@ jobs:
       - name: Upload Q2 alpha card ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: crosspod-q2-reader-alpha
+          name: books-q2-reader-alpha
           path: |
-            dist/crosspod-q2-reader-alpha.zip
-            dist/crosspod-q2-reader-alpha.zip.sha256
+            dist/books-q2-reader-alpha.zip
+            dist/books-q2-reader-alpha.zip.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Upload diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: crosspod-q2-reader-build-logs
+          name: books-q2-reader-build-logs
           path: |
             build/q2-device/reader/CMakeFiles/CMakeConfigureLog.yaml
             build/q2-device/reader/CMakeFiles/CMakeError.log
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: crosspod-q2-reader-alpha
+          name: books-q2-reader-alpha
           path: dist
       - name: Verify package and prepare versioned artifacts
         shell: bash
@@ -106,17 +106,19 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]] || { echo "::error::bad tag $TAG"; exit 1; }
+          version=$(head -n1 crosspoint-core/VERSION)
+          [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || { echo "::error::tag $TAG does not match crosspoint-core/VERSION ($version)"; exit 1; }
           test -s "docs/release-notes/$TAG.md" || { echo "::error::docs/release-notes/$TAG.md is missing"; exit 1; }
-          test -s dist/crosspod-q2-reader-alpha.zip
-          expected=$(awk 'NR==1 {print $1}' dist/crosspod-q2-reader-alpha.zip.sha256)
-          actual=$(sha256sum dist/crosspod-q2-reader-alpha.zip | cut -d ' ' -f1)
+          test -s dist/books-q2-reader-alpha.zip
+          expected=$(awk 'NR==1 {print $1}' dist/books-q2-reader-alpha.zip.sha256)
+          actual=$(sha256sum dist/books-q2-reader-alpha.zip | cut -d ' ' -f1)
           test -n "$expected" && test "$expected" = "$actual"
-          unzip -t dist/crosspod-q2-reader-alpha.zip
-          unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/crosspod-engine'
-          unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/q2-crosspod'
-          cp dist/crosspod-q2-reader-alpha.zip "dist/crosspod-q2-$TAG.zip"
-          (cd dist && sha256sum "crosspod-q2-$TAG.zip" > "crosspod-q2-$TAG.zip.sha256")
-          (cd dist && sha256sum -c "crosspod-q2-$TAG.zip.sha256")
+          unzip -t dist/books-q2-reader-alpha.zip
+          unzip -Z1 dist/books-q2-reader-alpha.zip | grep -Fxq '.books/books-engine'
+          unzip -Z1 dist/books-q2-reader-alpha.zip | grep -Fxq '.books/q2-books'
+          cp dist/books-q2-reader-alpha.zip "dist/books-q2-$TAG.zip"
+          (cd dist && sha256sum "books-q2-$TAG.zip" > "books-q2-$TAG.zip.sha256")
+          (cd dist && sha256sum -c "books-q2-$TAG.zip.sha256")
       - name: Publish immutable tag and prerelease
         env:
           GH_TOKEN: ${{ github.token }}
@@ -131,9 +133,9 @@ jobs:
             exit 1
           fi
           gh release create "$TAG" \
-            "dist/crosspod-q2-$TAG.zip" \
-            "dist/crosspod-q2-$TAG.zip.sha256" \
+            "dist/books-q2-$TAG.zip" \
+            "dist/books-q2-$TAG.zip.sha256" \
             --target "$TARGET_COMMIT" \
-            --title "CrossPod $TAG (Shanling Q2)" \
+            --title "Books $TAG (Shanling Q2)" \
             --prerelease \
             --notes-file "docs/release-notes/$TAG.md"

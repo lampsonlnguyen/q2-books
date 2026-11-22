@@ -1,10 +1,10 @@
-# CrossPod Q2 reader alpha — text-only EPUB hardware prototype
+# Books Q2 reader alpha — text-only EPUB hardware prototype
 
 **Status:** experimental. Compiled for MIPS32 little-endian Linux with static
 zlib/Expat/glibc/libstdc++. QEMU EPUB rendering and bidirectional pagination validated. **NOT validated on Shanling Q2 yet.**
 **Do not flash firmware or overwrite the stock Books app.**
 
-The bundled executable `.crosspod/crosspod` is the first runnable EPUB text
+The bundled executable `.books/books` is the first runnable EPUB text
 reader using original CrossPoint ZIP/OPF/spine, ParsedText, TextBlock and
 GfxRenderer. It is substantially more than the earlier static page demo,
 but NOT the complete original CrossPoint EPUB presentation engine.
@@ -24,26 +24,26 @@ but NOT the complete original CrossPoint EPUB presentation engine.
 
 ## Manual first test (shell/SSH with recovery access)
 
-1. Unzip this package on your PC. Copy its `.crosspod/crosspod` file to a
-   TEMPORARY SD-card directory (for example `/mnt/mmc/crosspod-alpha/`) rather
-   than replacing the stock reader or your existing CrossPod install.
+1. Unzip this package on your PC. Copy its `.books/books` file to a
+   TEMPORARY SD-card directory (for example `/mnt/mmc/books-alpha/`) rather
+   than replacing the stock reader or your existing Books install.
 2. Copy `sample-books/vietnamese-prose.epub` to the Q2 SD card, e.g.
    `/mnt/mmc/Books/vietnamese-prose.epub`.
 3. In a Q2 shell, verify the executable and ebook:
 
    ```sh
-   cd /mnt/mmc/crosspod-alpha
-   chmod +x crosspod
-   ./crosspod --validate /mnt/mmc/Books/vietnamese-prose.epub
+   cd /mnt/mmc/books-alpha
+   chmod +x books
+   ./books --validate /mnt/mmc/Books/vietnamese-prose.epub
    ```
 
    **`--validate` never opens the LCD or the input socket.** If this fails
    with "not found", illegal instruction, permission denied, or library
-   problems, STOP and report `uname -a`, `file crosspod`, and the error.
+   problems, STOP and report `uname -a`, `file books`, and the error.
    No OS libraries or firmware need to be replaced.
 
 4. To test the screen interactively, first ensure the existing Q2 Pod Books
-   hook forwards input to `/tmp/q2-crosspod.input.sock` and stops drawing
+   hook forwards input to `/tmp/q2-books.input.sock` and stops drawing
    while the reader runs. The hook currently exists only in the Q2 Pod fork
    integration, not necessarily in your installed firmware. A stock Q2 Pod
    installation may not provide it. **Do not run the display mode while
@@ -51,7 +51,7 @@ but NOT the complete original CrossPoint EPUB presentation engine.
 5. With active SSH and a way to restart the Q2 Pod display, launch:
 
    ```sh
-   timeout 120 /mnt/mmc/crosspod-alpha/crosspod /mnt/mmc/Books/vietnamese-prose.epub
+   timeout 120 /mnt/mmc/books-alpha/books /mnt/mmc/Books/vietnamese-prose.epub
    ```
 
    Scroll using the click wheel; use the Back key to exit. Timeout (if your
@@ -77,7 +77,7 @@ For developers: draft PR #15 tracks the complete CrossPoint port.
 Before starting the LCD, exercise both forward and reverse page transitions:
 
 ```sh
-./crosspod --walk /mnt/mmc/Books/vietnamese-prose.epub
+./books --walk /mnt/mmc/Books/vietnamese-prose.epub
 ```
 
 This runs the *actual MIPS reader engine* without opening the framebuffer.

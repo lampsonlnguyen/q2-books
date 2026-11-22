@@ -10,7 +10,7 @@
 #include <string>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 struct ReaderPreferences {
   int margin=14; // pixels on both sides; supports 14, 22, 30.
   int linePercent=100; // 100, 120, 140 (CrossPoint lineCompression)
@@ -33,8 +33,8 @@ inline bool validReaderPreferences(const ReaderPreferences& p) {
          (p.alignment==0||p.alignment==1) && autoTurnOk;
 }
 inline std::string readerPreferencesFile() {
-  const char* root=std::getenv("CROSSPOD_STATE_DIR");
-  return std::string(root&&*root?root:"/mnt/mmc/.crosspod")+"/reading-settings.conf";
+  const char* root=std::getenv("BOOKS_STATE_DIR");
+  return std::string(root&&*root?root:"/mnt/mmc/.books")+"/reading-settings.conf";
 }
 inline bool loadReaderPreferences(ReaderPreferences& value) {
   FILE* f=std::fopen(readerPreferencesFile().c_str(),"rb");
@@ -44,9 +44,9 @@ inline bool loadReaderPreferences(ReaderPreferences& value) {
   const int n=std::fscanf(f,"%31s %d %d %d %d %d %d %d %d",
        magic,&margin,&spacing,&align,&hyphen,&css,&night,&focus,&autoTurn);
   std::fclose(f);
-  const bool v1=std::string(magic)=="CROSSPOD-SETTINGS1" && n==6;
-  const bool v2=std::string(magic)=="CROSSPOD-SETTINGS2" && n==7;
-  const bool v3=std::string(magic)=="CROSSPOD-SETTINGS3" && n==9;
+  const bool v1=std::string(magic)=="BOOKS-SETTINGS1" && n==6;
+  const bool v2=std::string(magic)=="BOOKS-SETTINGS2" && n==7;
+  const bool v3=std::string(magic)=="BOOKS-SETTINGS3" && n==9;
   if(!v3){focus=0;autoTurn=0;}
   ReaderPreferences temp{margin,spacing,align,hyphen!=0,css!=0,night!=0,focus!=0,autoTurn};
   if((!v1&&!v2&&!v3)||hyphen<0||hyphen>1||css<0||css>1||
@@ -59,7 +59,7 @@ inline bool saveReaderPreferences(const ReaderPreferences& value) {
   const std::string name=readerPreferencesFile(),tmp=name+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-SETTINGS3 %d %d %d %d %d %d %d %d\n",
+  bool ok=std::fprintf(f,"BOOKS-SETTINGS3 %d %d %d %d %d %d %d %d\n",
     value.margin,value.linePercent,value.alignment,
     value.hyphenation?1:0,value.embeddedStyle?1:0,value.nightMode?1:0,
     value.focusReading?1:0,value.autoTurnSeconds)>0;
@@ -70,4 +70,4 @@ inline bool saveReaderPreferences(const ReaderPreferences& value) {
   std::remove(tmp.c_str());
   return false;
 }
-} // namespace crosspod
+} // namespace books

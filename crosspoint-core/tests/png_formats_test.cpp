@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Small deterministic PNG fixtures: exercise CrossPod's real bounded image
+// Small deterministic PNG fixtures: exercise Books's real bounded image
 // decoder without image libraries on the host or Q2.
 #include <PngPreview.hpp>
 #include <zlib.h>
@@ -40,8 +40,8 @@ Bytes fixture(uint8_t color,const Bytes& scanline,const Bytes& palette={},
   return png;
 }
 void check(const Bytes& png,uint8_t left,uint8_t right) {
-  crosspod::PngPreview image;
-  assert(crosspod::decodePngPreview(png.data(),png.size(),image));
+  books::PngPreview image;
+  assert(books::decodePngPreview(png.data(),png.size(),image));
   assert(image.width==2 && image.height==1);
   assert(image.gray.size()==2);
   assert(image.gray[0]==left && image.gray[1]==right);
@@ -54,10 +54,10 @@ int main() {
   check(fixture(2,{0,0,0,0,255,255,255}),0,255);      // RGB
   check(fixture(6,{0,0,0,0,255,0,0,0,0}),0,255);      // RGBA
   auto malformed=fixture(3,{0,3,1},{0,0,0,255,255,255});
-  crosspod::PngPreview ignored;
-  assert(!crosspod::decodePngPreview(malformed.data(),malformed.size(),ignored));
+  books::PngPreview ignored;
+  assert(!books::decodePngPreview(malformed.data(),malformed.size(),ignored));
   malformed=fixture(0,{0,0,255});
   malformed[malformed.size()-1]^=1; // invalid IEND CRC
-  assert(!crosspod::decodePngPreview(malformed.data(),malformed.size(),ignored));
+  assert(!books::decodePngPreview(malformed.data(),malformed.size(),ignored));
   return 0;
 }

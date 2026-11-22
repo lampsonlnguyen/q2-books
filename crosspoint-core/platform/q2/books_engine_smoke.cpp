@@ -13,7 +13,7 @@
 #include <string>
 int main(int argc, char** argv) {
   if (argc != 1) {
-    std::fprintf(stderr, "usage: crosspod-engine-smoke\n");
+    std::fprintf(stderr, "usage: books-engine-smoke\n");
     return 2;
   }
   WordStore words;
@@ -42,6 +42,6 @@ int main(int argc, char** argv) {
   data.intervalCount=1;
   EpdFont font(&data);
   if (!font.hasCodepoint(0x4e2d) || font.hasCodepoint(0x4e2e)) return 1;
-  std::puts("CrossPod upstream text engine (UTF8, CSS, CJK, BiDi, fonts): OK");
+  std::puts("Books upstream text engine (UTF8, CSS, CJK, BiDi, fonts): OK");
   return 0;
 }

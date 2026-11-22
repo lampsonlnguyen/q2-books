@@ -12,7 +12,7 @@ def inspect(path):
     result = subprocess.run([reader, "--inspect-toc", str(path)],
                             capture_output=True, text=True, timeout=45)
     assert result.returncode == 0, result.stderr
-    assert "CrossPod TOC entries: 1" in result.stdout, result.stdout
+    assert "Books TOC entries: 1" in result.stdout, result.stdout
     assert "toc=0 spine=0" in result.stdout, result.stdout
     assert "anchor=chapter-start" in result.stdout, result.stdout
     return result.stdout
@@ -21,7 +21,7 @@ first = inspect(book)
 assert "title=Illustrated chapter" in first, first
 
 # Force the original EPUB 2 parser by removing EPUB 3's nav resource.
-with tempfile.TemporaryDirectory(prefix="crosspod-ncx-test-") as td:
+with tempfile.TemporaryDirectory(prefix="books-ncx-test-") as td:
     target = Path(td) / "ncx.epub"
     with ZipFile(book) as source, ZipFile(target, "w") as output:
         for item in source.infolist():

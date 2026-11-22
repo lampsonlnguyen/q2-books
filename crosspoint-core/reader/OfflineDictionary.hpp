@@ -11,7 +11,7 @@
 #include <cstdio>
 #include <string>
 
-namespace crosspod {
+namespace books {
 inline std::string dictionaryFile() {
   return positionFile("/__dictionary__").substr(
     0,positionFile("/__dictionary__").find_last_of('/'))+"/dictionary.tsv";
@@ -83,7 +83,7 @@ inline std::vector<std::unique_ptr<stardict::Dictionary>>& openStardicts() {
       if(dictionaries.size()>=16)break;
       auto d=std::make_unique<stardict::Dictionary>();
       if(d->open(ifo,cache))dictionaries.push_back(std::move(d));
-      else std::fprintf(stderr,"CrossPod: dictionary skipped (%s)\n",d->error.c_str());
+      else std::fprintf(stderr,"Books: dictionary skipped (%s)\n",d->error.c_str());
     }
   }
   return dictionaries;
@@ -111,4 +111,4 @@ inline std::vector<DictionaryMatch> lookupDefinitions(const std::string& raw) {
   if(!tsv.empty())out.push_back({"dictionary.tsv",needle,tsv});
   return out;
 }
-} // namespace crosspod
+} // namespace books

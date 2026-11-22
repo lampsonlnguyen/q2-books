@@ -15,7 +15,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 struct ShelfCover {
   static constexpr int width=48,height=60,stride=6;
   std::array<uint8_t,stride*height> ink{};
@@ -60,7 +60,7 @@ inline bool saveShelfCover(const std::string& book,const ShelfCover& cover) {
   const std::string path=shelfCoverFile(book),tmp=path+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-COVER1 %llu %llu\n",
+  bool ok=std::fprintf(f,"BOOKS-COVER1 %llu %llu\n",
       static_cast<unsigned long long>(st.st_size),
       static_cast<unsigned long long>(st.st_mtime))>0;
   if(ok && std::fwrite(cover.ink.data(),1,cover.ink.size(),f)!=cover.ink.size())
@@ -81,7 +81,7 @@ inline bool loadShelfCover(const std::string& book,ShelfCover& cover) {
   if(!std::fgets(header,sizeof(header),f)) {std::fclose(f);return false;}
   unsigned long long bytes=0,changed=0;
   const bool matching=parseShelfIdentityHeader(
-      header,"CROSSPOD-COVER1",bytes,changed) &&
+      header,"BOOKS-COVER1",bytes,changed) &&
       bytes==static_cast<unsigned long long>(st.st_size) &&
       changed==static_cast<unsigned long long>(st.st_mtime);
   if(!matching) {std::fclose(f);return false;}
@@ -92,4 +92,4 @@ inline bool loadShelfCover(const std::string& book,ShelfCover& cover) {
   if(ok)cover=loaded;
   return ok;
 }
-} // namespace crosspod
+} // namespace books

@@ -15,8 +15,8 @@
 namespace {
 volatile std::sig_atomic_t interrupted = 0;
 void onSignal(int) { interrupted = 1; }
-constexpr size_t W = crosspod::Q2Framebuffer::LogicalWidth;
-constexpr size_t H = crosspod::Q2Framebuffer::LogicalHeight;
+constexpr size_t W = books::Q2Framebuffer::LogicalWidth;
+constexpr size_t H = books::Q2Framebuffer::LogicalHeight;
 constexpr size_t Size = W * H;
 }
 
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
   if (argc != 3 ||
       (std::strcmp(argv[1], "--check") && std::strcmp(argv[1], "--display"))) {
     std::fprintf(stderr,
-      "Usage: crosspod-page-demo --check|--display <crosspod-vietnamese-preview.pgm>\n"
+      "Usage: books-page-demo --check|--display <books-vietnamese-preview.pgm>\n"
       "  --check: validate image and architecture without framebuffer access\n"
       "  --display: own /dev/fb0 for <=20s; Q2 Pod must stop painting first\n");
     return 2;
@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     header += line + "\n";
   }
   if (header != "P5\n375 320\n255\n") {
-    std::fputs("Invalid CrossPod 375x320 grayscale PGM\n",stderr);
+    std::fputs("Invalid Books 375x320 grayscale PGM\n",stderr);
     return 4;
   }
   std::vector<unsigned char> gray(Size);
@@ -53,7 +53,7 @@ int main(int argc, char** argv) {
   size_t ink=0;
   for (auto px:gray) if(px<128) ++ink;
   if (ink < 200) { std::fputs("Blank/invalid page\n",stderr); return 4; }
-  std::printf("CrossPod page verified: %zux%zu, %zu dark pixels\n",W,H,ink);
+  std::printf("Books page verified: %zux%zu, %zu dark pixels\n",W,H,ink);
   if (!std::strcmp(argv[1],"--check")) return 0;
 
   // Allocate only after --display; reject unknown framebuffer geometry.
@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     const uint32_t g=gray[i];
     argb[i]=0xff000000u|(g<<16)|(g<<8)|g;
   }
-  crosspod::Q2Framebuffer fb;
+  books::Q2Framebuffer fb;
   if (!fb.open()) {
     std::fputs("Could not open matching Q2 /dev/fb0. No display changes made.\n",stderr);
     return 5;
@@ -79,6 +79,6 @@ int main(int argc, char** argv) {
   while (!interrupted && std::chrono::steady_clock::now()<until)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   fb.close();
-  std::puts("CrossPod page demo exited; original framebuffer page restored.");
+  std::puts("Books page demo exited; original framebuffer page restored.");
   return 0;
 }

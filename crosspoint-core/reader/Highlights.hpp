@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct Highlight {
   uint32_t spine=0;
   uint32_t begin=0;  // inclusive, original CrossPoint visible-text codepoint offset
@@ -43,7 +43,7 @@ inline std::vector<Highlight> loadHighlights(const std::string& book) {
   char header[128]{};
   unsigned long long storedBytes=0,storedMtime=0;
   const bool headerOk=std::fgets(header,sizeof(header),f) &&
-    parseShelfIdentityHeader(header,"CROSSPOD-HIGHLIGHTS1",
+    parseShelfIdentityHeader(header,"BOOKS-HIGHLIGHTS1",
                              storedBytes,storedMtime) &&
     storedBytes==bytes && storedMtime==mtime;
   uint8_t count=0;
@@ -78,7 +78,7 @@ inline bool saveHighlights(const std::string& book,
   const std::string file=highlightsFile(book),tmp=file+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-HIGHLIGHTS1 %llu %llu\n",
+  bool ok=std::fprintf(f,"BOOKS-HIGHLIGHTS1 %llu %llu\n",
                         bytes,mtime)>0;
   const uint8_t count=static_cast<uint8_t>(items.size());
   if(ok && std::fwrite(&count,1,1,f)!=1)ok=false;
@@ -126,4 +126,4 @@ inline bool removeHighlightAt(const std::string& book,uint32_t spine,uint32_t of
   }),items.end());
   return items.size()!=old && saveHighlights(book,items);
 }
-} // namespace crosspod
+} // namespace books

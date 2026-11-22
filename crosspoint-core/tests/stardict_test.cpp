@@ -14,7 +14,7 @@
 
 #include "StarDict.hpp"
 
-using crosspod::stardict::Dictionary;
+using books::stardict::Dictionary;
 
 static std::string firstText(Dictionary& d,const std::string& word) {
   const auto r=d.lookup(word);
@@ -39,12 +39,12 @@ static void copyDict(const std::string& from,const std::string& to,const char* n
 int main(int argc,char** argv) {
   assert(argc==2);
   const std::string fixtures=argv[1];
-  char tmp[]="/tmp/crosspod-sd-XXXXXX";
+  char tmp[]="/tmp/books-sd-XXXXXX";
   assert(mkdtemp(tmp));
   const std::string cache=std::string(tmp)+"/cache";
 
-  assert(crosspod::stardict::stardictCompare("apple","Apple")>0);
-  assert(crosspod::stardict::asciiCaseCompare("APPLE","apple")==0);
+  assert(books::stardict::stardictCompare("apple","Apple")>0);
+  assert(books::stardict::asciiCaseCompare("APPLE","apple")==0);
 
   {
     Dictionary plain;
@@ -130,9 +130,9 @@ int main(int argc,char** argv) {
     if(!d.open(work+"/"+name+".ifo",std::string()))continue;
     ++opened;
     for(const char* w:{"apple","zzz","color","entry0500","longword","word0001","sách"})
-      for(const auto& m:d.lookup(w))assert(m.second.size()<=crosspod::stardict::kMaxEntryBytes*2);
+      for(const auto& m:d.lookup(w))assert(m.second.size()<=books::stardict::kMaxEntryBytes*2);
   }
-  std::printf("CrossPod StarDict: PASS (fuzz: %d of 400 damaged dictionaries still opened)\n",opened);
+  std::printf("Books StarDict: PASS (fuzz: %d of 400 damaged dictionaries still opened)\n",opened);
   std::system((std::string("rm -rf ")+tmp).c_str());
   return 0;
 }

@@ -7,12 +7,12 @@ import sys
 import tempfile
 
 reader, maker = sys.argv[1:]
-with tempfile.TemporaryDirectory(prefix="crosspod-idle-index-") as tmp:
+with tempfile.TemporaryDirectory(prefix="books-idle-index-") as tmp:
     book = Path(tmp)/"unopened.epub"
     state = Path(tmp)/"state"
     state.mkdir()
     subprocess.run([sys.executable,maker,str(book)],check=True)
-    environment=dict(os.environ,CROSSPOD_STATE_DIR=str(state))
+    environment=dict(os.environ,BOOKS_STATE_DIR=str(state))
     def probe():
         return subprocess.run([reader,"--index-book",str(book)],
                               env=environment,text=True,capture_output=True,
@@ -28,4 +28,4 @@ with tempfile.TemporaryDirectory(prefix="crosspod-idle-index-") as tmp:
     os.utime(book,ns=(old.st_atime_ns,old.st_mtime_ns+5_000_000_000))
     refreshed=probe()
     assert "metadata=1 cover=1 updated=1" in refreshed,refreshed
-print("CrossPod unopened EPUB OPF, cover cache and invalidation: PASS")
+print("Books unopened EPUB OPF, cover cache and invalidation: PASS")

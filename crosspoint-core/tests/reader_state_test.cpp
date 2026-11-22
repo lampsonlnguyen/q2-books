@@ -10,10 +10,10 @@
 #include <vector>
 #include <unistd.h>
 int main() {
-  char root[]="/tmp/crosspod-state-tests-XXXXXX";
+  char root[]="/tmp/books-state-tests-XXXXXX";
   char* dir=mkdtemp(root);
   assert(dir);
-  assert(setenv("CROSSPOD_STATE_DIR",dir,1)==0);
+  assert(setenv("BOOKS_STATE_DIR",dir,1)==0);
   const std::string book=std::string(dir)+"/book.epub";
   FILE* f=std::fopen(book.c_str(),"wb");
   assert(f);
@@ -21,87 +21,87 @@ int main() {
   assert(std::fclose(f)==0);
 
   // A normal app exit must persist the exact page, not just the book title.
-  crosspod::ReadingPosition restored{};
-  assert(!crosspod::loadReadingPosition(book,restored));
-  assert(crosspod::saveReadingPosition(book,{2,17}));
-  assert(crosspod::loadReadingPosition(book,restored));
+  books::ReadingPosition restored{};
+  assert(!books::loadReadingPosition(book,restored));
+  assert(books::saveReadingPosition(book,{2,17}));
+  assert(books::loadReadingPosition(book,restored));
   assert(restored.spine==2 && restored.page==17);
-  assert(crosspod::saveReadingPosition(book,{2,18}));
-  assert(crosspod::loadReadingPosition(book,restored));
+  assert(books::saveReadingPosition(book,{2,18}));
+  assert(books::loadReadingPosition(book,restored));
   assert(restored.spine==2 && restored.page==18);
-  assert(!crosspod::saveReadingPosition(book,{-1,0}));
-  assert(!crosspod::saveReadingPosition(book,{0,1000001}));
+  assert(!books::saveReadingPosition(book,{-1,0}));
+  assert(!books::saveReadingPosition(book,{0,1000001}));
 
   // UI font is independent; persisted oversized reader settings migrate to 12pt.
-  crosspod::Typography textSize{};
-  assert(crosspod::validTypography(textSize));
-  crosspod::Typography oversizedSans{crosspod::Typography::Family::Sans,14};
-  crosspod::Typography oversizedSerif{crosspod::Typography::Family::Serif,18};
-  assert(!crosspod::validTypography(oversizedSans));
-  assert(!crosspod::validTypography(oversizedSerif));
+  books::Typography textSize{};
+  assert(books::validTypography(textSize));
+  books::Typography oversizedSans{books::Typography::Family::Sans,14};
+  books::Typography oversizedSerif{books::Typography::Family::Serif,18};
+  assert(!books::validTypography(oversizedSans));
+  assert(!books::validTypography(oversizedSerif));
   {
     const std::string oldSetting=std::string(dir)+"/typography.conf";
     FILE* old=std::fopen(oldSetting.c_str(),"wb");
     assert(old);
-    assert(std::fputs("CROSSPOD-TYPE1 sans 18\\n",old)>0);
+    assert(std::fputs("BOOKS-TYPE1 sans 18\\n",old)>0);
     assert(std::fclose(old)==0);
-    assert(crosspod::loadTypography(textSize));
+    assert(books::loadTypography(textSize));
     assert(textSize.size==12);
     std::remove(oldSetting.c_str());
   }
-  crosspod::ReaderPreferences defaults;
-  assert(!crosspod::loadReaderPreferences(defaults));
+  books::ReaderPreferences defaults;
+  assert(!books::loadReaderPreferences(defaults));
   assert(defaults.margin==14 && defaults.linePercent==100);
-  crosspod::ReaderPreferences chosen{22,140,1,true,false};
-  assert(crosspod::validReaderPreferences(chosen));
-  assert(crosspod::saveReaderPreferences(chosen));
-  assert(crosspod::loadReaderPreferences(defaults));
+  books::ReaderPreferences chosen{22,140,1,true,false};
+  assert(books::validReaderPreferences(chosen));
+  assert(books::saveReaderPreferences(chosen));
+  assert(books::loadReaderPreferences(defaults));
   assert(defaults.margin==22 && defaults.linePercent==140 &&
          defaults.alignment==1 && defaults.hyphenation && !defaults.embeddedStyle);
   auto invalid=chosen;invalid.margin=100;
-  assert(!crosspod::saveReaderPreferences(invalid));
+  assert(!books::saveReaderPreferences(invalid));
   // SETTINGS3: focus reading and auto turn persist; v2 files still load with
   // both off; an interval outside the menu's choices is refused.
   chosen.focusReading=true;chosen.autoTurnSeconds=30;
-  assert(crosspod::saveReaderPreferences(chosen));
-  defaults=crosspod::ReaderPreferences{};
-  assert(crosspod::loadReaderPreferences(defaults));
+  assert(books::saveReaderPreferences(chosen));
+  defaults=books::ReaderPreferences{};
+  assert(books::loadReaderPreferences(defaults));
   assert(defaults.focusReading && defaults.autoTurnSeconds==30 && defaults.margin==22);
   auto badTurn=chosen;badTurn.autoTurnSeconds=7;
-  assert(!crosspod::validReaderPreferences(badTurn));
+  assert(!books::validReaderPreferences(badTurn));
   {
-    FILE* v2=std::fopen(crosspod::readerPreferencesFile().c_str(),"wb");
+    FILE* v2=std::fopen(books::readerPreferencesFile().c_str(),"wb");
     assert(v2);
-    assert(std::fputs("CROSSPOD-SETTINGS2 30 120 0 1 1 1\n",v2)>0);
+    assert(std::fputs("BOOKS-SETTINGS2 30 120 0 1 1 1\n",v2)>0);
     assert(std::fclose(v2)==0);
-    defaults=crosspod::ReaderPreferences{};
+    defaults=books::ReaderPreferences{};
     defaults.focusReading=true;defaults.autoTurnSeconds=10;
-    assert(crosspod::loadReaderPreferences(defaults));
+    assert(books::loadReaderPreferences(defaults));
     assert(defaults.margin==30 && defaults.nightMode && !defaults.focusReading &&
            defaults.autoTurnSeconds==0);
   }
 
-  assert(crosspod::loadBookmarks(book).empty());
-  assert(crosspod::addBookmark(book,{0,3,100}));
-  assert(crosspod::addBookmark(book,{0,3,100})); // de-dup
-  assert(crosspod::addBookmark(book,{2,5,890}));
-  auto marks=crosspod::loadBookmarks(book);
+  assert(books::loadBookmarks(book).empty());
+  assert(books::addBookmark(book,{0,3,100}));
+  assert(books::addBookmark(book,{0,3,100})); // de-dup
+  assert(books::addBookmark(book,{2,5,890}));
+  auto marks=books::loadBookmarks(book);
   assert(marks.size()==2);
   assert(marks[0].spine==0&&marks[0].page==3&&marks[0].textOffset==100);
   assert(marks[1].spine==2&&marks[1].page==5&&marks[1].textOffset==890);
   for(int i=3;i<=32;++i)
-    assert(crosspod::addBookmark(book,{i,static_cast<size_t>(i),static_cast<uint32_t>(i*200)}));
-  assert(crosspod::loadBookmarks(book).size()==32);
-  assert(!crosspod::addBookmark(book,{33,33,3333})); // fixed limit
+    assert(books::addBookmark(book,{i,static_cast<size_t>(i),static_cast<uint32_t>(i*200)}));
+  assert(books::loadBookmarks(book).size()==32);
+  assert(!books::addBookmark(book,{33,33,3333})); // fixed limit
 
   // Modification changes identity and invalidates stale bookmarks.
   f=std::fopen(book.c_str(),"ab");
   assert(f);assert(std::fwrite("x",1,1,f)==1);std::fclose(f);
-  assert(crosspod::loadBookmarks(book).empty());
-  assert(!crosspod::loadReadingPosition(book,restored));
-  std::remove(crosspod::positionFile(book).c_str());
-  std::remove(crosspod::bookmarksFile(book).c_str());
-  std::remove(crosspod::readerPreferencesFile().c_str());
+  assert(books::loadBookmarks(book).empty());
+  assert(!books::loadReadingPosition(book,restored));
+  std::remove(books::positionFile(book).c_str());
+  std::remove(books::bookmarksFile(book).c_str());
+  std::remove(books::readerPreferencesFile().c_str());
   std::remove(book.c_str());
   assert(rmdir(dir)==0);
   return 0;

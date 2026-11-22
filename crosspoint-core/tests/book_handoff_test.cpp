@@ -2,7 +2,7 @@
 #include <string>
 #include "../platform/q2/Q2BookHandoff.hpp"
 int main(){
- using namespace crosspod;
+ using namespace books;
  auto epub=parse_q2_book("/mnt/mmc/Books/Tiếng Việt/Đà Lạt.EPUB");
  assert(epub && epub.format==BookFormat::Epub);
  assert(epub.path=="/mnt/mmc/Books/Tiếng Việt/Đà Lạt.EPUB");

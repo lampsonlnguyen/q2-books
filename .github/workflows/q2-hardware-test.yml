@@ -25,20 +25,20 @@ jobs:
       - name: Verify ELF target and smoke-test engine in QEMU
         run: |
           set -eux
-          mipsel-linux-gnu-readelf -h build/q2-mips/crosspod-hwcheck
-          mipsel-linux-gnu-readelf -l build/q2-mips/crosspod-hwcheck
-          mipsel-linux-gnu-readelf -V build/q2-mips/crosspod-hwcheck
-          file build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke
-          qemu-mipsel -L /usr/mipsel-linux-gnu build/q2-mips/crosspod-engine-smoke
+          mipsel-linux-gnu-readelf -h build/q2-mips/books-hwcheck
+          mipsel-linux-gnu-readelf -l build/q2-mips/books-hwcheck
+          mipsel-linux-gnu-readelf -V build/q2-mips/books-hwcheck
+          file build/q2-mips/books-hwcheck build/q2-mips/books-engine-smoke
+          qemu-mipsel -L /usr/mipsel-linux-gnu build/q2-mips/books-engine-smoke
       - name: Package non-flashable hardware test
         run: |
           set -eu
-          mkdir -p dist/crosspod-q2-hardware-test
-          cp build/q2-mips/crosspod-hwcheck build/q2-mips/crosspod-engine-smoke dist/crosspod-q2-hardware-test/
-          mipsel-linux-gnu-readelf -l build/q2-mips/crosspod-hwcheck > dist/crosspod-q2-hardware-test/elf-interpreter.txt
-          mipsel-linux-gnu-readelf -V build/q2-mips/crosspod-hwcheck > dist/crosspod-q2-hardware-test/elf-versions.txt
-          cat > dist/crosspod-q2-hardware-test/README.txt <<'EOF'
-          CrossPod Q2 HARDWARE DIAGNOSTIC — NOT AN EBOOK READER / NOT FIRMWARE
+          mkdir -p dist/books-q2-hardware-test
+          cp build/q2-mips/books-hwcheck build/q2-mips/books-engine-smoke dist/books-q2-hardware-test/
+          mipsel-linux-gnu-readelf -l build/q2-mips/books-hwcheck > dist/books-q2-hardware-test/elf-interpreter.txt
+          mipsel-linux-gnu-readelf -V build/q2-mips/books-hwcheck > dist/books-q2-hardware-test/elf-versions.txt
+          cat > dist/books-q2-hardware-test/README.txt <<'EOF'
+          Books Q2 HARDWARE DIAGNOSTIC — NOT AN EBOOK READER / NOT FIRMWARE
           Cross-compiled on Ubuntu using generic MIPS Linux libc. Q2 runtime compatibility is UNVERIFIED.
           No update.tar is produced. NEVER flash these files or overwrite the stock player.
           
@@ -46,43 +46,43 @@ jobs:
           accompanying elf-*.txt against your Q2 system. For incompatible libraries,
           rebuild with the actual Q2 Pod sysroot before running.
           
-          Copy these files to /mnt/mmc/.crosspod-test/ with a remote shell.
-          Run ./crosspod-engine-smoke first (no framebuffer or input).
-          Run ./crosspod-hwcheck next to test the input socket for up to 30 seconds.
-          Q2 Pod must forward input to /tmp/q2-crosspod.input.sock for physical events to appear.
+          Copy these files to /mnt/mmc/.books-test/ with a remote shell.
+          Run ./books-engine-smoke first (no framebuffer or input).
+          Run ./books-hwcheck next to test the input socket for up to 30 seconds.
+          Q2 Pod must forward input to /tmp/q2-books.input.sock for physical events to appear.
           ONLY with Q2 Pod framebuffer painting suspended and remote shell recovery
-          ready, run ./crosspod-hwcheck --display (brief test color bars).
+          ready, run ./books-hwcheck --display (brief test color bars).
           See docs/q2-mips-hardware-validation.md for details.
           EOF
-          (cd dist/crosspod-q2-hardware-test && sha256sum crosspod-* > SHA256SUMS)
+          (cd dist/books-q2-hardware-test && sha256sum books-* > SHA256SUMS)
       - name: Build Q2 Pod Library card-app ZIP
         run: |
           set -eu
-          mkdir -p dist/.crosspod-test
-          cp build/q2-mips/crosspod-hwcheck dist/.crosspod-test/q2-crosspod-test
-          chmod 755 dist/.crosspod-test/q2-crosspod-test
-          printf 'name=CrossPod Test\ngame=1\nrow=library\n' > dist/.crosspod-test/q2app
-          cat > dist/.crosspod-test/README.txt <<'EOF'
-          CrossPod Q2 hardware diagnostic CARD APP. NOT an EPUB reader.
+          mkdir -p dist/.books-test
+          cp build/q2-mips/books-hwcheck dist/.books-test/q2-books-test
+          chmod 755 dist/.books-test/q2-books-test
+          printf 'name=Books Test\ngame=1\nrow=library\n' > dist/.books-test/q2app
+          cat > dist/.books-test/README.txt <<'EOF'
+          Books Q2 hardware diagnostic CARD APP. NOT an EPUB reader.
           This package uses a generic MIPS Linux cross-compiler.
           Its glibc/libstdc++ requirements MAY NOT match your firmware.
           The display opens automatically, shows color bars, and exits within 30s
           or when Return is released. It logs metrics to stderr (remote shell).
-          Extract the .crosspod-test folder at the microSD root, not nested.
-          Launch via Library > CrossPod Test, not Library > Books.
+          Extract the .books-test folder at the microSD root, not nested.
+          Launch via Library > Books Test, not Library > Books.
           Do not replace Q2 firmware, the stock reader or /usr/bin/demo.
           EOF
-          (cd dist && zip -qr crosspod-q2-card-test.zip .crosspod-test)
-          (cd dist && sha256sum crosspod-q2-card-test.zip > crosspod-q2-card-test.zip.sha256)
+          (cd dist && zip -qr books-q2-card-test.zip .books-test)
+          (cd dist && sha256sum books-q2-card-test.zip > books-q2-card-test.zip.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: crosspod-q2-mips-hardware-test-NOT-READER
-          path: dist/crosspod-q2-hardware-test/
+          name: books-q2-mips-hardware-test-NOT-READER
+          path: dist/books-q2-hardware-test/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: crosspod-q2-card-test-NOT-EPUB-READER
+          name: books-q2-card-test-NOT-EPUB-READER
           path: |
-            dist/crosspod-q2-card-test.zip
-            dist/crosspod-q2-card-test.zip.sha256
+            dist/books-q2-card-test.zip
+            dist/books-q2-card-test.zip.sha256
           if-no-files-found: error

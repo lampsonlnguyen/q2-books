@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     assert(parser.setup());
     assert(zip.readFileToStream("OEBPS/content.opf", parser, 29));
     assert(parser.title == "CrossPoint multilingual test");
-    assert(parser.author == "CrossPod Test Author");
+    assert(parser.author == "Books Test Author");
     assert(parser.language == "mul");
     metadata.title = parser.title;
     metadata.author = parser.author;

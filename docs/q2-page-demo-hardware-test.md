@@ -1,4 +1,4 @@
-# CrossPod Q2 Vietnamese page — controlled first hardware test
+# Books Q2 Vietnamese page — controlled first hardware test
 
 **This is NOT the ebook reader.** The bundle shows one original CrossPoint
 rendered Vietnamese EPUB page on the Q2 LCD. No flashing or firmware changes.
@@ -11,7 +11,7 @@ rendered Vietnamese EPUB page on the Q2 LCD. No flashing or firmware changes.
   cross-compiled with Ubuntu GCC. Device glibc and libstdc++ compatibility
   has NOT been verified; if the loader rejects it, do not replace OS libraries.
 - Make a backup. Do not install over the stock Books reader, firmware or
-  `/mnt/mmc/.crosspod/crosspod`.
+  `/mnt/mmc/.books/books`.
 
 ## Prepare safely
 
@@ -21,12 +21,12 @@ Copy the extracted `q2-hardware-test` directory to the Q2's SD card at
 ```sh
 cd /mnt/mmc/q2-hardware-test
 sha256sum -c SHA256SUMS
-chmod +x crosspod-page-demo
-./crosspod-page-demo --check crosspod-vietnamese-preview.pgm
+chmod +x books-page-demo
+./books-page-demo --check books-vietnamese-preview.pgm
 ```
 
 The `--check` mode does **not open /dev/fb0**. Check that it prints
-`CrossPod page verified`. If you see `not found` or a missing runtime
+`Books page verified`. If you see `not found` or a missing runtime
 interpreter/library, stop here and collect:
 
 ```sh
@@ -44,7 +44,7 @@ painting using your existing device-specific method. Then:
 
 ```sh
 cd /mnt/mmc/q2-hardware-test
-./crosspod-page-demo --display crosspod-vietnamese-preview.pgm
+./books-page-demo --display books-vietnamese-preview.pgm
 ```
 
 The executable checks framebuffer geometry before any drawing. It displays

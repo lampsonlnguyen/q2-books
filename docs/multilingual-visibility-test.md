@@ -1,8 +1,8 @@
-# CrossPod multilingual font-visibility EPUB
+# Books multilingual font-visibility EPUB
 
 Every Q2 test-build ZIP includes:
 
-`Books/CrossPod-Multilingual-Visibility-Test.epub`
+`Books/Books-Multilingual-Visibility-Test.epub`
 
 The reproducible generator is:
 
@@ -26,10 +26,10 @@ Arabic, Hebrew, and Thai.
 Languages with uppercase/lowercase letters show both; scripts without
 case show a representative set of their letters, combining marks, and
 samples. This is *not* a Unicode-codepoint exhaustive test (which would
-not fit in a short ebook). The generator labels configured CrossPod
+not fit in a short ebook). The generator labels configured Books
 fallback scripts as `[fallback]` and additional coverage probes as
 `[probe]`. In particular, Thai/Greek/Cyrillic are visibility probes,
-not an assertion that CrossPod currently ships specialized fallback
+not an assertion that Books currently ships specialized fallback
 fonts for every character.
 
 ## Test on the physical Q2
@@ -37,7 +37,7 @@ fonts for every character.
 1. Install any Q2 test build from the GitHub Actions hardware-alpha
    artifact. The book is installed alongside the other books in the
    card's `/Books` folder. Alternatively, copy only the EPUB there.
-2. Open CrossPod → Browse files → **CrossPod Multilingual Visibility Test**.
+2. Open Books → Browse files → **Books Multilingual Visibility Test**.
 3. Inspect each paragraph for characters that turn into squares, missing
    accents, missing letters, incorrectly placed vowel marks, incorrect
    joining, or reversed right-to-left order.

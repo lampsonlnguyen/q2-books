@@ -13,7 +13,7 @@
 #include <string>
 #include <string_view>
 
-namespace crosspod {
+namespace books {
 inline std::string jsonQuoted(const std::string& text) {
   std::string out="\"";
   constexpr char hex[]="0123456789abcdef";
@@ -144,7 +144,7 @@ inline bool pushKoreaderProgress(const ConnectedConfig& cfg,
   const std::string body="{\"document\":"+jsonQuoted(document)+
     ",\"progress\":"+jsonQuoted(local.progress)+
     ",\"percentage\":"+percentage+
-    ",\"device\":\"CrossPod Q2\",\"device_id\":\"crosspod-q2\"}";
+    ",\"device\":\"Books Q2\",\"device_id\":\"books-q2\"}";
   auto headers=koReaderHeaders(cfg);
   headers["Content-Type"]="application/json";
   const auto response=httpRequest(url,[](const char*,size_t){return true;},
@@ -152,4 +152,4 @@ inline bool pushKoreaderProgress(const ConnectedConfig& cfg,
   if(!response.ok()) {error=response.error;return false;}
   return true;
 }
-} // namespace crosspod
+} // namespace books

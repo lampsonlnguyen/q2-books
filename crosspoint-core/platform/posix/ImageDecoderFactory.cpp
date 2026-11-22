@@ -31,7 +31,7 @@ bool isPng(const std::string& path) {
     return static_cast<char>(std::tolower(c));});
   return ext==".png";
 }
-bool decodeFile(const std::string& path,crosspod::PngPreview& decoded) {
+bool decodeFile(const std::string& path,books::PngPreview& decoded) {
   FILE* file=std::fopen(path.c_str(),"rb");
   if(!file)return false;
   if(std::fseek(file,0,SEEK_END)!=0){std::fclose(file);return false;}
@@ -43,13 +43,13 @@ bool decodeFile(const std::string& path,crosspod::PngPreview& decoded) {
   const bool read=std::fread(content.data(),1,content.size(),file)==content.size();
   std::fclose(file);
   if(!read)return false;
-  return isPng(path)?crosspod::decodePngPreview(content.data(),content.size(),decoded):
-         isJpeg(path)?crosspod::decodeJpegPreview(content.data(),content.size(),decoded):false;
+  return isPng(path)?books::decodePngPreview(content.data(),content.size(),decoded):
+         isJpeg(path)?books::decodeJpegPreview(content.data(),content.size(),decoded):false;
 }
 class PosixCrossPointImageDecoder final : public ImageToFramebufferDecoder {
  public:
   bool getDimensions(const std::string& path,ImageDimensions& dims) const override {
-    crosspod::PngPreview image;
+    books::PngPreview image;
     if(!decodeFile(path,image) || image.width>32767 || image.height>32767)return false;
     dims.width=static_cast<int16_t>(image.width);
     dims.height=static_cast<int16_t>(image.height);
@@ -57,7 +57,7 @@ class PosixCrossPointImageDecoder final : public ImageToFramebufferDecoder {
   }
   bool decodeToFramebuffer(const std::string& path,GfxRenderer& renderer,
                            const RenderConfig& cfg) override {
-    crosspod::PngPreview image;
+    books::PngPreview image;
     if(!decodeFile(path,image) || !image.width || !image.height ||
        cfg.maxWidth<=0 || cfg.maxHeight<=0)return false;
     int w=std::min<int>(cfg.maxWidth,image.width);
@@ -84,7 +84,7 @@ class PosixCrossPointImageDecoder final : public ImageToFramebufferDecoder {
     }
     return true;
   }
-  const char* getFormatName() const override {return "CrossPod PNG/JPEG";}
+  const char* getFormatName() const override {return "Books PNG/JPEG";}
 };
 PosixCrossPointImageDecoder decoder;
 }

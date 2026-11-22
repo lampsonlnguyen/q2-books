@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the real CrossPod reader using a Shanling-Q2-compatible MIPS32r2 sysroot.
+# Build the real Books reader using a Shanling-Q2-compatible MIPS32r2 sysroot.
 # This script deliberately refuses to use Ubuntu's legacy-NaN MIPS runtime.
 set -euo pipefail
 
@@ -56,30 +56,30 @@ cmake -S "$repo_root/crosspoint-core" -B "$out/build" \
   -DCMAKE_EXE_LINKER_FLAGS="$linkflags" \
   -DZLIB_LIBRARY="$zlib" -DZLIB_INCLUDE_DIR="$includes" \
   -DEXPAT_LIBRARY="$expat" -DEXPAT_INCLUDE_DIR="$includes"
-cmake --build "$out/build" --target crosspod-reader --parallel 2
+cmake --build "$out/build" --target books-reader --parallel 2
 
-reader="$out/build/crosspod-reader"
+reader="$out/build/books-reader"
 "$python" "$repo_root/crosspoint-core/tools/check_q2_elf.py" \
   "$reader" "$readelf" "$objdump"
-mkdir -p "$out/card/.crosspod"
-cp "$reader" "$out/card/.crosspod/q2-crosspod"
-cat > "$out/card/.crosspod/q2app" <<'MANIFEST'
-name=CrossPod
+mkdir -p "$out/card/.books"
+cp "$reader" "$out/card/.books/q2-books"
+cat > "$out/card/.books/q2app" <<'MANIFEST'
+name=Books
 game=1
 row=library
 MANIFEST
-cat > "$out/card/.crosspod/README.txt" <<'NOTICE'
-CrossPod early hardware alpha — NOT a firmware update.
+cat > "$out/card/.books/README.txt" <<'NOTICE'
+Books early hardware alpha — NOT a firmware update.
 Requires Q2 Pod card apps with row=library support.
-Extract the hidden .crosspod folder to your microSD root.
-Launch Library > CrossPod; place EPUB files in microSD/Books/.
+Extract the hidden .books folder to your microSD root.
+Launch Library > Books; place EPUB files in microSD/Books/.
 Some XHTML/CSS/image features are still incomplete.
 Hold Return to escape if the card app becomes unresponsive.
 Hardware operation is unverified until tested on a real Q2.
 NOTICE
 (
   cd "$out/card"
-  zip -q -r "$out/crosspod-q2-reader-alpha.zip" .crosspod
+  zip -q -r "$out/books-q2-reader-alpha.zip" .books
 )
-sha256sum "$out/crosspod-q2-reader-alpha.zip" > "$out/crosspod-q2-reader-alpha.zip.sha256"
-echo "Q2 reader alpha package: $out/crosspod-q2-reader-alpha.zip"
+sha256sum "$out/books-q2-reader-alpha.zip" > "$out/books-q2-reader-alpha.zip.sha256"
+echo "Q2 reader alpha package: $out/books-q2-reader-alpha.zip"

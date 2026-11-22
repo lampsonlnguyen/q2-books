@@ -1,6 +1,6 @@
 #pragma once
 // SPDX-License-Identifier: MIT
-// Bounded PNG decoder for the transitional CrossPod Q2 reader.
+// Bounded PNG decoder for the transitional Books Q2 reader.
 // Supports the common EPUB PNG variants: 8-bit grayscale, indexed palette,
 // grayscale+alpha, RGB and RGBA (non-interlaced only). Uses original
 // CrossPoint EPUB/ZIP and GfxRenderer; this is not a separate UI framework.
@@ -13,7 +13,7 @@
 #include <cstring>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct PngPreview {
   unsigned width = 0, height = 0;
   std::vector<uint8_t> gray;
@@ -140,4 +140,4 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
   }
   return true;
 }
-} // namespace crosspod
+} // namespace books

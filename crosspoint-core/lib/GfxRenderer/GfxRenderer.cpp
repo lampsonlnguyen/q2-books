@@ -211,7 +211,7 @@ void GfxRenderer::ensureSdCardFontReady(const int fontId, const char* const* seg
 }
 
 GfxRenderer::~GfxRenderer() {
-#if defined(CROSSPOD_LINUX)
+#if defined(BOOKS_LINUX)
   // The Q2 destroys and recreates renderers when returning to the bookshelf.
   // Clear callbacks that capture this; otherwise a later memory-reclaim call
   // can invoke a dangling font-cache / SdCardFont pointer.
@@ -239,7 +239,7 @@ void GfxRenderer::begin() {
   // deliberately NOT a sink: evicting it mid-paragraph would make later
   // measurements in the same layout pass return 0-width advances.
   auto& memoryManager = freeink::MemoryManager::instance();
-#if defined(CROSSPOD_LINUX)
+#if defined(BOOKS_LINUX)
   // Refresh only this renderer's registrations. The shelf remains alive
   // briefly while a new reader opens, so do not unregister other owners.
   memoryManager.unregisterSinks(this);
@@ -277,7 +277,7 @@ void GfxRenderer::begin() {
                                 return after > before ? after - before : 0;
                               }});
 #endif
-#if defined(CROSSPOD_LINUX)
+#if defined(BOOKS_LINUX)
   memoryManager.setSinkOwner(nullptr);
 #endif
 }
@@ -320,7 +320,7 @@ void GfxRenderer::FrameBufferLoan::end() {
     // Only reachable if the framebuffer never existed, which begin() already
     // asserts against; kept as a backstop since running blind helps nobody.
     LOG_ERR("GFX", "Framebuffer restore failed - restarting");
-    #if defined(CROSSPOD_LINUX)
+    #if defined(BOOKS_LINUX)
     std::abort();  // Q2 must never reset firmware due to reader graphics failure.
 #else
     ESP.restart();

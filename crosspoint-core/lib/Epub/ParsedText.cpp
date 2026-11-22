@@ -1110,7 +1110,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     // First word needs to fit in reduced width if there's an indent
     const int effectiveWidth = i == 0 ? pageWidth - firstLineIndent : pageWidth;
     while (wordWidths[i] > effectiveWidth) {
-      if (crosspodlayout::shouldAbort()) break;  // CrossPod: exiting (see ParsedText.h)
+      if (bookslayout::shouldAbort()) break;  // Books: exiting (see ParsedText.h)
       if (!hyphenateWordAtIndex(i, effectiveWidth, renderer, fontId, wordWidths, /*allowFallbackBreaks=*/true)) {
         break;
       }
@@ -1347,7 +1347,7 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   int chosenWidth = -1;
   bool chosenNeedsHyphen = true;
 
-  // CrossPod (performance only; the chosen break is unchanged): the candidates are two lists
+  // Books (performance only; the chosen break is unchanged): the candidates are two lists
   // (Hangul, then hyphenation), each normally in ascending offsets, and a longer prefix is
   // never narrower. Once a prefix minus any inserted hyphen (and a kerning margin) is wider
   // than the line, no later candidate of that list can fit, so the rest of it is skipped
@@ -1365,7 +1365,7 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
 
   // Iterate over each legal breakpoint and retain the widest prefix that still fits.
   for (size_t index = 0; index < breakInfos.size(); ++index) {
-    if (crosspodlayout::shouldAbort()) return false;  // CrossPod: exiting (see ParsedText.h)
+    if (bookslayout::shouldAbort()) return false;  // Books: exiting (see ParsedText.h)
     const auto& info = breakInfos[index];
     const size_t offset = info.byteOffset;
     if (offset == 0 || offset >= word.size()) {

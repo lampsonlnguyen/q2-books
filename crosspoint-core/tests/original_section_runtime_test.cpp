@@ -21,7 +21,7 @@
 
 int main(int argc,char** argv) {
   if(argc!=2)return 2;
-  char temp[]="/tmp/crosspod-original-engine-XXXXXX";
+  char temp[]="/tmp/books-original-engine-XXXXXX";
   char* dir=mkdtemp(temp);
   assert(dir);
   auto epub=std::make_shared<Epub>(std::string(argv[1]),std::string(dir));

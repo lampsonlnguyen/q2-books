@@ -11,7 +11,7 @@
 #include <memory>
 #include <string>
 
-namespace crosspod {
+namespace books {
 struct FootnoteCapture {
   std::string anchor;
   std::string text;
@@ -98,4 +98,4 @@ inline std::string loadFootnotePreview(ZipFile& zip,
   return extractFootnoteText(std::string(
       reinterpret_cast<const char*>(raw.get()),size),target.anchor);
 }
-} // namespace crosspod
+} // namespace books

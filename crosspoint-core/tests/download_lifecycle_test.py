@@ -4,7 +4,7 @@ leaves no .part; a .part left by a killed reader is taken over, not a permanent
 "in progress"; one a live download holds is not; a slow but steady download is
 not cut off by a total time limit.
 
-Usage: download_lifecycle_test.py READER BOOK.epub  (CROSSPOD_TEST_HTTPS=1: over TLS)
+Usage: download_lifecycle_test.py READER BOOK.epub  (BOOKS_TEST_HTTPS=1: over TLS)
 """
 import fcntl
 import os
@@ -20,7 +20,7 @@ from pathlib import Path
 
 READER = Path(sys.argv[1]).resolve()
 BOOK = Path(sys.argv[2]).read_bytes()
-TLS = os.environ.get("CROSSPOD_TEST_HTTPS") == "1"
+TLS = os.environ.get("BOOKS_TEST_HTTPS") == "1"
 pace = {"bytes_per_second": 0}  # 0: all at once
 
 
@@ -60,14 +60,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-with tempfile.TemporaryDirectory(prefix="crosspod-download-") as tmp:
+with tempfile.TemporaryDirectory(prefix="books-download-") as tmp:
     temp = Path(tmp)
     books = temp / "Books"
     books.mkdir()
     state = temp / "state"
     state.mkdir()
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    env = dict(os.environ, CROSSPOD_STATE_DIR=str(state))
+    env = dict(os.environ, BOOKS_STATE_DIR=str(state))
     if TLS:
         key, cert = temp / "key.pem", temp / "cert.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix="crosspod-download-") as tmp:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(cert), str(key))
         server.socket = context.wrap_socket(server.socket, server_side=True)
-        env["CROSSPOD_TEST_CA_BUNDLE"] = str(cert)
+        env["BOOKS_TEST_CA_BUNDLE"] = str(cert)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     feed = f"{'https://localhost' if TLS else 'http://127.0.0.1'}:{server.server_address[1]}/api/opds/key"
     online = books / "Online"

@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 int main() {
-  using namespace crosspod;
+  using namespace books;
   assert(md5String("")=="d41d8cd98f00b204e9800998ecf8427e");
   assert(md5String("abc")=="900150983cd24fb0d6963f7d28e17f72");
   assert(md5String("message digest")=="f96b697d7cb7938d525a2f31aaf161d0");
@@ -120,9 +120,9 @@ int main() {
   assert(!jsonFloatValue("{\"percentage\":1.5}","percentage",percent));
   assert(validDocumentDigest(md5String("book")));
   assert(!validDocumentDigest("not-a-digest"));
-  char dir[]="/tmp/crosspod-opds-XXXXXX";
+  char dir[]="/tmp/books-opds-XXXXXX";
   assert(mkdtemp(dir));
-  assert(setenv("CROSSPOD_STATE_DIR",dir,1)==0);
+  assert(setenv("BOOKS_STATE_DIR",dir,1)==0);
   const std::string configFile=connectedConfigPath();
   FILE* conf=std::fopen(configFile.c_str(),"wb");
   assert(conf);
@@ -144,6 +144,6 @@ int main() {
   assert(destination.substr(destination.size()-5)==".epub");
   assert(opdsDestination(dir,{OpdsEntry::Kind::Catalog,"Folder","","",
       "http://127.0.0.1:5150/a"}).empty());
-  std::puts("CrossPod OPDS and KOSync transport contracts: PASS");
+  std::puts("Books OPDS and KOSync transport contracts: PASS");
   return 0;
 }

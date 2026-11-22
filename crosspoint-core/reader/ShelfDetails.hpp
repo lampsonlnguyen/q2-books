@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 struct ShelfDetails { std::string title,author; };
 inline std::string shelfDetailsFile(const std::string& path) {
   return positionFile(path)+".shelf";
@@ -31,7 +31,7 @@ inline bool loadShelfDetails(const std::string& path,ShelfDetails& details) {
   std::fclose(f);
   if(!read)return false;
   unsigned long long bytes=0,modified=0;
-  if(!parseShelfIdentityHeader(header,"CROSSPOD-SHELF1",bytes,modified) ||
+  if(!parseShelfIdentityHeader(header,"BOOKS-SHELF1",bytes,modified) ||
      bytes!=static_cast<unsigned long long>(st.st_size) ||
      modified!=static_cast<unsigned long long>(st.st_mtime))return false;
   // Decode hexadecimal UTF-8 metadata without applying path rules.
@@ -69,7 +69,7 @@ inline bool saveShelfDetails(const std::string& path,const ShelfDetails& details
   const std::string file=shelfDetailsFile(path),temp=file+".tmp";
   FILE* f=std::fopen(temp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-SHELF1 %llu %llu\n",
+  bool ok=std::fprintf(f,"BOOKS-SHELF1 %llu %llu\n",
     static_cast<unsigned long long>(st.st_size),
     static_cast<unsigned long long>(st.st_mtime))>0;
   if(ok && std::fprintf(f,"%s\n",hexBookPath(details.title).c_str())<0)ok=false;
@@ -81,4 +81,4 @@ inline bool saveShelfDetails(const std::string& path,const ShelfDetails& details
   std::remove(temp.c_str());
   return false;
 }
-} // namespace crosspod
+} // namespace books

@@ -34,13 +34,13 @@ void HalDisplay::displayBuffer(RefreshMode,bool) {
   if (!raster_ || !inkRaster_ || loaned_) return;
   // Upstream CrossPoint framebuffer is 1=paper, 0=ink. Q2PagePresenter's
   // bridge is 1=ink. Invert only the bounded 15KB 1bpp image, not the renderer.
-  static crosspod::Q2PagePresenter presenter;
+  static books::Q2PagePresenter presenter;
   static bool tried=false, available=false;
   if (!tried) {tried=true; available=presenter.open();}
   if (!available) return;
   for(unsigned i=0;i<BUFFER_SIZE;i++)inkRaster_[i]=static_cast<uint8_t>(~raster_[i]);
   if(!presenter.presentBW(inkRaster_.get(),BUFFER_SIZE,0,inverted_))
-    std::fputs("CrossPod: framebuffer publish failed\n",stderr);
+    std::fputs("Books: framebuffer publish failed\n",stderr);
 }
 uint8_t* HalDisplay::lendFrameBufferStorage(uint32_t* sizeOut) {
   if (loaned_ || !raster_)return nullptr;

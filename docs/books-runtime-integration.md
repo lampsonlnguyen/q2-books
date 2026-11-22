@@ -1,4 +1,4 @@
-# CrossPod / Q2 Pod Books runtime integration
+# Books / Q2 Pod Books runtime integration
 
 **Status:** Source-level launch/input/framebuffer transport implemented.
 **Not yet installable as an EPUB reading app:** CrossPoint's full text layout, font
@@ -10,17 +10,17 @@ MIPS application has been validated on the Shanling Q2.
 - Q2 Pod retains the existing Books shelf and handles discovery under
   `/mnt/mmc/Books/`. No firmware from CrossPoint's ESP32 system is used.
 - When installed, Q2 Pod's optional Books hook executes
-  `/mnt/mmc/.crosspod/crosspod <absolute-book-path>`.
-- CrossPod owns `/dev/fb0` only during its process lifetime.
+  `/mnt/mmc/.books/books <absolute-book-path>`.
+- Books owns `/dev/fb0` only during its process lifetime.
 - Q2 Pod stops painting while the reader is running and restores the shelf
-  when CrossPod exits.
+  when Books exits.
 - If the executable is absent or fails to execute, the stock EPUB/TXT reader
   remains available. The opt-in launcher is in
   [q2-pod fork PR #1](https://github.com/lampsonlnguyen/q2-pod/pull/1).
 
 ## Input protocol
 
-Q2 Pod sends Unix domain datagrams to `/tmp/q2-crosspod.input.sock`:
+Q2 Pod sends Unix domain datagrams to `/tmp/q2-books.input.sock`:
 
 | Wire message | Meaning |
 | --- | --- |
@@ -78,13 +78,13 @@ Q2 hardware behavior, power/sleep handling, fidelity, or font coverage.
 
 1. Port original CrossPoint `Epub` chapter XHTML/CSS layout, `ParsedText`,
    `Page`, font families and reader activities onto POSIX Linux.
-2. Produce a Q2 MIPS32 executable named `crosspod` with that engine wired
+2. Produce a Q2 MIPS32 executable named `books` with that engine wired
    to `Q2SocketInput` and `Q2PagePresenter`.
 3. Validate font coverage, complex-script shaping/RTL/CJK, images, CSS, EPUB
    spine navigation and reading-position persistence with real books.
 4. Verify USB, sleep/wake, click-wheel acceleration, touchscreen, CPU/RAM,
    and framebuffer ownership on Q2 hardware.
-5. Only after those pass, package `.crosspod/crosspod` and enable/merge the
+5. Only after those pass, package `.books/books` and enable/merge the
    Q2 Pod Books hook for a device-installable beta. Until then do not
    advertise the Linux development libraries as Q2-installable.
 

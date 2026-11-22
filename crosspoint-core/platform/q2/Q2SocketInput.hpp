@@ -7,12 +7,12 @@
 #include <string>
 #include <string_view>
 #include <thread>
-namespace crosspod {
+namespace books {
 // Q2 Pod's existing game socket protocol, re-used only for event delivery.
 // Examples: "w -45", "k d 218", "k u 170", "t d 50 200".
 bool parse_q2_input(std::string_view wire, PhysicalEvent& result);
 
-// Independent Linux socket receiver for a standalone CrossPod process.
+// Independent Linux socket receiver for a standalone Books process.
 // Does not depend on Q2 Pod's card-app runtime or its graphics libraries.
 // Q2 Pod sends with MSG_DONTWAIT and a datagram socket queues only
 // net.unix.max_dgram_qlen (10) of them, so input arriving while the reader is
@@ -26,7 +26,7 @@ class Q2SocketInput {
   Q2SocketInput(const Q2SocketInput&) = delete;
   Q2SocketInput& operator=(const Q2SocketInput&) = delete;
 
-  bool open(std::string path = "/tmp/q2-crosspod.input.sock");
+  bool open(std::string path = "/tmp/q2-books.input.sock");
   bool receive(PhysicalEvent& result);
   // 1 when a datagram is ready, 0 on timeout or signal, -1 on a socket error.
   int waitForInput(int timeoutMs) const;
@@ -44,4 +44,4 @@ class Q2SocketInput {
   std::atomic<bool> failed_{false};
   std::thread thread_;
 };
-}  // namespace crosspod
+}  // namespace books

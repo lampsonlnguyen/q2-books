@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed before shipping a CrossPod ELF with the wrong Shanling Q2 ABI.
+"""Fail closed before shipping a Books ELF with the wrong Shanling Q2 ABI.
 
 Inspect the *installed* stripped engine, not just the intermediate object.
 Reference: DiamondBond/q2-librespot/contrib/shanlingq2/build.sh (X2000:

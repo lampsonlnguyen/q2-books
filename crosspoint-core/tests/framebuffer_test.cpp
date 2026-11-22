@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <cstring>
-using crosspod::Q2Framebuffer;
+using books::Q2Framebuffer;
 int main() {
   constexpr unsigned W = Q2Framebuffer::LogicalWidth;
   constexpr unsigned H = Q2Framebuffer::LogicalHeight;
@@ -28,7 +28,7 @@ int main() {
   assert(at(0,0)==0xff345678);
   assert(at(0,374)==0xff8899aa);
   assert(at(160,200)==0xff112233);
-  // CrossPod Test V3 was confirmed readable on physical Q2 hardware.
+  // Books Test V3 was confirmed readable on physical Q2 hardware.
   // Its addressing rule writes pixel (logical_x, logical_y) to
   // panel row logical_x, column (319 - logical_y).
   // Check an asymmetric three-point 'L' to prevent mirrored text regressions.
@@ -49,10 +49,10 @@ int main() {
                                     panel.data(),panel.size(),PW*4-1));
   Q2Framebuffer framebuffer;
   assert(!framebuffer.isOpen());
-  assert(!framebuffer.open("/dev/crosspod-does-not-exist"));
-  crosspod::Q2PagePresenter presenter;
+  assert(!framebuffer.open("/dev/books-does-not-exist"));
+  books::Q2PagePresenter presenter;
   assert(!presenter.presentARGB(logical.data(), logical.size()));
-  assert(!presenter.open("/dev/crosspod-does-not-exist"));
+  assert(!presenter.open("/dev/books-does-not-exist"));
   assert(!presenter.presentBW(nullptr, 0));
   return 0;
 }

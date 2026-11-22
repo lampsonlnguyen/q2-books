@@ -2,7 +2,7 @@ name: Publish CrossPoint Core Beta Dev Build
 
 on:
   push:
-    branches: [main, crosspod-renderer-linux-link]
+    branches: [main, books-renderer-linux-link]
     paths:
       - "crosspoint-core/BETA_VERSION"
 
@@ -49,9 +49,9 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -euo pipefail
-          folder="crosspod-${RELEASE_TAG}-core-devkit"
+          folder="books-${RELEASE_TAG}-core-devkit"
           mkdir -p "dist/$folder/lib" "dist/$folder/platform"
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libcrosspod_q2_input.a build/crosspoint-core/libcrosspod_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a "dist/$folder/lib/"
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libbooks_q2_input.a build/crosspoint-core/libbooks_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a "dist/$folder/lib/"
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp "dist/$folder/platform/"
           cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
           cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
@@ -60,13 +60,13 @@ jobs:
           cp docs/epub-page-preview-testing.md "dist/$folder/docs/"
           cp build/crosspoint-core/libcrosspoint_hyphenation.a "dist/$folder/lib/"
           cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE "dist/$folder/"
-          cp build/crosspoint-core/crosspod-epub-check build/crosspoint-core/crosspoint_renderer_link_tests build/crosspoint-core/crosspod_epub_page_preview "dist/$folder/"
-          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-epub-preview.pgm "dist/crosspod-${RELEASE_TAG}-epub-preview.png"
-          cp build/crosspoint-core/crosspod-epub-preview.pgm "dist/$folder/"
-          cp "dist/crosspod-${RELEASE_TAG}-epub-preview.png" "dist/$folder/"
-          (cd dist && sha256sum "crosspod-${RELEASE_TAG}-epub-preview.png" > "crosspod-${RELEASE_TAG}-epub-preview.png.sha256")
+          cp build/crosspoint-core/books-epub-check build/crosspoint-core/crosspoint_renderer_link_tests build/crosspoint-core/books_epub_page_preview "dist/$folder/"
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/books-epub-preview.pgm "dist/books-${RELEASE_TAG}-epub-preview.png"
+          cp build/crosspoint-core/books-epub-preview.pgm "dist/$folder/"
+          cp "dist/books-${RELEASE_TAG}-epub-preview.png" "dist/$folder/"
+          (cd dist && sha256sum "books-${RELEASE_TAG}-epub-preview.png" > "books-${RELEASE_TAG}-epub-preview.png.sha256")
           cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
-          CrossPod core v0.2.0 beta — native host development preview.
+          Books core v0.2.0 beta — native host development preview.
           Contains tested Linux x86_64 host static libraries, original renderer,
           EPUB page preview test programs, source code and Q2 adapter headers.
           This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
@@ -79,7 +79,7 @@ jobs:
             sha256sum "$folder.zip" > "$folder.zip.sha256"
           )
           cat > dist/RELEASE_NOTES.md <<'NOTES'
-          ## CrossPod core v0.2.0-beta.1 — development preview
+          ## Books core v0.2.0-beta.1 — development preview
 
           **NOT INSTALLABLE ON THE SHANLING Q2.** Host-only Linux x86_64
           development release; not a firmware update or MIPS reader.
@@ -115,9 +115,9 @@ jobs:
             echo "Release already exists: $RELEASE_TAG" >&2
             exit 1
           fi
-          gh release create "$RELEASE_TAG" dist/crosspod-*.zip dist/crosspod-*.zip.sha256 dist/crosspod-*.png dist/crosspod-*.png.sha256 \
+          gh release create "$RELEASE_TAG" dist/books-*.zip dist/books-*.zip.sha256 dist/books-*.png dist/books-*.png.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --prerelease \
-            --title "CrossPod $RELEASE_TAG (CrossPoint Core Dev Build)" \
+            --title "Books $RELEASE_TAG (CrossPoint Core Dev Build)" \
             --notes-file dist/RELEASE_NOTES.md

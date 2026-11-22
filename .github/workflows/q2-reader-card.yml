@@ -78,7 +78,7 @@ jobs:
   publish-v0-8-beta:
     name: Publish v0.8.0 beta from verified MIPS package
     needs: [host-tests, build-q2-reader]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     permissions:
       contents: write

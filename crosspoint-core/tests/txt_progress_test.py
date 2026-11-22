@@ -39,6 +39,9 @@ with tempfile.TemporaryDirectory() as tmp:
         with open(one, "w", encoding="utf-8") as f:
             f.write(word + "\n")
         run(["--test-selection-geometry", one], env)
+    run(["--test-clippings", utf8], env)
+    clips = os.path.join(env["BOOKS_STATE_DIR"], "Clippings", "Long Story.txt")
+    assert os.path.isfile(clips), os.listdir(os.path.join(env["BOOKS_STATE_DIR"], "Clippings"))
     for book in [utf8, latin] + extra:
         run(["--test-progress", book], env)
         out = run(["--walk", book], env)

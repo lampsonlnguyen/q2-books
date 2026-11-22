@@ -29,6 +29,7 @@
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
+#include "Clippings.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -99,7 +100,7 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 21;  // 19: About, 20: Dictionaries
+constexpr int kTypographyItems = 22;  // 19: About, 20: Dictionaries, 21: Export notes
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -1429,6 +1430,8 @@ class Reader {
     if(!selectionRange(start,end) ||
        !books::addHighlight(bookPath_,{
          static_cast<uint32_t>(currentSpine_),start,end}))return false;
+    // Keep the words for a clippings export (offsets alone can't be read back).
+    (void)books::rememberClipText(bookPath_,{static_cast<uint32_t>(currentSpine_),start,end,selectedText()});
     highlightsLoaded_=false;
     return true;
   }
@@ -1857,7 +1860,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1874,7 +1877,8 @@ class Reader {
       preferences_.autoTurnSeconds?std::to_string(preferences_.autoTurnSeconds)+"s":"Off",
       std::to_string(bookPercent())+"%",
       std::string("v")+BOOKS_VERSION,
-      std::to_string(dictionaryCount())+" installed"
+      std::to_string(dictionaryCount())+" installed",
+      "To Clippings"
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2106,6 +2110,22 @@ class Reader {
     const auto at=std::find(off.begin(),off.end(),names[index]);
     if(at==off.end())off.push_back(names[index]);else off.erase(at);
     return books::saveDisabledDictionaries(off);
+  }
+  // M3: highlights and bookmarks to Clippings/<title>.txt on the card.
+  bool exportNotes() {
+    const auto& info=metadata().coreMetadata;
+    std::string written;int count=0;
+    const bool ok=books::exportClippings(bookPath_,info.title,info.author,[&](int spine) {
+      std::string name;
+      if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0) {
+        const int toc=upstreamEpub_->getTocIndexForSpineIndex(spine);
+        if(toc>=0)name=chapterName(static_cast<size_t>(toc));
+      }
+      return name.empty()?"Chapter "+std::to_string(spine+1):name;
+    },written,count);
+    typographyNotice_=ok?"Saved "+std::to_string(count)+" notes to "+written.substr(written.find("Clippings")):
+        count==0?"No highlights or bookmarks yet":"Cannot write Clippings";
+    return ok;
   }
   int dictionaryCount() const {return static_cast<int>(books::dictionaryNames().size());}
   void showAbout() {
@@ -3256,6 +3276,11 @@ int runCardApp(const std::string& bookDir) {
             reader->showDictionaryList(0);
             continue;
           }
+          if(typeSelection==21) {
+            (void)reader->exportNotes();
+            reader->showTypographyMenu(typeSelection);
+            continue;
+          }
           if(typeSelection==18) {
             percentDialog=true;
             percentValue=reader->bookPercent();
@@ -3665,6 +3690,36 @@ int main(int argc,char** argv) {
     std::puts("Books XHTML footnote noteref missing");
     return 7;
   }
+  if(argc==3 && std::strcmp(argv[1],"--test-clippings")==0) {
+    // M3: a highlight's words and a bookmark reach Clippings/<title>.txt.
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.beginTextSelection())return 7;
+    if(!reader.stepSelection(1,true))return 8;
+    const std::string words=reader.selectedText();
+    if(words.empty() || !reader.saveSelectionHighlight())return 9;
+    if(!reader.rememberPage())return 10;
+    if(!reader.exportNotes())return 11;
+    const char* state=std::getenv("BOOKS_STATE_DIR");
+    if(!state)return 12;
+    std::string all;
+    for(const auto& name:{std::string("/Clippings")}) {
+      DIR* d=opendir((std::string(state)+name).c_str());
+      if(!d)return 13;
+      for(dirent* e;(e=readdir(d))!=nullptr;) {
+        if(e->d_name[0]=='.')continue;
+        FILE* f=std::fopen((std::string(state)+name+"/"+e->d_name).c_str(),"rb");
+        if(!f)continue;
+        char buf[4096];size_t n;
+        while((n=std::fread(buf,1,sizeof buf,f))>0)all.append(buf,n);
+        std::fclose(f);
+      }
+      closedir(d);
+    }
+    std::printf("%s",all.c_str());
+    if(all.find("\""+words+"\"")==std::string::npos || all.find("Bookmark")==std::string::npos)return 14;
+    std::puts("Books clippings export: PASS");
+    return 0;
+  }
   if(argc==3 && std::strcmp(argv[1],"--test-selection-geometry")==0) {
     // A one-word page: the word's touch box must hold the glyphs' ink and a
     // press on the ink must pick that word (it picked the line below).
@@ -3942,7 +3997,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
@@ -4020,6 +4075,11 @@ int main(int argc,char** argv) {
         if(typeSelection==19) {
           aboutShown=true;
           reader.showAbout();
+          continue;
+        }
+        if(typeSelection==21) {
+          (void)reader.exportNotes();
+          reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
           continue;
         }
         if(typeSelection==18) {

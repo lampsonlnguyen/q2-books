@@ -277,6 +277,13 @@ python3 -m venv "$work/font-build-venv"
 "$work/font-build-venv/bin/python" \
   crosspoint-core/tools/build_q2_small_font_assets.py "$card/.crosspod/fonts"
 (cd "$card/.crosspod/fonts" && sha256sum -c crosspod-fonts-10-11.sha256)
+# All seven CrossInk named families have genuine 10/11/12pt glyph metrics.
+for name in bitter lexenddeca chareink literata merriweather inter atkinson; do
+  for point in 10 11 12; do
+    test -s "$card/.crosspod/fonts/$name-$point.cpfont" ||
+      { echo "::error::Missing $name ${point}pt CrossInk font"; exit 1; }
+  done
+done
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.
@@ -392,9 +399,45 @@ for family in sans serif; do
       | tee "$work/$slug.log"
     grep -q "CrossPod multilingual fonts: 14/14 scripts loaded (${point}pt)" \
       "$work/$slug.log"
-    grep -q "CrossPod typeface: ${family^} ${point}pt" "$work/$slug.log"
+    if [[ "$family" == "sans" ]]; then label="Noto Sans"; else label="Noto Serif"; fi
+    grep -q "CrossPod typeface: $label ${point}pt" "$work/$slug.log"
   done
 done
+# CrossInk font choices are real cpfont files, not UI-only labels.
+# Render each named family at 10/11/12pt on the actual Q2 MIPS reader.
+for pair in "bitter:Bitter" "lexenddeca:Lexend Deca" \
+  "chareink:ChareInk" "literata:Literata" \
+  "merriweather:Merriweather" "inter:Inter" "atkinson:Atkinson"; do
+  slug="${pair%%:*}"
+  family_name="${pair#*:}"
+  for point in 10 11 12; do
+    test -s "$card/.crosspod/fonts/$slug-$point.cpfont"
+    echo "CROSSPOD-TYPE1 $slug $point" > "$card/.crosspod/typography.conf"
+    CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+      qemu-mipsel -L "$root" "$elf" \
+      --render "$work/reader/vietnamese-prose.epub" "$work/$slug-$point.pgm" \
+      | tee "$work/$slug-$point.log"
+    grep -q "CrossPod typeface: $family_name ${point}pt" \
+      "$work/$slug-$point.log"
+    grep -q "CrossPod multilingual fonts: 14/14 scripts loaded (${point}pt)" \
+      "$work/$slug-$point.log"
+  done
+done
+python3 - "$work" <<'PY'
+from pathlib import Path
+import sys
+work=Path(sys.argv[1])
+for family in ("bitter","lexenddeca","chareink","literata",
+               "merriweather","inter","atkinson"):
+    images=[]
+    for size in (10,11,12):
+        data=(work/f"{family}-{size}.pgm").read_bytes()
+        assert data.startswith(b"P5\\n375 320\\n255\\n")
+        assert len(data)==120015 and sum(p<255 for p in data[15:])>50
+        images.append(data)
+    assert len(set(images))==3, f"Font size raster did not change: {family}"
+print("CrossInk 7-family x 3-size Q2 MIPS raster: PASS")
+PY
 python3 - "$work" <<'PY'
 from pathlib import Path
 import sys

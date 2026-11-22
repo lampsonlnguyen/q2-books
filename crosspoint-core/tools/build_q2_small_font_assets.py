@@ -54,9 +54,36 @@ def main() -> int:
         scripts = upstream / "lib/EpdFont/scripts"
         config = yaml.safe_load((scripts / "sd-fonts.yaml").read_text())
         catalog = {item["name"]: item for item in config["families"]}
+        # Some script families appear in CrossPoint font *releases*, but are
+        # absent from the particular pinned YAML snapshot. For those, use
+        # Ubuntu 24.04's system Noto font sources on the CI host. The original
+        # CrossPoint converter still produces all CPFONT v4 glyph/metrics and
+        # joins the Latin fallback, exactly as it does for upstream families.
+        # Never silently omit those 10/11pt fallbacks or use 12pt bitmaps.
         missing = sorted(set(FAMILIES) - set(catalog))
-        if missing:
-            raise RuntimeError("Upstream fonts missing: " + ", ".join(missing))
+        for name in missing:
+            if name == "NotoSansCJKJP":
+                root = pathlib.Path("/usr/share/fonts/opentype/noto")
+                regular = root / "NotoSansCJK-Regular.ttc"
+                bold = root / "NotoSansCJK-Bold.ttc"
+                intervals = "cjk,latin-ext,punctuation,reading,symbols"
+            else:
+                root = pathlib.Path("/usr/share/fonts/truetype/noto")
+                regular = root / f"{name}-Regular.ttf"
+                bold = root / f"{name}-Bold.ttf"
+                slug = FAMILIES[name]
+                intervals = f"{slug},latin-ext,punctuation"
+            if not regular.is_file():
+                raise RuntimeError(f"Missing font source for {name}: {regular}")
+            styles = {"regular": {"path": str(regular)}}
+            if bold.is_file():
+                styles["bold"] = {"path": str(bold)}
+            catalog[name] = {
+                "name": name,
+                "description": f"Q2 CrossPoint source for {name}",
+                "intervals": intervals,
+                "styles": styles,
+            }
         families = []
         for name in FAMILIES:
             source = dict(catalog[name])

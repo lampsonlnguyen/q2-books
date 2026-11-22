@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// Q2 POSIX HTTP/1.1 transport. No ESP32 WiFi, Arduino HTTPClient or
-// firmware dependencies. Intentional LAN-only HTTP: TLS is NOT implemented
-// here and https:// is rejected, never silently downgraded.
+// Q2 POSIX HTTP/1.1 and verified HTTPS transport. The HTTPS backend uses
+// Q2 Pod's existing libcurl and CA bundle; no ESP32 or firmware ownership.
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -28,6 +27,7 @@ struct HttpUrl {
   std::string host;
   std::string port="80";
   std::string target="/";
+  bool secure=false;
   bool valid=false;
 };
 inline bool unsafeHttpString(const std::string_view s) {
@@ -38,9 +38,13 @@ inline bool unsafeHttpString(const std::string_view s) {
 }
 inline HttpUrl parseHttpUrl(std::string_view text) {
   HttpUrl url;
-  if(text.size()>1536 || unsafeHttpString(text) ||
-     text.substr(0,7)!="http://")return url;
-  text.remove_prefix(7);
+  if(text.size()>1536 || unsafeHttpString(text))return url;
+  if(text.substr(0,8)=="https://") {
+    url.secure=true;
+    url.port="443";
+    text.remove_prefix(8);
+  } else if(text.substr(0,7)=="http://")text.remove_prefix(7);
+  else return url;
   const auto separator=text.find_first_of("/?#");
   std::string_view authority=text.substr(0,separator);
   if(authority.empty() || authority.size()>253 ||
@@ -80,7 +84,8 @@ inline HttpUrl parseHttpUrl(std::string_view text) {
 }
 inline std::string absoluteHttpUrl(const HttpUrl& url) {
   if(!url.valid)return {};
-  return "http://"+url.host+(url.port=="80"?"":":"+url.port)+url.target;
+  return std::string(url.secure?"https://":"http://")+url.host+
+         (url.port==(url.secure?"443":"80")?"":":"+url.port)+url.target;
 }
 inline std::string normalizeHttpPath(std::string path) {
   const auto query=path.find('?');
@@ -121,10 +126,10 @@ inline std::string resolveHttpHref(const std::string& base,std::string_view href
      unsafeHttpString(href) || href.find('\\')!=std::string_view::npos ||
      href.substr(0,2)=="//")return {};
   HttpUrl child=parent;
-  if(href.substr(0,7)=="http://") {
+  if(href.substr(0,7)=="http://" || href.substr(0,8)=="https://") {
     child=parseHttpUrl(href);
-    if(!child.valid || child.host!=parent.host || child.port!=parent.port)
-      return {};
+    if(!child.valid || child.host!=parent.host || child.port!=parent.port ||
+       child.secure!=parent.secure)return {};
   } else {
     if(href.find("://")!=std::string_view::npos || href.front()=='#')
       return {};
@@ -150,6 +155,171 @@ struct HttpResponse {
   bool ok() const {return status>=200 && status<300 && error.empty();}
 };
 using HttpSink=std::function<bool(const char*,size_t)>;
+
+// The stock Shanling Q2 runtime ships libcurl with TLS and a CA bundle.
+// Use the ABI exposed by Q2 Pod itself; the MIPS sysroot has no curl headers.
+// Numeric options are the stable libcurl easy option values (libcurl 7.x).
+extern "C" {
+struct curl_slist;
+void* curl_easy_init(void);
+int curl_easy_setopt(void*,int,...);
+int curl_easy_perform(void*);
+int curl_easy_getinfo(void*,int,...);
+void curl_easy_cleanup(void*);
+curl_slist* curl_slist_append(curl_slist*,const char*);
+void curl_slist_free_all(curl_slist*);
+}
+struct HttpsStream {
+  const HttpSink* sink;
+  size_t maxBytes;
+  size_t count=0;
+  int status=0;
+  std::string location;
+  bool aborted=false;
+};
+inline size_t httpsBodyCallback(char* bytes,size_t unit,size_t count,void* context) {
+  auto& state=*static_cast<HttpsStream*>(context);
+  if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
+  const size_t length=unit*count;
+  if(state.status>=300 && state.status<400)return length; // never write redirect body
+  if(state.status<200 || state.status>=300)return length; // never write error page to EPUB
+  if(state.count>state.maxBytes || length>state.maxBytes-state.count ||
+     !(*state.sink)(bytes,length)) {
+    state.aborted=true;
+    return 0;
+  }
+  state.count+=length;
+  return length;
+}
+inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* context) {
+  auto& state=*static_cast<HttpsStream*>(context);
+  if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
+  const size_t length=unit*count;
+  if(length>8192)return 0;
+  std::string_view line(bytes,length);
+  if(line.substr(0,5)=="HTTP/") {
+    const auto space=line.find(' ');
+    state.status=space!=std::string_view::npos && space+4<=line.size() &&
+        line[space+1]>='0' && line[space+1]<='9' &&
+        line[space+2]>='0' && line[space+2]<='9' &&
+        line[space+3]>='0' && line[space+3]<='9' ?
+        (line[space+1]-'0')*100+(line[space+2]-'0')*10+line[space+3]-'0':0;
+    state.location.clear();
+  } else if(line.size()>=9) {
+    std::string prefix(line.substr(0,9));
+    std::transform(prefix.begin(),prefix.end(),prefix.begin(),[](unsigned char c){
+      return static_cast<char>(std::tolower(c));});
+    if(prefix=="location:") {
+      line.remove_prefix(9);
+      const auto begin=line.find_first_not_of(" \t");
+      if(begin!=std::string_view::npos) {
+        line.remove_prefix(begin);
+        const auto end=line.find_first_of("\r\n");
+        line=line.substr(0,end);
+        if(line.size()<=1536 && !unsafeHttpString(line))
+          state.location=std::string(line);
+      }
+    }
+  }
+  return length;
+}
+inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sink,
+                                 size_t maxBytes,const std::string& method,
+                                 const std::string& body,
+                                 const std::map<std::string,std::string>& extra,
+                                 unsigned redirect=0) {
+  HttpResponse result;
+  if(redirect>2 || !parseHttpUrl(original).secure) {
+    result.error="Invalid HTTPS request";return result;
+  }
+  void* curl=curl_easy_init();
+  if(!curl) {result.error="HTTPS unavailable";return result;}
+  struct Guard {
+    void* curl;
+    curl_slist* headers=nullptr;
+    ~Guard() {
+      if(headers)curl_slist_free_all(headers);
+      curl_easy_cleanup(curl);
+    }
+  } guard{curl};
+  HttpsStream stream{&sink,maxBytes};
+  constexpr int urlOpt=10002, agentOpt=10018, writeOpt=20011,
+      writeDataOpt=10001, headerOpt=20079, headerDataOpt=10029,
+      headerListOpt=10023, timeoutOpt=13, connectTimeoutOpt=78,
+      noSignalOpt=99, followOpt=52, caOpt=10065, peerOpt=64, hostOpt=81,
+      protocolsOpt=181, redirectProtocolsOpt=182, customMethodOpt=10036,
+      bodyOpt=10015, bodySizeOpt=60;
+  constexpr long httpsOnly=2L; // CURLPROTO_HTTPS
+  bool settings=
+      curl_easy_setopt(curl,urlOpt,original.c_str())==0 &&
+      curl_easy_setopt(curl,agentOpt,"CrossPod/0.9") ==0 &&
+      curl_easy_setopt(curl,writeOpt,httpsBodyCallback)==0 &&
+      curl_easy_setopt(curl,writeDataOpt,&stream)==0 &&
+      curl_easy_setopt(curl,headerOpt,httpsHeaderCallback)==0 &&
+      curl_easy_setopt(curl,headerDataOpt,&stream)==0 &&
+      curl_easy_setopt(curl,timeoutOpt,90L)==0 &&
+      curl_easy_setopt(curl,connectTimeoutOpt,10L)==0 &&
+      curl_easy_setopt(curl,noSignalOpt,1L)==0 &&
+      curl_easy_setopt(curl,followOpt,0L)==0 &&
+      curl_easy_setopt(curl,protocolsOpt,httpsOnly)==0 &&
+      curl_easy_setopt(curl,redirectProtocolsOpt,httpsOnly)==0 &&
+      curl_easy_setopt(curl,peerOpt,1L)==0 &&
+      curl_easy_setopt(curl,hostOpt,2L)==0;
+#ifdef CROSSPOD_Q2_RUNTIME
+  // Fail closed if the stock Q2 Pod CA file is missing or unusable.
+  settings=settings && curl_easy_setopt(curl,caOpt,"/etc/scrobble-ca.pem")==0;
+#else
+  // Only host tests can substitute a certificate authority. Never compiled
+  // into the device binary (which always uses the firmware-trusted roots).
+  const char* testCa=std::getenv("CROSSPOD_TEST_CA_BUNDLE");
+  if(testCa && *testCa)settings=settings && curl_easy_setopt(curl,caOpt,testCa)==0;
+#endif
+  for(const auto& [name,value]:extra) {
+    for(unsigned char ch:name)
+      if(!(std::isalnum(ch)||ch=='-')) {
+        result.error="Invalid HTTPS header name";return result;
+      }
+    const std::string header=name+": "+value;
+    curl_slist* updated=curl_slist_append(guard.headers,header.c_str());
+    if(!updated) {result.error="Out of memory";return result;}
+    guard.headers=updated;
+  }
+  if(method!="GET") {
+    const std::string contentType="Content-Type: application/json";
+    if(!extra.count("Content-Type")) {
+      curl_slist* updated=curl_slist_append(guard.headers,contentType.c_str());
+      if(!updated) {result.error="Out of memory";return result;}
+      guard.headers=updated;
+    }
+    settings=settings &&
+        curl_easy_setopt(curl,customMethodOpt,method.c_str())==0 &&
+        curl_easy_setopt(curl,bodyOpt,body.c_str())==0 &&
+        curl_easy_setopt(curl,bodySizeOpt,static_cast<long>(body.size()))==0;
+  }
+  if(guard.headers)
+    settings=settings && curl_easy_setopt(curl,headerListOpt,guard.headers)==0;
+  if(!settings) {result.error="HTTPS transport setup failed";return result;}
+  const int code=curl_easy_perform(curl);
+  long status=0;
+  if(code==0)(void)curl_easy_getinfo(curl,0x200002,&status);
+  result.status=static_cast<int>(status);
+  result.bytes=stream.count;
+  if(code!=0) {
+    result.error=stream.aborted?"HTTPS download too large or rejected":
+        "HTTPS transfer failed ("+std::to_string(code)+")";
+    return result;
+  }
+  if(status>=300 && status<400) {
+    if(method=="GET" && redirect<2 && !stream.location.empty()) {
+      const auto next=resolveHttpHref(original,stream.location);
+      if(!next.empty() && parseHttpUrl(next).secure)
+        return httpsRequest(next,sink,maxBytes,method,body,extra,redirect+1);
+    }
+    result.error="HTTPS redirect refused (origin or scheme changed)";
+  } else if(status<200 || status>=300)
+    result.error="Server response "+std::to_string(status);
+  return result;
+}
 
 class HttpSocketReader {
   int fd_=-1;
@@ -256,7 +426,7 @@ inline HttpResponse httpRequest(const std::string& original,
   if(!url.valid || (method!="GET"&&method!="PUT"&&method!="POST") ||
      maxBytes==0 || maxBytes>64u*1024u*1024u ||
      body.size()>64u*1024u) {
-    result.error="Invalid HTTP request (HTTPS not supported on this Q2 build)";
+    result.error="Invalid HTTP request";
     return result;
   }
   for(const auto& [name,value]:extra)
@@ -264,13 +434,15 @@ inline HttpResponse httpRequest(const std::string& original,
        value.size()>2048||unsafeHttpString(value)) {
       result.error="Unsafe HTTP header";return result;
     }
+  if(url.secure)
+    return httpsRequest(original,sink,maxBytes,method,body,extra,redirect);
   int fd=connectHttpSocket(url);
   if(fd<0) {result.error="Connection unavailable";return result;}
   struct SocketGuard {int fd;~SocketGuard(){::close(fd);}} guard{fd};
   std::string request=method+" "+url.target+" HTTP/1.1\r\nHost: "+url.host+
       (url.port=="80"?"":":"+url.port)+
       "\r\nAccept: application/atom+xml, application/epub+zip, application/json\r\n"
-      "Connection: close\r\nUser-Agent: CrossPod/0.7\r\n";
+      "Connection: close\r\nUser-Agent: CrossPod/0.9\r\n";
   for(const auto& [key,value]:extra)request+=key+": "+value+"\r\n";
   if(method!="GET") {
     request+="Content-Length: "+std::to_string(body.size())+"\r\n";

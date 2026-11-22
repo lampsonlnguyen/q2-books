@@ -685,6 +685,17 @@ add_test(NAME crosspod_reader_incremental_large_chapter
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/incremental_reader_test.py"
       "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
+# HTML entities in EPUB3 chapters; italic/bold in their own faces with word spaces intact
+# (the italic test needs CROSSPOD_TEST_FONTS, the card font folder, else it reports skipped).
+add_test(NAME crosspod_reader_epub3_html_entities
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/markup_tolerance_test.py"
+      "$<TARGET_FILE:crosspod-reader>" entities)
+add_test(NAME crosspod_reader_italic_bold_faces
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/markup_tolerance_test.py"
+      "$<TARGET_FILE:crosspod-reader>" italic)
+set_tests_properties(crosspod_reader_italic_bold_faces PROPERTIES SKIP_RETURN_CODE 77)
 
 # CrossPoint's actual XHTML chapter parser is compiled directly as a gate.
 # Compile only until missing FreeInk image codecs and reading activity

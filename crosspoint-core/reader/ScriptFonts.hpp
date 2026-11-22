@@ -16,6 +16,16 @@
 #include <vector>
 
 namespace crosspod {
+// Every style the .cpfont carries, not only regular: layout measures through the
+// SD font's own style resolution (registerSdCardFont), so a family holding regular
+// alone drew italic/bold words with regular glyphs at italic/bold advances, and the
+// wider glyphs ran over the following space ("Beforethe image"). Missing styles are
+// null and fall back as EpdFontFamily::getFont does.
+inline EpdFontFamily sdCardFontFamily(uint16_t size,SdCardFont& font) {
+  return EpdFontFamily(size,font.getEpdFont(EpdFontFamily::REGULAR),font.getEpdFont(EpdFontFamily::BOLD),
+                       font.getEpdFont(EpdFontFamily::ITALIC),font.getEpdFont(EpdFontFamily::BOLD_ITALIC));
+}
+
 struct ScriptFontSpec {
   const char* slug;
   const char* description;
@@ -77,7 +87,7 @@ class ScriptFontFallback {
       if(!font->load(path.c_str()) || !font->getEpdFont() ||
          !font->getEpdFont()->hasCodepoint(spec.coverageProbe))continue;
       const int id=400+static_cast<int>(i);
-      renderer.insertFont(id,EpdFontFamily(size,font->getEpdFont()));
+      renderer.insertFont(id,sdCardFontFamily(static_cast<uint16_t>(size),*font));
       renderer.registerSdCardFont(id,font.get());
       for(int primary:primaryIds)renderer.addFallbackFont(primary,id);
       loaded_.push_back(std::move(font));

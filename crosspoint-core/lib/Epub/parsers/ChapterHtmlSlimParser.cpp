@@ -2909,6 +2909,10 @@ bool ChapterHtmlSlimParser::beginParse(uint8_t* inputBytes, size_t inputSize) {
   // Handle HTML entities (like &nbsp;) that aren't in XML spec or DTD
   // Using DefaultHandlerExpand preserves normal entity expansion from DOCTYPE
   XML_SetDefaultHandlerExpand(xmlParser_, defaultHandlerExpand);
+  // As if a DTD were referenced: expat then hands an undefined entity (&nbsp; under EPUB3's
+  // <!DOCTYPE html>, or with no DOCTYPE) to the handler above instead of failing the chapter.
+  // No external DTD or entity is read: there is no external-entity handler.
+  XML_UseForeignDTD(xmlParser_, XML_TRUE);
 
   inputBytes_ = inputBytes;
   inputSize_ = inputSize;

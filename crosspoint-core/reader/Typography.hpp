@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 // Q2-specific two-family typography preferences. Font files are CrossPoint
-// CPFONT v4: their rasterized point size is part of the file, not a scale factor.
+// CPFONT v4: each selectable 8..12pt size MUST have its own raster/metrics.
+// CrossInk's scalable-font menu inspired this range, not scaled 12pt bitmaps.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -17,7 +18,11 @@ struct Typography {
 inline bool validTypography(const Typography& t) {
   return (t.family==Typography::Family::Sans ||
           t.family==Typography::Family::Serif) &&
-         (t.size==12);
+         t.size>=8 && t.size<=12;
+}
+// The Q2 Center button cycles font size through exactly five sizes.
+inline int nextTypographySize(int current) {
+  return current>=8 && current<12?current+1:8;
 }
 inline const char* typographyFamilyName(Typography::Family f) {
   return f==Typography::Family::Serif?"Serif":"Sans";
@@ -35,7 +40,7 @@ inline std::string typographyFontPath(Typography t) {
 // Shared CJK fallback is the original CrossPoint NotoSansCJKJP .cpfont v4.
 // This does not replace the reader's selected Sans/Serif face for Latin text.
 inline std::string typographyCjkFontPath(int size) {
-  if(size!=12)return {};
+  if(size<8 || size>12)return {};
   return typographyRoot()+"/fonts/cjk-"+std::to_string(size)+".cpfont";
 }
 inline bool loadTypography(Typography& value) {
@@ -50,7 +55,8 @@ inline bool loadTypography(Typography& value) {
   Typography read{std::strcmp(family,"serif")==0?
     Typography::Family::Serif:Typography::Family::Sans,size};
   if(std::strcmp(family,"serif")!=0 && std::strcmp(family,"sans")!=0)return false;
-  // Migrate saved 14/16/18pt preferences to the new 12pt ceiling.
+  // Any old saved 14/16/18pt preference is reduced to the 12pt ceiling;
+  // existing 8..12pt choices are preserved. Do not silently accept <8pt.
   // Keep the existing file format so upgrades do not erase other settings.
   if(read.size>12)read.size=12;
   if(!validTypography(read))return false;

@@ -2427,6 +2427,20 @@ class CardShelf {
   size_t onlineSelection_=0;
   books::OpdsFeed onlineFeed_;     // links of the page shown (search, next)
   bool onlineSearching_=false;        // the keyboard is for a catalog search
+  // M4: Online opens the list of saved catalogs (connected.conf); a server
+  // can be added, edited and deleted there with the T9 keyboard.
+  enum class OnlineScreen {Servers, Form, Catalog};
+  OnlineScreen onlineScreen_=OnlineScreen::Servers;
+  books::ConnectedConfig config_;
+  books::OpdsServer server_;          // the catalog being browsed
+  size_t serverSelection_=0;
+  bool serverEditMode_=false;         // Centre on a server edits it
+  books::OpdsServer form_;            // the server being added or edited
+  int formIndex_=-1;                  // its place in config_, -1 when new
+  size_t formSelection_=0;
+  bool formDeleteArmed_=false;
+  bool fieldEditing_=false;           // the keyboard edits a form field
+  size_t fieldIndex_=0;
   bool searchSubmit_=false;
   int homeSelection_ = 0;
   std::string notice_;
@@ -2474,16 +2488,135 @@ class CardShelf {
   bool onlineChosen() const {return !browsing_ && homeSelection_==3;}
   bool onlineMode() const {return onlineMode_;}
   bool searching() const {return browsing_ && searchEditing_;}
+  // The server list: no network until a server is opened.
   bool enterOnline() {
-    const auto config=books::loadConnectedConfig();
-    if(!config.configured()) {
-      notice_="Set .books/connected.conf";
-      return false;
+    config_=books::loadConnectedConfig();
+    onlineMode_=true;browsing_=true;searchEditing_=false;fieldEditing_=false;
+    onlineScreen_=OnlineScreen::Servers;serverEditMode_=false;
+    onlineEntries_.clear();onlineHistory_.clear();
+    serverSelection_=0;
+    notice_=config_.servers.empty()?"Add a catalog server":"";
+    return true;
+  }
+  bool serverScreen() const {
+    return onlineMode_ && !searchEditing_ && onlineScreen_!=OnlineScreen::Catalog;
+  }
+  bool fieldEditing() const {return onlineMode_ && fieldEditing_ && searchEditing_;}
+  const books::OpdsServer& server() const {return server_;}
+  // Rows of the server list: the servers, then Add (and Edit, when any).
+  size_t serverRows() const {
+    if(serverEditMode_)return config_.servers.size()+1;  // + Cancel
+    return config_.servers.size()+1+(config_.servers.empty()?0:1);
+  }
+  size_t formRows() const {return formIndex_<0?5:6;}
+  enum class ServerAction {None, Redraw, Open};
+  // Wheel, Centre, Back and touch on the server list and the server form.
+  ServerAction serverInput(books::LogicalAction action,int touchX,int touchY,bool touch) {
+    using A=books::LogicalAction;
+    const bool form=onlineScreen_==OnlineScreen::Form;
+    size_t& pick=form?formSelection_:serverSelection_;
+    const size_t rows=form?formRows():serverRows();
+    if(action==A::Back || (touch && touchY<73)) {
+      notice_.clear();
+      if(form)onlineScreen_=OnlineScreen::Servers;
+      else if(serverEditMode_){serverEditMode_=false;serverSelection_=0;}
+      else goHome();
+      return ServerAction::Redraw;
     }
-    return loadOnlinePage(config.opdsUrl,false);
+    if(action==A::Next || action==A::Previous) {
+      const size_t before=pick;
+      if(action==A::Next && pick+1<rows)++pick;
+      if(action==A::Previous && pick>0)--pick;
+      if(pick!=before){notice_.clear();if(form)formDeleteArmed_=false;}
+      return pick!=before?ServerAction::Redraw:ServerAction::None;
+    }
+    if(touch) {
+      if(touchY<TOP_Y)return ServerAction::None;
+      const size_t start=(pick/VISIBLE_ROWS)*VISIBLE_ROWS;
+      const size_t row=static_cast<size_t>((touchY-TOP_Y)/ROW_H);
+      if(row>=VISIBLE_ROWS || start+row>=rows)return ServerAction::None;
+      if(form && pick!=start+row)formDeleteArmed_=false;
+      pick=start+row;
+    } else if(action!=A::Confirm)return ServerAction::None;
+    notice_.clear();
+    if(form)return formChoice();
+    const size_t count=config_.servers.size();
+    if(serverEditMode_) {
+      if(pick>=count){serverEditMode_=false;serverSelection_=0;return ServerAction::Redraw;}
+      openForm(static_cast<int>(pick));return ServerAction::Redraw;
+    }
+    if(pick<count){server_=config_.servers[pick];return ServerAction::Open;}
+    if(pick==count) {
+      if(count>=books::kMaxOpdsServers){notice_="Up to 8 servers";return ServerAction::Redraw;}
+      openForm(-1);return ServerAction::Redraw;
+    }
+    serverEditMode_=true;serverSelection_=0;
+    return ServerAction::Redraw;
+  }
+  void openForm(int index) {
+    formIndex_=index;
+    form_=index<0?books::OpdsServer{}:config_.servers[static_cast<size_t>(index)];
+    formSelection_=index<0?1:0;  // a new server starts at its URL
+    formDeleteArmed_=false;
+    onlineScreen_=OnlineScreen::Form;
+  }
+  std::string* formField(size_t row) {
+    switch(row) {
+      case 0: return &form_.name;
+      case 1: return &form_.url;
+      case 2: return &form_.username;
+      case 3: return &form_.password;
+      default: return nullptr;
+    }
+  }
+  ServerAction formChoice() {
+    if(std::string* field=formField(formSelection_)) {
+      fieldIndex_=formSelection_;
+      searchQuery_=*field;
+      fieldEditing_=true;searchEditing_=true;onlineSearching_=false;
+      keypad_.reset();
+      keypad_.setUrlMode(formSelection_!=0);
+      searchKey_=books::T9Keypad::Abc;
+      return ServerAction::Redraw;
+    }
+    auto saved=books::loadConnectedConfig();  // keep the sync settings as they are now
+    saved.servers=config_.servers;
+    if(formSelection_==4) {  // Save
+      form_.url=books::trimConnected(form_.url);
+      if(auto problem=books::opdsServerProblem(form_);!problem.empty()) {
+        notice_=problem;return ServerAction::Redraw;
+      }
+      if(formIndex_<0)saved.servers.push_back(form_);
+      else saved.servers[static_cast<size_t>(formIndex_)]=form_;
+    } else {  // Delete, on a second press
+      if(!formDeleteArmed_){formDeleteArmed_=true;return ServerAction::Redraw;}
+      saved.servers.erase(saved.servers.begin()+formIndex_);
+    }
+    std::string error;
+    if(!books::saveConnectedConfig(saved,error)){notice_=error;return ServerAction::Redraw;}
+    const bool removed=formSelection_==5;
+    config_=books::loadConnectedConfig();
+    onlineScreen_=OnlineScreen::Servers;serverEditMode_=false;
+    serverSelection_=removed||config_.servers.empty()?0:
+        formIndex_<0?config_.servers.size()-1:static_cast<size_t>(formIndex_);
+    notice_=removed?"Server deleted":"Server saved";
+    return ServerAction::Redraw;
+  }
+  // "Offline: 22 Nov 13:05": the page is the copy kept on the card.
+  static std::string offlineNotice(long long savedAt) {
+    char when[32]="";
+    const std::time_t t=static_cast<std::time_t>(savedAt);
+    std::tm local{};
+    if(savedAt>0 && localtime_r(&t,&local))std::strftime(when,sizeof(when)," %d/%m %H:%M",&local);
+    return std::string(books::tr("Offline copy"))+when;
+  }
+  // Opens server_'s catalog; on failure the server list stays, with why.
+  bool openServer() {
+    onlineHistory_.clear();
+    return loadOnlinePage(server_.url,false);
   }
   bool loadOnlinePage(const std::string& url,bool saveHistory) {
-    auto feed=books::fetchOpdsFeed(url);
+    auto feed=books::fetchOpdsFeed(url,server_);
     if(!feed.error.empty()) {
       notice_=feed.error;
       return false;
@@ -2491,27 +2624,34 @@ class CardShelf {
     if(saveHistory && onlineHistory_.size()<12)
       onlineHistory_.push_back(onlineUrl_);
     onlineUrl_=url;
+    const bool offline=feed.offline;
+    const long long savedAt=feed.savedAt;
     showFeed(std::move(feed));
+    onlineScreen_=OnlineScreen::Catalog;
     onlineMode_=true;
     browsing_=true;
     searchEditing_=false;
     notice_.clear();
+    if(offline)notice_=offlineNotice(savedAt);
     return true;
   }
   void returnFromOnline() {
-    if(onlineHistory_.empty()) {
-      onlineMode_=false;onlineEntries_.clear();goHome();return;
+    if(onlineHistory_.empty()) {  // the catalog's first page: back to the servers
+      onlineEntries_.clear();onlineScreen_=OnlineScreen::Servers;notice_.clear();return;
     }
     const auto previous=onlineHistory_.back();
     onlineHistory_.pop_back();
-    // A failed network fetch must not strand the user. Back twice exits.
-    auto feed=books::fetchOpdsFeed(previous);
+    // A failed network fetch must not strand the user: back to the servers.
+    auto feed=books::fetchOpdsFeed(previous,server_);
     if(!feed.error.empty()) {
-      onlineMode_=false;onlineEntries_.clear();goHome();return;
+      onlineEntries_.clear();onlineHistory_.clear();
+      onlineScreen_=OnlineScreen::Servers;notice_=feed.error;return;
     }
     onlineUrl_=previous;
+    const bool offline=feed.offline;
+    const long long savedAt=feed.savedAt;
     showFeed(std::move(feed));
-    notice_.clear();
+    notice_=offline?offlineNotice(savedAt):std::string();
   }
   // M4: a feed's search link becomes a first "Search" row and its rel="next"
   // link a last "More results" row (OPDS catalogs page long lists).
@@ -2548,7 +2688,7 @@ class CardShelf {
   // the history, so Back returns to the page that was searched.
   bool submitOnlineSearch() {
     std::string error;
-    const std::string url=books::opdsSearchUrl(onlineFeed_,searchQuery_,error);
+    const std::string url=books::opdsSearchUrl(onlineFeed_,searchQuery_,error,server_);
     if(url.empty()) {
       notice_=searchQuery_.empty()?"Type a search first":error;
       return false;
@@ -2571,19 +2711,31 @@ class CardShelf {
   void enterBrowser() {browsing_=true;searchEditing_=false;notice_.clear();}
   void goHome() {
     browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
+    fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
+    keypad_.setUrlMode(false);
     searchQuery_.clear();refreshVisible();notice_.clear();
   }
   void enterSearch() {
     browsing_=true;searchEditing_=true;searchKey_=books::T9Keypad::Abc;keypad_.reset();
     notice_.clear();
   }
-  void endSearch() {searchEditing_=false;onlineSearching_=false;notice_.clear();}
+  void endSearch() {
+    searchEditing_=false;onlineSearching_=false;fieldEditing_=false;
+    keypad_.setUrlMode(false);notice_.clear();
+  }
   static constexpr size_t SEARCH_KEY_COUNT=books::kT9Keys;
   // The keypad: rows of 4 keys under the field (Q2's own T9 layout).
   static constexpr int KB_X=12, KB_Y=112, KB_W=86, KB_H=37, KB_GAP=2;
   bool applySearchChoice() {
     const auto result=keypad_.press(static_cast<int>(searchKey_),searchQuery_,
+                                    fieldEditing_?(fieldIndex_==1?400:fieldIndex_==0?64:128):
                                     onlineSearching_?40:24);
+    if(result==books::T9Result::Done && fieldEditing_) {
+      if(std::string* field=formField(fieldIndex_))*field=searchQuery_;
+      searchQuery_.clear();endSearch();formDeleteArmed_=false;
+      return true;
+    }
+    if(fieldEditing_)return true;
     if(result==books::T9Result::Done) {
       if(onlineSearching_){searchSubmit_=true;return true;}
       endSearch();return true;
@@ -2607,7 +2759,7 @@ class CardShelf {
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
-    if(onlineMode_ && !onlineSearching_) {
+    if(onlineMode_ && !searchEditing_) {
       if(onlineEntries_.empty())return false;
       const size_t before=onlineSelection_;
       if(direction>0 && onlineSelection_+1<onlineEntries_.size())
@@ -2636,7 +2788,7 @@ class CardShelf {
   }
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
-    if(onlineMode_ && !onlineSearching_) {
+    if(onlineMode_ && !searchEditing_) {
       if(y<73) {returnFromOnline();return true;}
       onlineTouch(x,y);return true;
     }
@@ -2809,7 +2961,9 @@ class CardShelf {
       drawRowLabel(16,0,39,"Books");
       books::paintBar(display_,0,0,375,39);  // the title strip
     }
-    if(onlineMode_ && !onlineSearching_) {
+    if(serverScreen()) {
+      paintServers();
+    } else if(onlineMode_ && !searchEditing_) {
       // Placed as Home's header is: drawn at y 49 its glyphs crossed the rule.
       drawRowLabel(16,39,35,
           clippedLabel(onlineTitle_.empty()?"Online library":onlineTitle_,35).c_str());
@@ -2870,9 +3024,12 @@ class CardShelf {
       if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
-      drawCompactLabel(16,56,onlineSearching_?"Search catalog":"Search library",176);
+      static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};
+      drawCompactLabel(16,56,fieldEditing_?fieldNames[std::min<size_t>(fieldIndex_,3)]:
+                       onlineSearching_?"Search catalog":"Search library",176);
       char count[48];
-      if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
+      if(fieldEditing_)std::snprintf(count,sizeof(count),"%s",books::tr("Done: keep"));
+      else if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
       else std::snprintf(count,sizeof(count),
           books::uiLanguage()==books::UiLanguage::English?"%zu / %zu books":"%zu / %zu sách",
           visible_.size(),books_.size());
@@ -2880,6 +3037,9 @@ class CardShelf {
       renderer_.drawRect(12,62,351,28,true);
       const int pending=keypad_.pendingKey();
       std::string shown=searchQuery_;
+      if(fieldEditing_ && fieldIndex_==3)  // a password: only the open letter shows
+        for(size_t i=0;i<shown.size();++i)
+          if(i+1<shown.size() || pending<0)shown[i]='*';
       while(shown.size()>30)shown.erase(0,1);
       drawCompactLabel(20,84,shown.c_str(),176);
       // caret, after the text (under the letter still open to the next press)
@@ -2963,10 +3123,49 @@ class CardShelf {
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
       :searchEditing_?"OK: press   Back: close":
+       serverScreen()&&onlineScreen_==OnlineScreen::Form?"OK: edit   Back: cancel":
+       serverScreen()?"OK: open   Back: home":
        onlineMode_?"OK: open/get   Back: prev":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     drawRowLabel(22,269,51,footer.c_str());
     books::paintBar(display_,0,269,375,51);  // the footer strip
+  }
+  // The saved catalogs, or the form for one of them.
+  void paintServers() {
+    const bool form=onlineScreen_==OnlineScreen::Form;
+    const char* heading=form?(formIndex_<0?"New server":"Edit server"):
+        serverEditMode_?"Choose a server to edit":"Catalog servers";
+    drawRowLabel(16,39,35,heading);
+    renderer_.drawLine(15,74,359,74,true);
+    const size_t rows=form?formRows():serverRows();
+    const size_t pick=form?formSelection_:serverSelection_;
+    const size_t start=(pick/VISIBLE_ROWS)*VISIBLE_ROWS;
+    for(size_t row=0;row<VISIBLE_ROWS && start+row<rows;++row) {
+      const size_t index=start+row;
+      const int y=TOP_Y+static_cast<int>(row)*ROW_H;
+      std::string title,detail;
+      if(form) {
+        static const char* const labels[6]={"Name","URL","User","Password","Save","Delete server"};
+        title=books::tr(labels[index]);
+        if(index<4) {
+          std::string value=*formField(index);
+          if(index==3)value=std::string(std::min<size_t>(value.size(),12),'*');
+          if(index==0 && value.empty())value=books::tr("(the host name)");
+          else if(value.empty())value=books::tr("(none)");
+          detail=value;
+        }
+        if(index==5 && formDeleteArmed_)title=books::tr("Press again to delete");
+      } else if(index<config_.servers.size()) {
+        const auto& server=config_.servers[index];
+        title=books::opdsServerLabel(server);
+        const auto url=books::parseHttpUrl(server.url);
+        detail=std::string(url.secure?"https://":"http://")+url.host+
+               (server.username.empty()?"":"  ("+server.username+")");
+      } else if(serverEditMode_)title=books::tr("Cancel");
+      else if(index==config_.servers.size())title=books::tr("+ Add server");
+      else title=books::tr("Edit a server");
+      drawListRow(y,clippedLabel(title,31),detail,index==pick);
+    }
   }
   void present() {paint();display_.displayBuffer();}
   bool savePgm(const std::string& out) {
@@ -3470,7 +3669,7 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
-    if(shelf->onlineSearching()) {
+    if(shelf->onlineSearching() || shelf->fieldEditing()) {
       if(action==books::LogicalAction::Back)shelf->endSearch();
       else if(action==books::LogicalAction::Previous)(void)shelf->change(-1);
       else if(action==books::LogicalAction::Next)(void)shelf->change(1);
@@ -3482,6 +3681,17 @@ int runCardApp(const std::string& bookDir) {
         (void)shelf->submitOnlineSearch();  // on failure the keyboard stays, with the reason
       }
       shelf->present();
+      continue;
+    }
+    if(shelf->serverScreen()) {
+      const bool touch=event.kind==books::PhysicalKind::TouchUp;
+      const auto result=shelf->serverInput(action,event.x,event.y,touch);
+      if(result==CardShelf::ServerAction::Open) {
+        shelf->setNotice("Loading catalog...");
+        shelf->present();
+        (void)shelf->openServer();  // on failure the list stays, with the reason
+      }
+      if(result!=CardShelf::ServerAction::None)shelf->present();
       continue;
     }
     if(shelf->onlineMode()) {
@@ -3521,7 +3731,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice("Downloading EPUB...");
       shelf->present();
       std::string saved,error;
-      if(!books::opdsDownloadEpub(bookDir,selected,saved,error)) {
+      if(!books::opdsDownloadEpub(bookDir,selected,saved,error,shelf->server())) {
         shelf->setNotice(error.empty()?"Download failed":error);
         shelf->present();continue;
       }
@@ -3572,8 +3782,6 @@ int runCardApp(const std::string& bookDir) {
     if(!activate)continue;
     if(shelf->searching()) {shelf->present();continue;}
     if(shelf->onlineChosen()) {
-      shelf->setNotice("Loading catalog...");
-      shelf->present();
       (void)shelf->enterOnline();
       shelf->present();
       continue;
@@ -3659,13 +3867,18 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
   if(argc==3 && std::strcmp(argv[1],"--opds-probe")==0) {
-    const auto catalog=books::fetchOpdsFeed(argv[2]);
+    // The credentials of the saved server on the same origin, if any.
+    books::OpdsServer server;
+    for(const auto& saved:books::loadConnectedConfig().servers)
+      if(books::sameHttpOrigin(saved.url,argv[2])){server=saved;break;}
+    const auto catalog=books::fetchOpdsFeed(argv[2],server);
     if(!catalog.error.empty()) {
       std::fprintf(stderr,"Books OPDS request: %s\n",catalog.error.c_str());
       return 8;
     }
-    std::printf("Books OPDS: %s, entries=%zu\n",
-                catalog.title.c_str(),catalog.entries.size());
+    std::printf("Books OPDS: %s, entries=%zu%s\n",
+                catalog.title.c_str(),catalog.entries.size(),
+                catalog.offline?" (offline copy)":"");
     for(const auto& entry:catalog.entries)
       std::printf("%s: %s\n",
         entry.kind==books::OpdsEntry::Kind::Epub?"EPUB":"CATALOG",

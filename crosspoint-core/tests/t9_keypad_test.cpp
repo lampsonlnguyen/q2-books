@@ -53,6 +53,27 @@ int main() {
   assert(small.press(T9Keypad::Ghi, s, 2, now + 200ms) == T9Result::None && s == "ad");
   assert(small.press(T9Keypad::Def, s, 2, now + 300ms) == T9Result::Typed && s == "ae");  // cycling still works at the limit
   assert(small.press(99, s, 2, now) == T9Result::None);
+  // URL mode (server form): "/" and ":" are reachable; search keeps Q2's layout.
+  {
+    T9Keypad u;
+    std::string url;
+    auto at = T9Keypad::Clock::time_point{} + 100s;
+    assert(u.letters(T9Keypad::Stops) == ".?!" && u.label(T9Keypad::Comma) == ",");
+    u.setUrlMode(true);
+    assert(u.urlMode() && u.letters(T9Keypad::Stops) == "./?!=&%~#");
+    assert(u.letters(T9Keypad::Comma) == ",'-:;@_" && u.label(T9Keypad::Stops) == "./?=&");
+    u.press(T9Keypad::Comma, url, 64, at);
+    u.press(T9Keypad::Comma, url, 64, at + 100ms);
+    u.press(T9Keypad::Comma, url, 64, at + 200ms);
+    u.press(T9Keypad::Comma, url, 64, at + 300ms);
+    u.press(T9Keypad::Stops, url, 64, at + 400ms);
+    u.press(T9Keypad::Stops, url, 64, at + 500ms);
+    assert(url == ":/");
+    u.press(T9Keypad::Digits, url, 64, at + 600ms);
+    assert(u.label(T9Keypad::Stops) == "0" && u.label(T9Keypad::Comma) == "1");
+    u.setUrlMode(false);
+    assert(u.letters(T9Keypad::Stops) == "0");  // digits page stays until toggled
+  }
   std::puts("Books T9 keypad: PASS");
   return 0;
 }

@@ -577,6 +577,10 @@ add_test(NAME books_opds_paging_and_search
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_paging_search_test.py"
     "$<TARGET_FILE:books-reader>")
+add_test(NAME books_opds_servers_offline_and_retry
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_servers_cache_test.py"
+    "$<TARGET_FILE:books-reader>")
 add_test(NAME books_connected_network_end_to_end
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"

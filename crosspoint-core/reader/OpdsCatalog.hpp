@@ -2,10 +2,13 @@
 #pragma once
 // OPDS 1.x Atom SAX parser and safe same-origin EPUB downloads for Q2/Linux.
 // Portable XML/ZIP reader infrastructure is reused; no ESP32 networking.
+#include "ConnectedConfig.hpp"
 #include "ConnectedHttp.hpp"
 #include "ShelfDetails.hpp"
 #include <expat.h>
 #include <algorithm>
+#include <cerrno>
+#include <ctime>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -35,6 +38,8 @@ struct OpdsFeed {
   std::string nextHref;        // rel="next": the following page of this feed
   std::string searchTemplate;  // an Atom URL template with {searchTerms}
   std::string searchDescription;  // an OpenSearch description to fetch
+  bool offline=false;             // read from the card: the server was unreachable
+  long long savedAt=0;            // when that copy was fetched (Unix time)
 };
 inline std::string opdsLocalName(const XML_Char* raw) {
   if(!raw)return {};
@@ -118,11 +123,13 @@ inline std::string parseOpenSearchTemplate(const std::string& pageUrl,const std:
 }
 // The URL to search a feed for |query|, fetching its OpenSearch description
 // when the feed links one. Empty, with |error| set, when there is none.
-inline std::string opdsSearchUrl(const OpdsFeed& feed,const std::string& query,std::string& error) {
+inline std::string opdsSearchUrl(const OpdsFeed& feed,const std::string& query,std::string& error,
+                                 const OpdsServer& server={}) {
   std::string tpl=feed.searchTemplate;
   if(tpl.empty() && !feed.searchDescription.empty()) {
     std::string xml;
-    const auto response=httpGetText(feed.searchDescription,xml);
+    const auto response=httpGetText(feed.searchDescription,xml,64u*1024u,
+                                    opdsHeadersFor(server,feed.searchDescription));
     if(!response.ok()){error=response.error.empty()?"Search description failed":response.error;return {};}
     tpl=parseOpenSearchTemplate(feed.searchDescription,xml);
   }
@@ -249,15 +256,117 @@ inline OpdsFeed parseOpdsFeed(const std::string& pageUrl,
   if(!valid){feed.entries.clear();feed.error="Invalid OPDS XML";}
   return feed;
 }
-inline OpdsFeed fetchOpdsFeed(const std::string& url) {
+// M4 offline catalog: every page read is kept on the card (the state
+// folder, mode 0600: Kavita puts its API key in catalog URLs), at most
+// kOpdsCacheFiles pages and kOpdsCacheBytes in all, the oldest dropped
+// first. When the server can't be reached the page's last copy is shown.
+inline constexpr size_t kOpdsCacheFiles=64;
+inline constexpr long long kOpdsCacheBytes=8ll*1024*1024;
+inline std::string opdsCacheDir() {
+  const std::string conf=connectedConfigPath();
+  return conf.substr(0,conf.find_last_of('/'))+"/opds-cache";
+}
+inline uint64_t opdsFnv64(const std::string& text);
+inline std::string opdsCacheFile(const std::string& url) {
+  char name[32]{};
+  std::snprintf(name,sizeof(name),"/%016llx.xml",
+                static_cast<unsigned long long>(opdsFnv64(url)));
+  return opdsCacheDir()+name;
+}
+inline void trimOpdsCache() {
+  const std::string dir=opdsCacheDir();
+  DIR* folder=::opendir(dir.c_str());
+  if(!folder)return;
+  struct Item {std::string path;long long size;long long mtime;};
+  std::vector<Item> items;
+  while(const dirent* entry=::readdir(folder)) {
+    const std::string name=entry->d_name;
+    if(name.size()!=20 || name.compare(16,4,".xml")!=0)continue;
+    struct stat info{};
+    const std::string path=dir+"/"+name;
+    if(::lstat(path.c_str(),&info)==0 && S_ISREG(info.st_mode))
+      items.push_back({path,static_cast<long long>(info.st_size),static_cast<long long>(info.st_mtime)});
+  }
+  ::closedir(folder);
+  std::sort(items.begin(),items.end(),[](const Item& a,const Item& b){return a.mtime>b.mtime;});
+  long long total=0;
+  for(size_t i=0;i<items.size();++i) {
+    total+=items[i].size;
+    if(i>=kOpdsCacheFiles || total>kOpdsCacheBytes)::unlink(items[i].path.c_str());
+  }
+}
+inline void saveOpdsCache(const std::string& url,const std::string& xml) {
+  if(xml.empty() || xml.size()>512u*1024u)return;
+  const std::string dir=opdsCacheDir();
+  if(::mkdir(dir.c_str(),0700)!=0 && errno!=EEXIST)return;
+  const std::string file=opdsCacheFile(url),temp=file+".tmp";
+  const int fd=::open(temp.c_str(),O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC,0600);
+  if(fd<0)return;
+  const std::string head="BOOKS-OPDS1 "+url+"\n";
+  bool ok=true;
+  for(const std::string* part:{&head,&xml})
+    for(size_t off=0;ok && off<part->size();) {
+      const ssize_t n=::write(fd,part->data()+off,part->size()-off);
+      if(n<=0)ok=false;else off+=static_cast<size_t>(n);
+    }
+  if(::close(fd)!=0)ok=false;
+  if(!ok || ::rename(temp.c_str(),file.c_str())!=0){::unlink(temp.c_str());return;}
+  trimOpdsCache();
+}
+// The kept copy of |url|, if any (with the time it was saved).
+inline bool loadOpdsCache(const std::string& url,std::string& xml,long long& savedAt) {
+  xml.clear();
+  const std::string file=opdsCacheFile(url);
+  struct stat info{};
+  if(::lstat(file.c_str(),&info)!=0 || !S_ISREG(info.st_mode) ||
+     info.st_size>static_cast<off_t>(600u*1024u))return false;
+  FILE* in=std::fopen(file.c_str(),"rb");
+  if(!in)return false;
+  std::string text(static_cast<size_t>(info.st_size),'\0');
+  const size_t got=std::fread(text.data(),1,text.size(),in);
+  std::fclose(in);
+  text.resize(got);
+  const std::string head="BOOKS-OPDS1 "+url+"\n";
+  if(text.compare(0,head.size(),head)!=0)return false;  // another URL with the same hash
+  xml=text.substr(head.size());
+  savedAt=static_cast<long long>(info.st_mtime);
+  return !xml.empty();
+}
+// Worth one more try: no answer at all (refused, reset, timed out, DNS) or
+// a server error. Not a 4xx: the same request gets the same answer.
+inline bool opdsRetryable(const HttpResponse& response) {
+  return !response.ok() && !httpAborted() &&
+         (response.status==0 || response.status>=500);
+}
+inline unsigned& opdsRetryDelayMs() {static unsigned delay=1500;return delay;}
+inline void opdsRetryPause() {
+  for(unsigned waited=0;waited<opdsRetryDelayMs() && !httpAborted();waited+=50)::usleep(50000);
+}
+inline OpdsFeed fetchOpdsFeed(const std::string& url,const OpdsServer& server={}) {
   OpdsFeed feed;
   std::string xml;
-  const auto response=httpGetText(url,xml);
+  auto response=httpGetText(url,xml,512u*1024u,opdsHeadersFor(server,url));
+  if(opdsRetryable(response)) {
+    opdsRetryPause();
+    if(!httpAborted())response=httpGetText(url,xml,512u*1024u,opdsHeadersFor(server,url));
+  }
   if(!response.ok()) {
     feed.error=response.error.empty()?"Catalog request failed":response.error;
+    // Unreachable (not refused: a 401 or 404 is the server's answer): the kept copy.
+    long long savedAt=0;
+    std::string kept;
+    if(opdsRetryable(response) && loadOpdsCache(url,kept,savedAt)) {
+      auto cached=parseOpdsFeed(url,kept);
+      if(cached.error.empty()) {
+        cached.offline=true;cached.savedAt=savedAt;
+        return cached;
+      }
+    }
     return feed;
   }
-  return parseOpdsFeed(url,xml);
+  feed=parseOpdsFeed(url,xml);
+  if(feed.error.empty())saveOpdsCache(url,xml);
+  return feed;
 }
 inline uint64_t opdsFnv64(const std::string& text) {
   uint64_t hash=14695981039346656037ull;
@@ -305,7 +414,8 @@ inline int sweepStaleOpdsDownloads(const std::string& booksRoot) {
 }
 inline bool opdsDownloadEpub(const std::string& booksRoot,
                              const OpdsEntry& entry,
-                             std::string& saved,std::string& error) {
+                             std::string& saved,std::string& error,
+                             const OpdsServer& server={}) {
   saved.clear();error.clear();
   const std::string file=opdsDestination(booksRoot,entry);
   if(file.empty()) {error="Invalid download link";return false;}
@@ -341,7 +451,14 @@ inline bool opdsDownloadEpub(const std::string& booksRoot,
   size_t bytes=0;
   bool writeOk=true;
   char first[4]{};size_t firstCount=0;
-  const auto response=httpRequest(entry.href,[&](const char* block,size_t len) {
+  HttpResponse response;
+  for(int attempt=0;attempt<2;++attempt) {
+  if(attempt) {  // nothing arrived the first time: once more, after a pause
+    if(bytes || !opdsRetryable(response))break;
+    opdsRetryPause();
+    if(httpAborted())break;
+  }
+  response=httpRequest(entry.href,[&](const char* block,size_t len) {
     const size_t check=std::min(len,sizeof(first)-firstCount);
     if(check){std::memcpy(first+firstCount,block,check);firstCount+=check;}
     for(size_t off=0;off<len;) {
@@ -350,7 +467,9 @@ inline bool opdsDownloadEpub(const std::string& booksRoot,
       off+=static_cast<size_t>(n);
     }
     bytes+=len;return true;
-  },32u*1024u*1024u);
+  },32u*1024u*1024u,"GET",{},opdsHeadersFor(server,entry.href));
+  if(response.ok())break;
+  }
   if(::fsync(fd)!=0)writeOk=false;
   // Keep the .part locked until it is renamed or removed, so no other
   // download can take it over in between.

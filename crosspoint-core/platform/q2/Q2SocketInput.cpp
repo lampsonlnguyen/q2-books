@@ -64,7 +64,25 @@ bool Q2SocketInput::open(std::string path) {
   sockaddr_un addr{};
   addr.sun_family = AF_UNIX;
   std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
-  ::unlink(path.c_str());  // stale socket from a crashed reader
+  // Do not steal the endpoint from a running reader or delete an unrelated file.
+  // A pathname socket left by a crashed process may be removed only when the
+  // kernel reports that no datagram receiver is bound to it.
+  struct stat previous{};
+  if (::lstat(path.c_str(), &previous) == 0) {
+    if (!S_ISSOCK(previous.st_mode)) { ::close(fd); return false; }
+    int probe = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (probe < 0) { ::close(fd); return false; }
+    const int connected = ::connect(probe, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    const int savedError = errno;
+    ::close(probe);
+    if (connected == 0 || savedError != ECONNREFUSED || ::unlink(path.c_str()) != 0) {
+      ::close(fd);
+      return false;
+    }
+  } else if (errno != ENOENT) {
+    ::close(fd);
+    return false;
+  }
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
       ::chmod(path.c_str(), 0600) != 0) {
     ::close(fd);

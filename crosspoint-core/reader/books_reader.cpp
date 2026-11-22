@@ -45,6 +45,7 @@
 #include "OfflineDictionary.hpp"
 #include "FootnotePreview.hpp"
 #include "OpdsCatalog.hpp"
+#include "OpdsCover.hpp"
 #include "KoreaderSync.hpp"
 #include <ProgressMapper.h>
 #include <ProgressComparison.h>
@@ -2441,6 +2442,16 @@ class CardShelf {
   bool formDeleteArmed_=false;
   bool fieldEditing_=false;           // the keyboard edits a form field
   size_t fieldIndex_=0;
+  // A catalog book's details: its cover, title, author and description.
+  bool detailsOpen_=false;
+  books::OpdsEntry detailsEntry_;
+  books::OpdsCover detailsCover_{};
+  bool detailsHasCover_=false;
+  bool detailsOnCard_=false;
+  std::vector<std::string> detailsLines_;
+  size_t detailsScroll_=0;
+  static constexpr int DETAILS_X=124, DETAILS_W=236;
+  size_t detailsRoom_=6;  // description lines the last paint had room for
   bool searchSubmit_=false;
   int homeSelection_ = 0;
   std::string notice_;
@@ -2497,6 +2508,61 @@ class CardShelf {
     serverSelection_=0;
     notice_=config_.servers.empty()?"Add a catalog server":"";
     return true;
+  }
+  bool detailsOpen() const {return onlineMode_ && detailsOpen_;}
+  const books::OpdsEntry& detailsEntry() const {return detailsEntry_;}
+  void openDetails(const books::OpdsEntry& entry,const std::string& bookDir) {
+    detailsEntry_=entry;
+    detailsHasCover_=books::fetchOpdsCover(entry,server_,detailsCover_);
+    struct stat info{};
+    const std::string file=books::opdsDestination(bookDir,entry);
+    detailsOnCard_=!file.empty() && ::lstat(file.c_str(),&info)==0 && S_ISREG(info.st_mode);
+    detailsLines_=wrapSmall(entry.summary.empty()?books::tr("No description"):entry.summary,DETAILS_W);
+    if(detailsLines_.size()>200)detailsLines_.resize(200);
+    detailsScroll_=0;detailsOpen_=true;notice_.clear();
+  }
+  void closeDetails() {detailsOpen_=false;notice_.clear();}
+  int smallWidth(const std::string& text) const {
+    int width=0;
+    const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
+    while(*p) {
+      const uint32_t cp=utf8NextCodepoint(&p);
+      int32_t advance=0;int top=0;
+      if(renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,top))
+        width+=fp4::toPixel(advance*150/256);
+    }
+    return width;
+  }
+  // Words to lines of at most |width| pixels in the small (150/256) face; a
+  // word wider than a line is cut at a whole character.
+  std::vector<std::string> wrapSmall(const std::string& text,int width) const {
+    std::vector<std::string> lines;
+    std::string line;
+    size_t i=0;
+    while(i<text.size()) {
+      size_t end=text.find(' ',i);
+      if(end==std::string::npos)end=text.size();
+      std::string word=text.substr(i,end-i);
+      i=end+1;
+      if(word.empty())continue;
+      const std::string joined=line.empty()?word:line+" "+word;
+      if(smallWidth(joined)<=width){line=joined;continue;}
+      if(!line.empty())lines.push_back(line);
+      line.clear();
+      while(smallWidth(word)>width) {  // a long URL or an unspaced script
+        size_t cut=word.size();
+        while(cut>1 && smallWidth(word.substr(0,cut))>width) {
+          --cut;
+          while(cut>0 && (static_cast<unsigned char>(word[cut])&0xC0)==0x80)--cut;
+        }
+        if(cut==0)cut=1;
+        lines.push_back(word.substr(0,cut));
+        word.erase(0,cut);
+      }
+      line=word;
+    }
+    if(!line.empty())lines.push_back(line);
+    return lines;
   }
   bool serverScreen() const {
     return onlineMode_ && !searchEditing_ && onlineScreen_!=OnlineScreen::Catalog;
@@ -2712,6 +2778,7 @@ class CardShelf {
   void goHome() {
     browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
+    detailsOpen_=false;
     keypad_.setUrlMode(false);
     searchQuery_.clear();refreshVisible();notice_.clear();
   }
@@ -2759,6 +2826,13 @@ class CardShelf {
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
+    if(onlineMode_ && !searchEditing_ && detailsOpen_) {
+      const size_t last=detailsLines_.size()>detailsRoom_?detailsLines_.size()-detailsRoom_:0;
+      const size_t before=detailsScroll_;
+      if(direction>0 && detailsScroll_<last)++detailsScroll_;
+      else if(direction<0 && detailsScroll_>0)--detailsScroll_;
+      return before!=detailsScroll_;
+    }
     if(onlineMode_ && !searchEditing_) {
       if(onlineEntries_.empty())return false;
       const size_t before=onlineSelection_;
@@ -2848,6 +2922,7 @@ class CardShelf {
         if(currentCover_.ink[py*books::ShelfCover::stride+px/8] &
            (0x80u>>(px&7)))
           renderer_.drawPixel(x+px,y+py,true);
+    books::paintPicture(display_,x,y,books::ShelfCover::width,books::ShelfCover::height);
   }
   void onIndexedBook(const std::string& path) {
     // A new cache file may have appeared since this shelf object was made.
@@ -2963,6 +3038,8 @@ class CardShelf {
     }
     if(serverScreen()) {
       paintServers();
+    } else if(onlineMode_ && !searchEditing_ && detailsOpen_) {
+      paintDetails();
     } else if(onlineMode_ && !searchEditing_) {
       // Placed as Home's header is: drawn at y 49 its glyphs crossed the rule.
       drawRowLabel(16,39,35,
@@ -3125,10 +3202,67 @@ class CardShelf {
       :searchEditing_?"OK: press   Back: close":
        serverScreen()&&onlineScreen_==OnlineScreen::Form?"OK: edit   Back: cancel":
        serverScreen()?"OK: open   Back: home":
+       detailsOpen()?(detailsOnCard_?"OK: show on card   Back: list":"OK: download   Back: list"):
        onlineMode_?"OK: open/get   Back: prev":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     drawRowLabel(22,269,51,footer.c_str());
     books::paintBar(display_,0,269,375,51);  // the footer strip
+  }
+  // A catalog book: cover left, title and author right, the description
+  // under them (the wheel scrolls it); OK downloads.
+  void paintDetails() {
+    drawRowLabel(16,39,35,"Book details");
+    renderer_.drawLine(15,74,359,74,true);
+    constexpr int cx=16,cy=80,cw=books::OpdsCover::width,ch=books::OpdsCover::height;
+    renderer_.drawRect(cx-1,cy-1,cw+2,ch+2,true);
+    if(detailsHasCover_) {
+      for(int y=0;y<ch;++y)
+        for(int x=0;x<cw;++x)
+          if(detailsCover_.inked(x,y))renderer_.drawPixel(cx+x,cy+y,true);
+      books::paintPicture(display_,cx,cy,cw,ch);
+    } else {
+      renderer_.drawLine(cx+14,cy+30,cx+cw-14,cy+30,true);
+      renderer_.drawLine(cx+14,cy+40,cx+cw-14,cy+40,true);
+    }
+    // Title: up to two lines in font 1, then the author in the small face.
+    std::string title=detailsEntry_.title;
+    int y=78;
+    for(int line=0;line<2 && !title.empty();++line) {
+      std::string part=title;
+      if(line==0 && renderer_.getTextWidth(1,part.c_str())>DETAILS_W) {
+        size_t cut=part.rfind(' ');
+        while(cut!=std::string::npos && cut>0 &&
+              renderer_.getTextWidth(1,part.substr(0,cut).c_str())>DETAILS_W)
+          cut=part.rfind(' ',cut-1);
+        if(cut!=std::string::npos && cut>0)part=part.substr(0,cut);
+      }
+      part=fitWidth(part,DETAILS_W);
+      renderer_.drawText(1,DETAILS_X,y,part.c_str(),true);
+      title=part.size()<title.size() && title.compare(0,part.size(),part)==0?
+          trimConnectedLeft(title.substr(part.size())):std::string();
+      y+=25;
+    }
+    int base=y+18;
+    if(!detailsEntry_.author.empty() && drawSmallLine(DETAILS_X,base,detailsEntry_.author,DETAILS_W))
+      base+=20;
+    else base+=4;
+    renderer_.drawLine(DETAILS_X,base-12,360,base-12,true);
+    const int room=std::max(1,(262-base)/16+1);
+    detailsRoom_=static_cast<size_t>(room);
+    for(int i=0;i<room && detailsScroll_+static_cast<size_t>(i)<detailsLines_.size();++i)
+      (void)drawSmallLine(DETAILS_X,base+i*16,detailsLines_[detailsScroll_+static_cast<size_t>(i)],DETAILS_W);
+    if(detailsLines_.size()>static_cast<size_t>(room)) {  // a scroll bar beside the text
+      const int top=base-10,height=262-top;
+      const int thumb=std::max(8,height*room/static_cast<int>(detailsLines_.size()));
+      const int pos=top+static_cast<int>((height-thumb)*static_cast<long>(detailsScroll_)/
+          std::max<long>(1,static_cast<long>(detailsLines_.size())-room));
+      renderer_.fillRect(364,pos,3,thumb,true);
+    }
+    if(detailsOnCard_)drawCompactLabel(cx,cy+ch+20,"On the card",140);
+  }
+  static std::string trimConnectedLeft(std::string text) {
+    while(!text.empty() && text.front()==' ')text.erase(0,1);
+    return text;
   }
   // The saved catalogs, or the form for one of them.
   void paintServers() {
@@ -3694,6 +3828,18 @@ int runCardApp(const std::string& bookDir) {
       if(result!=CardShelf::ServerAction::None)shelf->present();
       continue;
     }
+    if(shelf->detailsOpen()) {
+      const bool touch=event.kind==books::PhysicalKind::TouchUp;
+      if(action==books::LogicalAction::Back || (touch && event.y<73)) {
+        shelf->closeDetails();shelf->present();continue;
+      }
+      if(action==books::LogicalAction::Next || action==books::LogicalAction::Previous) {
+        if(shelf->change(action==books::LogicalAction::Next?1:-1))shelf->present();
+        continue;
+      }
+      // OK, or a tap on the footer (where "OK: download" is written).
+      if(action!=books::LogicalAction::Confirm && !(touch && event.y>=269))continue;
+    }
     if(shelf->onlineMode()) {
       if(action==books::LogicalAction::Back) {
         shelf->returnFromOnline();
@@ -3709,12 +3855,20 @@ int runCardApp(const std::string& bookDir) {
         shelf->returnFromOnline();shelf->present();continue;
       }
       bool activate=action==books::LogicalAction::Confirm;
-      if(event.kind==books::PhysicalKind::TouchUp) {
+      if(event.kind==books::PhysicalKind::TouchUp && !shelf->detailsOpen()) {
         shelf->onlineTouch(event.x,event.y);
         activate=true;
       }
-      if(!activate || !shelf->onlineHasSelection())continue;
-      const auto selected=shelf->onlineEntry();
+      if(event.kind==books::PhysicalKind::TouchUp && shelf->detailsOpen())activate=true;
+      if(!activate || (!shelf->detailsOpen() && !shelf->onlineHasSelection()))continue;
+      const auto selected=shelf->detailsOpen()?shelf->detailsEntry():shelf->onlineEntry();
+      if(selected.kind==books::OpdsEntry::Kind::Epub && !shelf->detailsOpen()) {
+        shelf->setNotice("Loading...");
+        shelf->present();
+        shelf->openDetails(selected,bookDir);  // its cover, from the card or the server
+        shelf->present();
+        continue;
+      }
       if(selected.kind==books::OpdsEntry::Kind::Search) {
         shelf->enterOnlineSearch();
         shelf->present();
@@ -3731,6 +3885,9 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice("Downloading EPUB...");
       shelf->present();
       std::string saved,error;
+      struct stat existing{};
+      const std::string destination=books::opdsDestination(bookDir,selected);
+      const bool already=!destination.empty() && ::lstat(destination.c_str(),&existing)==0;
       if(!books::opdsDownloadEpub(bookDir,selected,saved,error,shelf->server())) {
         shelf->setNotice(error.empty()?"Download failed":error);
         shelf->present();continue;
@@ -3746,7 +3903,7 @@ int runCardApp(const std::string& bookDir) {
       shelf.reset(new CardShelf(books,selection,selection,sortMode));
       if(!shelf->open())return 6;
       shelf->enterBrowser();
-      shelf->setNotice("EPUB downloaded to Books/Online");
+      shelf->setNotice(already?"Already on the card":"EPUB downloaded to Books/Online");
       shelf->present();
       nextShelfIndex=0;
       continue;
@@ -3914,6 +4071,31 @@ int main(int argc,char** argv) {
     }
     std::printf("Books OPDS total: %zu entries in %zu pages\n",total,seen.size());
     return 0;
+  }
+  // M4: the first EPUB entry of a feed: its description and its cover
+  // (fetched, or the card's copy), written as a PGM.
+  if(argc==4 && std::strcmp(argv[1],"--opds-cover")==0) {
+    books::OpdsServer server;
+    for(const auto& saved:books::loadConnectedConfig().servers)
+      if(books::sameHttpOrigin(saved.url,argv[2])){server=saved;break;}
+    const auto feed=books::fetchOpdsFeed(argv[2],server);
+    for(const auto& entry:feed.entries) {
+      if(entry.kind!=books::OpdsEntry::Kind::Epub)continue;
+      std::printf("title: %s\nsummary: %s\nthumbnail: %s\n",entry.title.c_str(),
+                  entry.summary.c_str(),entry.thumbnail.c_str());
+      books::OpdsCover cover;
+      if(!books::fetchOpdsCover(entry,server,cover)){std::puts("cover: none");return 9;}
+      FILE* out=std::fopen(argv[3],"wb");
+      if(!out)return 9;
+      std::fprintf(out,"P5\n%d %d\n255\n",books::OpdsCover::width,books::OpdsCover::height);
+      for(int y=0;y<books::OpdsCover::height;++y)
+        for(int x=0;x<books::OpdsCover::width;++x)std::fputc(cover.inked(x,y)?0:255,out);
+      std::fclose(out);
+      std::puts("cover: ok");
+      return 0;
+    }
+    std::fprintf(stderr,"no EPUB entry: %s\n",feed.error.c_str());
+    return 8;
   }
   if(argc==4 && std::strcmp(argv[1],"--opds-download")==0) {
     // As in the app: SIGTERM stops the transfer and removes its .part.

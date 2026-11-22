@@ -193,6 +193,13 @@ inline constexpr UiTranslation kVietnamese[] = {
     {"Value too long", "Quá dài"},
     {"Cannot save settings", "Không lưu được"},
     {"Offline copy", "Bản lưu"},
+    {"Book details", "Thông tin sách"},
+    {"No description", "Không có mô tả"},
+    {"On the card", "Đã có trên thẻ"},
+    {"Already on the card", "Sách đã có trên thẻ"},
+    {"OK: download   Back: list", "OK: tải   Back: danh sách"},
+    {"OK: show on card   Back: list", "OK: xem   Back: danh sách"},
+    {"Loading...", "Đang tải..."},
     // About
     {"An ebook reader for Q2 Pod", "Ứng dụng đọc sách cho Q2 Pod"},
     {"on the Shanling Q2.", "trên Shanling Q2."},

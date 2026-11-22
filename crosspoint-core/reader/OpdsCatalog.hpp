@@ -7,6 +7,7 @@
 #include "ShelfDetails.hpp"
 #include <expat.h>
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <ctime>
 #include <cstdint>
@@ -30,7 +31,63 @@ struct OpdsEntry {
   std::string author;
   std::string id;
   std::string href;
+  std::string summary;    // plain text (an HTML <content> has its tags removed)
+  std::string thumbnail;  // an OPDS image link (thumbnail preferred)
 };
+// An HTML description as plain text: tags out, a paragraph or <br> a
+// space, runs of spaces one, &nbsp; and the common entities decoded
+// (expat already decoded the XML layer).
+inline std::string opdsPlainText(const std::string& html,bool markup=true,size_t max=1500) {
+  std::string out;
+  bool space=false;
+  for(size_t i=0;i<html.size() && out.size()<max;) {
+    char c=html[i];
+    if(c=='<' && markup) {
+      const size_t close=html.find('>',i);
+      if(close==std::string::npos)break;
+      // A block (p, br, div, li, a heading...) ends a word; <b> or <i> does not.
+      std::string name;
+      for(size_t k=i+1;k<close && name.size()<10;++k) {
+        const char t=html[k];
+        if(t=='/' && name.empty())continue;
+        if(!std::isalnum(static_cast<unsigned char>(t)))break;
+        name+=static_cast<char>(std::tolower(static_cast<unsigned char>(t)));
+      }
+      static const char* const blocks[]={"p","br","div","li","ul","ol","tr","td","blockquote",
+                                         "h1","h2","h3","h4","h5","h6","hr","dd","dt"};
+      for(const char* block:blocks)if(name==block)space=true;
+      i=close+1;continue;
+    }
+    if(c=='&' && markup) {
+      static const struct {const char* name;const char* text;} entities[]={
+        {"&amp;","&"},{"&lt;","<"},{"&gt;",">"},{"&quot;","\""},{"&#39;","'"},{"&apos;","'"},
+        {"&nbsp;"," "},{"&mdash;","\xe2\x80\x94"},{"&ndash;","\xe2\x80\x93"},{"&hellip;","\xe2\x80\xa6"},
+        {"&rsquo;","\xe2\x80\x99"},{"&lsquo;","\xe2\x80\x98"},{"&rdquo;","\xe2\x80\x9d"},{"&ldquo;","\xe2\x80\x9c"}};
+      bool matched=false;
+      for(const auto& e:entities)
+        if(html.compare(i,std::strlen(e.name),e.name)==0) {
+          if(e.text[0]==' ')space=true;
+          else {if(space&&!out.empty())out+=' ';space=false;out+=e.text;}
+          i+=std::strlen(e.name);matched=true;break;
+        }
+      if(matched)continue;
+    }
+    if(c==' '||c=='\n'||c=='\r'||c=='\t'){space=true;++i;continue;}
+    if(space&&!out.empty())out+=' ';
+    space=false;out+=c;++i;
+  }
+  // never end inside a UTF-8 sequence
+  while(!out.empty() && (static_cast<unsigned char>(out.back())&0xC0)==0x80) {
+    size_t lead=out.size()-1;
+    while(lead>0 && (static_cast<unsigned char>(out[lead])&0xC0)==0x80)--lead;
+    const unsigned char b=static_cast<unsigned char>(out[lead]);
+    const size_t need=b>=0xF0?4:b>=0xE0?3:b>=0xC0?2:1;
+    if(out.size()-lead>=need)break;
+    out.erase(lead);
+  }
+  if(!out.empty() && (static_cast<unsigned char>(out.back())&0xC0)==0xC0)out.pop_back();
+  return out;
+}
 struct OpdsFeed {
   std::string title;
   std::vector<OpdsEntry> entries;
@@ -147,6 +204,8 @@ struct OpdsParserState {
   bool inEntry=false;
   bool inAuthor=false;
   bool entryLink=false;
+  bool thumbnailLink=false;  // the entry's image is a thumbnail, not the full cover
+  bool contentHtml=false;
   bool valid=true;
   size_t depth=0;
   size_t bookCount=0;
@@ -158,6 +217,7 @@ inline void XMLCALL opdsStart(void* opaque,const XML_Char* name,
   const std::string tag=opdsLocalName(name);
   if(tag=="entry") {
     state.inEntry=true;state.inAuthor=false;state.entryLink=false;
+    state.thumbnailLink=false;
     state.current={};
   } else if(tag=="author" && state.inEntry)state.inAuthor=true;
   else if(tag=="link" && !state.inEntry && state.depth==2) {
@@ -188,6 +248,16 @@ inline void XMLCALL opdsStart(void* opaque,const XML_Char* name,
         const std::string mime=type?type:"";
         const std::string relationship=rel?rel:"";
         const bool epub=(mime.find("application/epub+zip")!=std::string::npos);
+        const bool thumb=relationship=="http://opds-spec.org/image/thumbnail" ||
+                         relationship=="http://opds-spec.org/thumbnail" ||
+                         relationship=="x-stanza-cover-image-thumbnail";
+        const bool image=thumb || relationship=="http://opds-spec.org/image" ||
+                         relationship=="http://opds-spec.org/cover" ||
+                         relationship=="x-stanza-cover-image";
+        if(image && (thumb || !state.thumbnailLink)) {
+          state.current.thumbnail=resolved;
+          state.thumbnailLink=thumb;
+        }
         const bool navigation=mime.find("application/atom+xml")!=std::string::npos ||
           relationship.find("subsection")!=std::string::npos ||
           relationship.find("navigation")!=std::string::npos;
@@ -202,15 +272,21 @@ inline void XMLCALL opdsStart(void* opaque,const XML_Char* name,
       }
     }
   }
-  if(tag=="title"||tag=="name"||tag=="id") {
+  if(tag=="title"||tag=="name"||tag=="id"||
+     (state.inEntry && (tag=="summary"||tag=="content"))) {
     state.field=tag;state.text.clear();
+    if(tag=="content"||tag=="summary") {
+      const char* type=opdsAttribute(attrs,"type");
+      state.contentHtml=type && (std::strcmp(type,"html")==0 || std::strcmp(type,"xhtml")==0 ||
+                                 std::strstr(type,"html")!=nullptr);
+    }
   }
 }
 inline void XMLCALL opdsCharacter(void* opaque,const XML_Char* data,int size) {
   auto& state=*static_cast<OpdsParserState*>(opaque);
-  if(!state.field.empty() && size>0 && state.text.size()<1024) {
+  if(!state.field.empty() && size>0 && state.text.size()<3000) {
     const size_t take=std::min<size_t>(
-        static_cast<size_t>(size),1024-state.text.size());
+        static_cast<size_t>(size),3000-state.text.size());
     state.text.append(data,take);
   }
 }
@@ -222,6 +298,8 @@ inline void XMLCALL opdsEnd(void* opaque,const XML_Char* name) {
       if(tag=="title" && !state.inAuthor)state.current.title=state.text;
       else if(tag=="name"&&state.inAuthor)state.current.author=state.text;
       else if(tag=="id")state.current.id=state.text;
+      else if(tag=="summary" || (tag=="content" && state.current.summary.empty()))
+        state.current.summary=opdsPlainText(state.text,state.contentHtml);
     } else if(tag=="title"&&state.feed->title.empty())
       state.feed->title=state.text;
     state.field.clear();state.text.clear();

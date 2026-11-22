@@ -154,6 +154,18 @@ inline void paintHighlight(HalDisplay& display, int x, int y, int w, int h) {
   display.addZone(z);
 }
 
+// A picture (a book cover): black on white in every theme, so a dark
+// theme does not show it as a negative.
+inline void paintPicture(HalDisplay& display, int x, int y, int w, int h) {
+  const auto& t = uiTheme();
+  if (!t.active()) return;
+  HalDisplay::ColorZone z;
+  z.x = static_cast<int16_t>(x), z.y = static_cast<int16_t>(y), z.w = static_cast<int16_t>(w),
+  z.h = static_cast<int16_t>(h);
+  z.ink = 0x000000, z.paper = 0xffffff;
+  display.addZone(z);
+}
+
 // A title or footer strip (its text already drawn as ink on paper). Without
 // a theme: inverted (light text on a dark strip), as before.
 inline void paintBar(HalDisplay& display, int x, int y, int w, int h) {

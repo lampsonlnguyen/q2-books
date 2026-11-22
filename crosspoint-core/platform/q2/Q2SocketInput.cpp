@@ -83,8 +83,12 @@ bool Q2SocketInput::open(std::string path) {
     ::close(fd);
     return false;
   }
-  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
-      ::chmod(path.c_str(), 0600) != 0) {
+  // If another process binds in the meantime, its endpoint must remain.
+  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    ::close(fd);
+    return false;
+  }
+  if (::chmod(path.c_str(), 0600) != 0) {
     ::close(fd);
     ::unlink(path.c_str());
     return false;

@@ -53,7 +53,8 @@ jobs:
           sudo apt-get install -y clang lld llvm cmake git curl zip unzip \
             squashfs-tools qemu-user binutils-mipsel-linux-gnu \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            libc6-dev-mipsel-cross python3-venv
+            libc6-dev-mipsel-cross python3-venv \
+            fonts-noto-core fonts-noto-cjk
       - name: Provision Q2 runtime, link reader, validate and package
         shell: bash
         run: bash crosspoint-core/tools/build_q2_github.sh

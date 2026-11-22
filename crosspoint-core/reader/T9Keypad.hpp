@@ -11,6 +11,9 @@
 //   ghi    jkl    mno    ABC   (case: abc on the capitals)
 //   pqrs   tuv    wxyz   123   (digits: each key types its number)
 //   .?!    space  Done   CLR
+//
+// For a URL, a user name or a password (setUrlMode), the two punctuation
+// keys add what addresses need: ",'-:;@_" and "./?!=&%~#".
 #include <chrono>
 #include <cstddef>
 #include <string>
@@ -29,6 +32,8 @@ class T9Keypad {
 
   bool upper() const { return upper_; }
   bool digits() const { return digits_; }
+  bool urlMode() const { return url_; }
+  void setUrlMode(bool on) { url_ = on; forget(); }
   void reset() { upper_ = digits_ = false; last_ = -1; tap_ = 0; }
 
   // The characters a key cycles through (empty for function keys).
@@ -39,6 +44,8 @@ class T9Keypad {
     if (key < 0 || key >= kT9Keys) return {};
     if (digits_) return digit[key] ? std::string(1, digit[key]) : std::string();
     std::string out = lower[key];
+    if (url_ && key == Comma) out = ",'-:;@_";
+    if (url_ && key == Stops) out = "./?!=&%~#";
     if (upper_)
       for (char& c : out)
         if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 32);
@@ -53,7 +60,8 @@ class T9Keypad {
       case Space: return "space";
       case Done: return "Done";
       case Clear: return "CLR";
-      case Comma: return digits_ ? "1" : ",";
+      case Comma: return digits_ ? "1" : url_ ? ",:@_" : ",";
+      case Stops: return digits_ ? "0" : url_ ? "./?=&" : letters(key);
       default: return letters(key);
     }
   }
@@ -112,7 +120,7 @@ class T9Keypad {
 
  private:
   void forget() { last_ = -1; tap_ = 0; }
-  bool upper_ = false, digits_ = false;
+  bool upper_ = false, digits_ = false, url_ = false;
   int last_ = -1, tap_ = 0;
   Clock::time_point lastAt_{};
 };

@@ -87,7 +87,19 @@ struct RemoteProgress {
   std::string progress;  // original KOReader XPath
   float percentage=0;
   bool exists=false;
+  std::string device;    // the device that saved it ("" when not ASCII or not sent)
 };
+// M4 sync conflicts. Positions further than this apart (0.2 % of the book)
+// and at different places are a conflict: the reader asks which to keep.
+inline constexpr float kSyncConflictGap=0.002f;
+enum class SyncConflict { None, ServerAhead, ServerBehind };
+inline SyncConflict syncConflict(const RemoteProgress& remote,const std::string& localXpath,
+                                 float localPercentage) {
+  if(!remote.exists || remote.progress==localXpath)return SyncConflict::None;
+  if(remote.percentage>localPercentage+kSyncConflictGap)return SyncConflict::ServerAhead;
+  if(remote.percentage+kSyncConflictGap<localPercentage)return SyncConflict::ServerBehind;
+  return SyncConflict::None;
+}
 inline std::map<std::string,std::string> koReaderHeaders(
     const ConnectedConfig& cfg) {
   return {{"Accept","application/vnd.koreader.v1+json"},
@@ -121,7 +133,9 @@ inline bool pullKoreaderProgress(const ConnectedConfig& cfg,
      locator.find('\r')!=std::string::npos) {
     error="Invalid remote position";return false;
   }
-  remote={locator,percentage,true};
+  remote={locator,percentage,true,{}};
+  std::string device;
+  if(jsonStringValue(payload,"device",device) && device.size()<=40)remote.device=device;
   return true;
 }
 inline bool pushKoreaderProgress(const ConnectedConfig& cfg,

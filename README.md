@@ -22,7 +22,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 | M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
 | M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt, your own fonts (RD-05) | Done |
 | M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, Vietnamese menus | Done on `main` (after 1.1.0). Open: more languages, CJK letters in menus |
-| M4 — Library and servers (v0.12) | OPDS paging and catalog search | Partly done. Open items below |
+| M4 — Library and servers (v0.12) | OPDS paging and catalog search; several saved servers with credentials; offline catalog copy and retry; book details with network covers; folders with breadcrumbs; 4000-book libraries; sync conflict choice | Done on `main` (after 1.1.1); see [the M4 guide](docs/v0.12-library-and-servers.md). Open: highlight sync |
 | M5 — EPUB3 fidelity and resilience (v0.13) | Golden reference corpus compared with upstream CrossPoint; tables, ruby, RTL, footnotes, embedded fonts | Not started (fuzzing and stress tests exist) |
 | M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
 | M7 — Stable readiness (v1.0) | Device-proven daily reading | Version 1.0.0 is tagged; the criteria below are not all met yet |
@@ -42,11 +42,9 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - More menu languages than English and Vietnamese; CJK letters in menus (book text has them; menus show `?`).
 - Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 
-**Library and servers (M4)**
-- Several saved OPDS servers (add, edit, delete) with their own credentials.
-- Network cover thumbnails, an offline catalog cache, retry on failure.
-- Folder tree with breadcrumbs; faster browsing of large libraries.
-- Sync conflict handling, and syncing highlights where the server can store them.
+**Library and servers (M4 follow-ups)**
+- Syncing highlights: KOReader sync stores only a position; Kavita 0.8.8+ keeps highlights in its own REST API (its own sign-in, chapter ids and format), not used yet.
+- Measure the 4000-book scan and folder browsing on a Q2's SD card.
 
 **EPUB fidelity (M5)**
 - A reference set of difficult books (tables, nested CSS, ruby/CJK, Indic/Arabic/RTL, anchors, images, embedded fonts, broken EPUBs) rendered here and on upstream CrossPoint with the same settings, with documented allowed differences.

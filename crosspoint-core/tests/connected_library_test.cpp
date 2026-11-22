@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int main() {
@@ -144,6 +145,56 @@ int main() {
   assert(destination.substr(destination.size()-5)==".epub");
   assert(opdsDestination(dir,{OpdsEntry::Kind::Catalog,"Folder","","",
       "http://127.0.0.1:5150/a"}).empty());
+  // M4: several catalogs, each with its own credentials.
+  assert(cfg.servers.size()==1 && cfg.servers[0].url==cfg.opdsUrl);
+  assert(base64Encode("")=="" && base64Encode("f")=="Zg==" && base64Encode("fo")=="Zm8=" &&
+         base64Encode("foo")=="Zm9v" && base64Encode("lam:pw")=="bGFtOnB3");
+  {
+    std::string many=
+      "# comment\nopds_url=https://a.example/opds\nopds_username=lam\nopds_password=pw\n"
+      "sync_url=https://k.example/sync\nsync_username=u\nsync_password=p\nenable_sync=true\n"
+      "[server]\nname=Calibre\nopds_url=http://192.168.1.5:8083/opds\nopds_username=me\n"
+      "sync_password=p2\n"   // sync keys count wherever they are
+      "[server]\nname=Broken\nopds_url=ftp://nope\n"
+      "[server]\nopds_url=https://c.example/feed\n";
+    for(int i=0;i<10;++i)many+="[server]\nopds_url=https://x"+std::to_string(i)+".example/\n";
+    const auto parsed=parseConnectedConfig(many);
+    assert(parsed.servers.size()==kMaxOpdsServers);
+    assert(parsed.servers[0].url=="https://a.example/opds" && parsed.servers[0].username=="lam");
+    assert(parsed.servers[1].name=="Calibre" && parsed.servers[1].username=="me");
+    assert(parsed.servers[2].url=="https://c.example/feed");  // the ftp block is dropped
+    assert(parsed.syncUrl=="https://k.example/sync" && parsed.syncConfigured() && parsed.password=="p2");
+    assert(opdsServerLabel(parsed.servers[2])=="c.example");
+    // Credentials go only to the server's own origin.
+    const auto& a=parsed.servers[0];
+    assert(opdsHeadersFor(a,"https://a.example/opds/x")["Authorization"]=="Basic bGFtOnB3");
+    assert(opdsHeadersFor(a,"https://A.EXAMPLE:443/y").size()==1);
+    assert(opdsHeadersFor(a,"http://a.example/opds").empty());
+    assert(opdsHeadersFor(a,"https://a.example:8443/opds").empty());
+    assert(opdsHeadersFor(a,"https://evil.example/opds").empty());
+    assert(opdsHeadersFor(parsed.servers[2],"https://c.example/feed").empty());
+    // Round trip through the file Books writes.
+    ConnectedConfig edited=parsed;
+    edited.servers.resize(3);
+    edited.servers[2].name="Third";
+    std::string error;
+    assert(saveConnectedConfig(edited,error) && error.empty());
+    struct stat info{};
+    assert(::stat(configFile.c_str(),&info)==0 && (info.st_mode&0777)==0600);
+    const auto again=loadConnectedConfig();
+    assert(again.servers.size()==3 && again.servers[2].name=="Third");
+    assert(again.servers[1].password.empty() && again.servers[0].password=="pw");
+    assert(again.syncConfigured() && again.password=="p2");
+    // What the Q2's form refuses.
+    assert(opdsServerProblem({"","",""," "})=="Type the catalog URL");
+    assert(!opdsServerProblem({"","ftp://x","",""}).empty());
+    assert(opdsServerProblem({"","https://x/","","pw"})=="Password needs a user");
+    assert(opdsServerProblem({"a\nb","https://x/","",""})=="Value too long");
+    assert(opdsServerProblem({"","https://x/","u","p"}).empty());
+    edited.servers.push_back({"Bad","nope","",""});
+    assert(!saveConnectedConfig(edited,error) && !error.empty());
+    assert(loadConnectedConfig().servers.size()==3);  // the file is untouched
+  }
   std::puts("Books OPDS and KOSync transport contracts: PASS");
   return 0;
 }

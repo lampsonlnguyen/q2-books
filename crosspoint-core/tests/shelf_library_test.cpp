@@ -3,6 +3,10 @@
 #include "ShelfSort.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "ShelfFolders.hpp"
+#include "ShelfLibrary.hpp"
+#include <chrono>
+#include <sys/stat.h>
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -79,5 +83,59 @@ int main() {
   assert(books::loadRecentBooks().empty());
   assert(std::remove(a.c_str())==0);
   assert(std::remove(b.c_str())==0);
+  // M4 folders: built from the book paths, empty folders hidden.
+  {
+    const std::string r="/mnt/mmc/Books";
+    std::vector<TestBook> shelf={{r+"/Top.epub","Top",1},{r+"/Fiction/Sci-fi/Dune.epub","Dune",1},
+                                 {r+"/Fiction/Emma.epub","Emma",1},{r+"/fiction2/a.txt","a",1},
+                                 {r+"/Fiction/Sci-fi/Deep/x.epub","x",1},{"/elsewhere/y.epub","y",1}};
+    auto top=books::shelfFolderView(shelf,r,"");
+    assert((top.folders==std::vector<std::string>{"Fiction","fiction2"}) && top.books==std::vector<size_t>{0});
+    auto fic=books::shelfFolderView(shelf,r,"Fiction");
+    assert(fic.folders==std::vector<std::string>{"Sci-fi"} && fic.books==std::vector<size_t>{2});
+    auto sci=books::shelfFolderView(shelf,r,"Fiction/Sci-fi");
+    assert(sci.folders==std::vector<std::string>{"Deep"} && sci.books==std::vector<size_t>{1});
+    assert(books::shelfFolderView(shelf,r,"Fict").books.empty());  // not a prefix match
+    assert(books::shelfParentFolder("Fiction/Sci-fi")=="Fiction" && books::shelfParentFolder("Fiction").empty());
+    assert(books::shelfBreadcrumb("")=="Books");
+    assert(books::shelfBreadcrumb("Fiction/Sci-fi")=="Books > Fiction > Sci-fi");
+    assert(books::shelfBreadcrumb("Fiction/Sci-fi/Deep/Deeper",24)=="... > Deep > Deeper");
+    std::string where;
+    assert(!books::shelfRelativeFolder(r,"/mnt/mmc/Books2/x.epub",where));
+  }
+  // M4 large library: 4000 books in 400 folders, scanned, sorted and shown
+  // folder by folder well within a second on the host.
+  {
+    const std::string root=std::string(dir)+"/Big";
+    assert(::mkdir(root.c_str(),0755)==0);
+    for(int folder=0;folder<400;++folder) {
+      const std::string sub=root+"/Author "+std::to_string(folder%40)+(folder<40?"":"/Series "+std::to_string(folder));
+      ::mkdir((root+"/Author "+std::to_string(folder%40)).c_str(),0755);
+      ::mkdir(sub.c_str(),0755);
+      for(int i=0;i<10;++i) {
+        FILE* book=std::fopen((sub+"/Book "+std::to_string(folder*10+i)+(i%3?".epub":".txt")).c_str(),"wb");
+        assert(book && std::fclose(book)==0);
+      }
+    }
+    const auto start=std::chrono::steady_clock::now();
+    auto all=books::scanCardBooks(root);
+    books::sortShelfBooks(all,books::ShelfSortMode::Folders,{});
+    size_t seen=0;
+    auto view=books::shelfFolderView(all,root,"");
+    for(const auto& author:view.folders) {
+      auto inside=books::shelfFolderView(all,root,author);
+      seen+=inside.books.size();
+      for(const auto& series:inside.folders)
+        seen+=books::shelfFolderView(all,root,author+"/"+series).books.size();
+    }
+    const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now()-start).count();
+    std::printf("4000 books: scan, sort and 401 folder views in %lld ms\n",static_cast<long long>(ms));
+    assert(all.size()==4000 && seen==4000 && view.folders.size()==40);
+    assert(all.front().label=="Book 0" && all[1].label=="Book 1");  // .txt and .epub both lose their extension
+    assert(ms<5000);
+    assert(std::system(("rm -rf '"+root+"'").c_str())==0);
+  }
+  std::puts("Books shelf library, folders and large library: PASS");
   return 0;
 }

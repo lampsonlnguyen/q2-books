@@ -17,8 +17,19 @@
 # sync_url=https://books.example.com/api/koreader/YOUR_KAVITA_AUTH_KEY
 # Do NOT disable certificate checking or forward to another origin.
 # From Kavita: User settings -> 3rd Party Clients -> Auth Key / OPDS URL.
-# OPDS browse/download:
+# OPDS browse/download (the first catalog; Online lists every catalog):
 opds_url=http://192.168.5.100:5150/api/opds/REPLACE_WITH_KAVITA_AUTH_KEY
+#
+# Books 1.2+: more catalogs (up to 8), each in its own [server] block, with
+# optional HTTP Basic credentials (Calibre-Web, COPS...). They are sent only
+# to that catalog's own scheme, host and port. Servers can also be added,
+# edited and deleted on the Q2 (Online -> + Add server / Edit a server);
+# Books then rewrites this file and these comments are not kept.
+# [server]
+# name=Calibre-Web
+# opds_url=https://books.example.com/opds
+# opds_username=REPLACE_WITH_USER
+# opds_password=REPLACE_WITH_PASSWORD
 #
 # Optional two-way KOReader-compatible progress sync (Kavita 0.8.7+):
 # This is NOT a page-number sync. Books maps source XHTML XPath offsets.

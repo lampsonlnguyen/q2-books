@@ -378,28 +378,39 @@ CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
   --render "$work/reader/vietnamese-prose.epub" "$work/default-extended.pgm" \
   | tee "$work/default-extended.log"
 grep -q 'CrossPod font source: original CrossPoint extended cpfont' "$work/default-extended.log"
-# Run the compiled Q2 reader twice to verify typography selection and raster.
-for setting in "sans 12" "serif 12"; do
-  echo "CROSSPOD-TYPE1 $setting" > "$card/.crosspod/typography.conf"
-  slug="$(echo "$setting" | tr ' ' '-')"
-  CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
-    --render "$work/reader/vietnamese-prose.epub" "$work/$slug.pgm" \
-    | tee "$work/$slug.log"
+# Render *every* allowed point size using the actual Q2 MIPS ELF and
+# original CrossPoint font files. Each size must retain all 14 scripts,
+# produce distinct paginated pixels, and never fall back to the 12pt bitmap.
+for family in sans serif; do
+  for point in 8 9 10 11 12; do
+    setting="$family $point"
+    echo "CROSSPOD-TYPE1 $setting" > "$card/.crosspod/typography.conf"
+    slug="$family-$point"
+    CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+      qemu-mipsel -L "$root" "$elf" \
+      --render "$work/reader/vietnamese-prose.epub" "$work/$slug.pgm" \
+      | tee "$work/$slug.log"
+    grep -q "CrossPod multilingual fonts: 14/14 scripts loaded (${point}pt)" \
+      "$work/$slug.log"
+    grep -q "CrossPod typeface: ${family^} ${point}pt" "$work/$slug.log"
+  done
 done
-python3 - "$work/sans-12.pgm" "$work/serif-12.pgm" "$work/sans-12.log" "$work/serif-12.log" <<'PY'
+python3 - "$work" <<'PY'
 from pathlib import Path
 import sys
-sans, serif = (Path(p).read_bytes() for p in sys.argv[1:3])
-for data in (sans, serif):
-    assert data.startswith(b"P5\n375 320\n255\n")
-    assert len(data) == 120015
-    assert data[15:].count(0) > 100
-assert sans != serif, "Font choices must produce distinct glyph rasters"
-logs = [Path(p).read_text() for p in sys.argv[3:]]
-assert "CrossPod typeface: Sans 12pt" in logs[0], logs[0]
-assert "CrossPod typeface: Serif 12pt" in logs[1], logs[1]
-assert all("Selected font file missing" not in log and "Font file not installed" not in log for log in logs), logs
-print("MIPS Q2 font switching and rendering: PASS")
+work = Path(sys.argv[1])
+for family in ("sans", "serif"):
+    previous = None
+    for size in range(8, 13):
+        data = (work / f"{family}-{size}.pgm").read_bytes()
+        assert data.startswith(b"P5\\n375 320\\n255\\n") and len(data)==120015
+        assert data[15:].count(0)>50, (family,size)
+        assert previous!=data, f"Size {size} did not change raster for {family}"
+        previous = data
+for size in range(8, 13):
+    assert (work/f"sans-{size}.pgm").read_bytes() != \
+           (work/f"serif-{size}.pgm").read_bytes(), size
+print("MIPS Q2 8-12pt 5-size font switching and multilingual rendering: PASS")
 PY
 rm -f "$card/.crosspod/typography.conf"
 # Stress-regression for v0.8: validate EPUB3 HTML entities and the actual

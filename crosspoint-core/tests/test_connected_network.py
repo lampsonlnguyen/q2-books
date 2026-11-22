@@ -209,8 +209,10 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
         assert "CrossPod KOReader XPath progress roundtrip: PASS" in output
         assert received and received[-1]["document"] == digest
         assert "DocFragment[" in received[-1]["progress"]
-        label = "HTTPS" if tls else "HTTP"
-        print(f"CrossPod {label} OPDS, download, partial-MD5 and KOSync: PASS")
+        if tls:
+            print("CrossPod HTTPS OPDS, download, partial-MD5 and KOSync: PASS")
+        else:
+            print("CrossPod OPDS, download, partial-MD5 and KOSync: PASS")
     finally:
         listener.shutdown()
         listener.server_close()

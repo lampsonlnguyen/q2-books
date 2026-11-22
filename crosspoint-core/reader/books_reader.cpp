@@ -104,7 +104,7 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 23;  // 19: About, 20: Dictionaries, 21: Export notes, 22: Language
+constexpr int kTypographyItems = 22;  // 19: About, 20: Dictionaries, 21: Export notes (menus follow Q2 Pod's language)
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -1813,7 +1813,7 @@ class Reader {
   }
   // The width drawMenuText gives |str| at |scale| (pixel font or glyphs).
   int menuTextWidth(const char* str,int scale) {
-    if(books::uiLanguage()==books::UiLanguage::English && !books::uiTheme().active())
+    if(!books::uiTranslated() && !books::uiTheme().active())
       return static_cast<int>(std::strlen(str))*6*scale;
     const std::string text=books::tr(str);
     const int scale256=scale>=2?196:118;
@@ -1830,7 +1830,7 @@ class Reader {
   void drawMenuText(int x,int top,const char* str,int scale=2,int maxX=352) {
     // Translated menus need accents; Q2 Pod's themes draw smooth text: both
     // use the reading font's glyphs instead of the pixel font.
-    if(books::uiLanguage()!=books::UiLanguage::English || books::uiTheme().active()) {
+    if(books::uiTranslated() || books::uiTheme().active()) {
       drawGlyphMenuText(x,top,books::tr(str),scale,maxX);
       return;
     }
@@ -1977,7 +1977,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Language"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1995,8 +1995,7 @@ class Reader {
       std::to_string(bookPercent())+"%",
       std::string("v")+BOOKS_VERSION,
       std::to_string(dictionaryCount())+" "+books::tr("installed"),
-      "To Clippings",
-      books::uiLanguageName(books::uiLanguage())
+      "To Clippings"
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2008,7 +2007,7 @@ class Reader {
       // Separate columns prevent long values from colliding with labels.
       // English: the bitmap font, cut by characters; translated: the reading
       // font's glyphs, cut by width at the value column.
-      const bool english=books::uiLanguage()==books::UiLanguage::English && !books::uiTheme().active();
+      const bool english=!books::uiTranslated() && !books::uiTheme().active();
       const std::string label=english?clippedLabel(labels[item],12):books::tr(labels[item]);
       const std::string value=english?clippedLabel(values[item],12):books::tr(values[item]);
       drawMenuText(24,y+3,label.c_str(),2,186);
@@ -3223,9 +3222,7 @@ class CardShelf {
       char count[48];
       if(fieldEditing_)std::snprintf(count,sizeof(count),"%s",books::tr("Done: keep"));
       else if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
-      else std::snprintf(count,sizeof(count),
-          books::uiLanguage()==books::UiLanguage::English?"%zu / %zu books":"%zu / %zu sách",
-          visible_.size(),books_.size());
+      else std::snprintf(count,sizeof(count),books::tr("%zu / %zu books"),visible_.size(),books_.size());
       drawCompactLabel(232,56,count,136);
       renderer_.drawRect(12,62,351,28,true);
       const int pending=keypad_.pendingKey();
@@ -3287,9 +3284,7 @@ class CardShelf {
       }
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),
-          books::uiLanguage()==books::UiLanguage::English?"Books: %zu/%zu":"Sách: %zu/%zu",
-          visible_.size(),books_.size());
+      std::snprintf(count,sizeof(count),books::tr("Books: %zu/%zu"),visible_.size(),books_.size());
       if(folderMode()) {  // where you are instead of the count
         std::string crumb=books::shelfBreadcrumb(folder_,24);
         if(crumb.compare(0,5,"Books")==0)crumb=books::tr("Books")+crumb.substr(5);
@@ -3835,12 +3830,6 @@ int runCardApp(const std::string& bookDir) {
             reader->showTypographyMenu(typeSelection);
             continue;
           }
-          if(typeSelection==22) {
-            (void)books::setUiLanguage(books::uiLanguage()==books::UiLanguage::English?
-                books::UiLanguage::Vietnamese:books::UiLanguage::English);
-            reader->showTypographyMenu(typeSelection);
-            continue;
-          }
           if(typeSelection==18) {
             percentDialog=true;
             percentValue=reader->bookPercent();
@@ -4163,6 +4152,12 @@ void usage() {
 } // namespace
 
 int main(int argc,char** argv) {
+  // Menus follow Q2 Pod's language; a translation the menu font can't draw
+  // stays English rather than showing boxes.
+  books::setUiGlyphCheck([](uint32_t cp) {
+    static const EpdFont menuFont(&notosans_12_regular);
+    return menuFont.getGlyph(cp)!=nullptr;
+  });
   books::httpAbortFlag=&interrupted;  // SIGTERM stops a running transfer
   bookslayout::layoutAbortFlag=&interrupted;  // and an overlong word's layout
   // Bring the user's files over from the app's former folder, once, before
@@ -4645,7 +4640,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,22,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
@@ -4727,12 +4722,6 @@ int main(int argc,char** argv) {
         }
         if(typeSelection==21) {
           (void)reader.exportNotes();
-          reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
-          continue;
-        }
-        if(typeSelection==22) {
-          (void)books::setUiLanguage(books::uiLanguage()==books::UiLanguage::English?
-              books::UiLanguage::Vietnamese:books::UiLanguage::English);
           reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
           continue;
         }

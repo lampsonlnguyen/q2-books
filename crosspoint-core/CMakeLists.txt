@@ -118,7 +118,9 @@ add_test(NAME books_q2pod_theme_colours COMMAND books_q2_theme_tests)
 add_executable(books_ui_language_tests tests/ui_language_test.cpp)
 target_include_directories(books_ui_language_tests PRIVATE reader)
 target_compile_options(books_ui_language_tests PRIVATE -UNDEBUG)
-add_test(NAME books_ui_language_vietnamese COMMAND books_ui_language_tests)
+target_compile_definitions(books_ui_language_tests PRIVATE
+    BOOKS_LANG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/lang")
+add_test(NAME books_ui_language_follows_q2pod COMMAND books_ui_language_tests)
 
 add_executable(books_legacy_migration_tests tests/legacy_state_migration_test.cpp)
 target_include_directories(books_legacy_migration_tests PRIVATE reader)

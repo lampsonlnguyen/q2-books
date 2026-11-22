@@ -1,0 +1,170 @@
+# Tiếng Việt
+Reading settings	Reading settings	Cài đặt đọc
+Font	Font	Phông chữ
+Size	Size	Cỡ chữ
+Line spacing	Line spacing	Giãn dòng
+Margins	Margins	Lề
+Alignment	Alignment	Căn lề
+Hyphenation	Hyphenation	Ngắt từ
+Book CSS	Book CSS	CSS sách
+Night mode	Night mode	Chế độ đêm
+Add bookmark	Add bookmark	Thêm dấu
+Bookmarks	Bookmarks	Dấu trang
+Chapters	Chapters	Mục lục
+Page links	Page links	Liên kết
+Return link	Return link	Quay về
+Select text	Select text	Chọn chữ
+Sync: upload	Sync: upload	Gửi tiến độ
+Sync: download	Sync: download	Lấy tiến độ
+Focus read	Focus read	Đọc nhấn
+Auto turn	Auto turn	Tự lật
+Go to %	Go to %	Đi tới %
+About	About	Giới thiệu
+Dictionaries	Dictionaries	Từ điển
+Export notes	Export notes	Xuất ghi chú
+On	On	Bật
+Off	Off	Tắt
+Justify	Justify	Đều hai bên
+Book default	Book default	Theo sách
+Save page	Save page	Lưu trang
+Saved pages	Saved pages	Đã lưu
+Browse book	Browse book	Xem sách
+Footnotes / links	Footnotes / links	Chú thích
+Go back	Go back	Quay lại
+No previous link	No previous link	Không có
+Highlight / define	Highlight / define	Tô / tra từ
+Save position	Save position	Lưu vị trí
+Use remote position	Use remote position	Lấy vị trí
+To Clippings	To Clippings	Vào Clippings
+installed	installed	đã cài
+Wheel: scroll  Center: select	Wheel: scroll  Center: select	Xoay: cuộn  Giữa: chọn
+Over 2 min idle needs Q2 Pod Smart Awake	Over 2 min idle needs Q2 Pod Smart Awake	Trên 2 phút cần Smart Awake
+Reading settings not saved	Reading settings not saved	Chưa lưu được cài đặt
+Bookmark saved	Bookmark saved	Đã lưu dấu trang
+Cannot save bookmark	Cannot save bookmark	Không lưu được dấu
+No highlights or bookmarks yet	No highlights or bookmarks yet	Chưa có ghi chú
+Cannot write Clippings	Cannot write Clippings	Không ghi được Clippings
+Selected font file missing	Selected font file missing	Thiếu tệp phông
+Font file not installed	Font file not installed	Chưa cài phông
+Go to percent	Go to percent	Đi tới phần trăm
+Wheel: 1%   Keys: 10%	Wheel: 1%   Keys: 10%	Xoay: 1%   Phím: 10%
+Center: go   Back: cancel	Center: go   Back: cancel	Giữa: đi   Back: hủy
+Any key: back	Any key: back	Phím bất kỳ: quay lại
+Center: on/off   Back: settings	Center: on/off   Back: settings	Giữa: bật/tắt   Back: cài đặt
+None installed.	None installed.	Chưa cài từ điển.
+Put StarDict folders in	Put StarDict folders in	Chép thư mục StarDict vào
+Links and footnotes	Links and footnotes	Liên kết, chú thích
+No links on this page	No links on this page	Trang này không có liên kết
+Wheel: pick  Center: go	Wheel: pick  Center: go	Xoay: chọn  Giữa: đi
+Back: close   Center: jump	Back: close   Center: jump	Back: đóng   Giữa: tới
+Back: selected text	Back: selected text	Back: chữ đã chọn
+Offline dictionary	Offline dictionary	Từ điển
+No match in the dictionaries	No match in the dictionaries	Không tìm thấy trong từ điển
+Wheel: more  Back: selected text	Wheel: more  Back: selected text	Xoay: thêm  Back: chữ đã chọn
+Footnote	Footnote	Chú thích
+No bookmarks yet	No bookmarks yet	Chưa có dấu trang
+No chapters	No chapters	Không có mục lục
+Wheel: select  Center: go  Back: settings	Wheel: select  Center: go  Back: settings	Xoay: chọn  Giữa: đi  Back: cài đặt
+Wheel: word   Center: start	Wheel: word   Center: start	Xoay: từ   Giữa: bắt đầu
+Wheel: extend  Center: actions	Wheel: extend  Center: actions	Xoay: mở rộng  Giữa: thao tác
+Highlight	Highlight	Tô sáng
+Define	Define	Tra từ
+Remove	Remove	Xóa
+Cancel	Cancel	Hủy
+Page text unavailable	Page text unavailable	Không đọc được chữ
+Home	Home	Trang chủ
+Current book	Current book	Sách đang đọc
+No books yet	No books yet	Chưa có sách
+Continue reading	Continue reading	Đọc tiếp
+Browse files	Browse files	Duyệt sách
+Sort: 	Sort: 	Xếp: 
+Title A-Z	Title A-Z	Tên A-Z
+Recently read	Recently read	Mới đọc
+Recently added	Recently added	Mới thêm
+Folders	Folders	Thư mục
+Online	Online	Mạng
+Search | Online	Search | Online	Tìm | Mạng
+OK: open   Back: exit	OK: open   Back: exit	OK: mở   Back: thoát
+OK: open   Back: home	OK: open   Back: home	OK: mở   Back: về
+OK: open   Back: up	OK: open   Back: up	OK: mở   Back: lên
+OK: open/get   Back: prev	OK: open/get   Back: prev	OK: mở/tải   Back: lùi
+OK: press   Back: close	OK: press   Back: close	OK: nhấn   Back: đóng
+No EPUB books found	No EPUB books found	Không có sách
+No matching books	No matching books	Không có sách phù hợp
+No EPUBs or folders	No EPUBs or folders	Không có sách hay thư mục
+Back: leave catalog	Back: leave catalog	Back: rời thư viện
+Search library	Search library	Tìm sách
+Search catalog	Search catalog	Tìm trong thư viện
+Done: search	Done: search	Done: tìm
+Wheel: key   Centre: press   Again: next letter	Wheel: key   Centre: press   Again: next letter	Xoay: phím   Giữa: nhấn   Lại: chữ kế
+Search this catalog	Search this catalog	Tìm trong thư viện này
+More results	More results	Thêm kết quả
+Loading catalog...	Loading catalog...	Đang tải thư viện...
+Downloading EPUB...	Downloading EPUB...	Đang tải sách...
+EPUB downloaded to Books/Online	EPUB downloaded to Books/Online	Đã tải vào Books/Online
+Searching...	Searching...	Đang tìm...
+No results	No results	Không có kết quả
+Opening EPUB...	Opening EPUB...	Đang mở sách...
+Cannot read this EPUB	Cannot read this EPUB	Không đọc được sách này
+Set .books/connected.conf	Set .books/connected.conf	Cần .books/connected.conf
+Type a search first	Type a search first	Hãy nhập từ cần tìm
+This catalog has no search	This catalog has no search	Thư viện không có tìm kiếm
+Connected library	Connected library	Thư viện
+Catalog servers	Catalog servers	Máy chủ thư viện
+Choose a server to edit	Choose a server to edit	Chọn máy chủ để sửa
+New server	New server	Máy chủ mới
+Edit server	Edit server	Sửa máy chủ
++ Add server	+ Add server	+ Thêm máy chủ
+Edit a server	Edit a server	Sửa máy chủ
+Name	Name	Tên
+User	User	Tài khoản
+Password	Password	Mật khẩu
+Save	Save	Lưu
+Delete server	Delete server	Xóa máy chủ
+Press again to delete	Press again to delete	Nhấn lần nữa để xóa
+(the host name)	(the host name)	(tên máy chủ)
+(none)	(none)	(không có)
+Server name	Server name	Tên máy chủ
+Catalog URL	Catalog URL	Địa chỉ thư viện
+User name	User name	Tài khoản
+Done: keep	Done: keep	Done: giữ
+Server saved	Server saved	Đã lưu máy chủ
+Server deleted	Server deleted	Đã xóa máy chủ
+Add a catalog server	Add a catalog server	Hãy thêm máy chủ
+Up to 8 servers	Up to 8 servers	Tối đa 8 máy chủ
+OK: edit   Back: cancel	OK: edit   Back: cancel	OK: sửa   Back: hủy
+Type the catalog URL	Type the catalog URL	Hãy nhập địa chỉ
+URL must start http:// or https://	URL must start http:// or https://	Địa chỉ phải bắt đầu http(s)://
+Password needs a user	Password needs a user	Cần tài khoản
+Value too long	Value too long	Quá dài
+Cannot save settings	Cannot save settings	Không lưu được
+Offline copy	Offline copy	Bản lưu
+Book details	Book details	Thông tin sách
+No description	No description	Không có mô tả
+On the card	On the card	Đã có trên thẻ
+Already on the card	Already on the card	Sách đã có trên thẻ
+OK: download   Back: list	OK: download   Back: list	OK: tải   Back: danh sách
+OK: show on card   Back: list	OK: show on card   Back: list	OK: xem   Back: danh sách
+Loading...	Loading...	Đang tải...
+An ebook reader for Q2 Pod	An ebook reader for Q2 Pod	Ứng dụng đọc sách cho Q2 Pod
+on the Shanling Q2.	on the Shanling Q2.	trên Shanling Q2.
+A port of CrossPoint Reader:	A port of CrossPoint Reader:	Chuyển từ CrossPoint Reader:
+its EPUB engine, layout and	its EPUB engine, layout and	bộ đọc EPUB, dàn trang và
+fonts, on the Q2's Linux.	fonts, on the Q2's Linux.	phông chữ, trên Linux của Q2.
+MIT license; see LICENSE files	MIT license; see LICENSE files	Giấy phép MIT; xem tệp LICENSE
+Enable sync in connected.conf	Enable sync in connected.conf	Bật đồng bộ trong connected.conf
+Progress uploaded	Progress uploaded	Đã gửi tiến độ
+No remote progress	No remote progress	Máy chủ chưa có tiến độ
+Remote position applied	Remote position applied	Đã lấy vị trí
+Remote ahead. Pull first.	Remote ahead. Pull first.	Máy chủ mới hơn. Lấy về trước.
+Remote is behind	Remote is behind	Máy chủ cũ hơn
+Reading positions differ	Reading positions differ	Vị trí đọc khác nhau
+This Q2: 	This Q2: 	Máy này: 
+Server: 	Server: 	Máy chủ: 
+Another device read further.	Another device read further.	Máy khác đã đọc xa hơn.
+The server's position is older.	The server's position is older.	Vị trí trên máy chủ cũ hơn.
+Go to the server's 	Go to the server's 	Tới vị trí máy chủ 
+Upload this Q2's 	Upload this Q2's 	Gửi vị trí máy này 
+Keep and upload 	Keep and upload 	Giữ và gửi 
+%zu / %zu books	%zu / %zu books	%zu / %zu sách
+Books: %zu/%zu	Books: %zu/%zu	Sách: %zu/%zu

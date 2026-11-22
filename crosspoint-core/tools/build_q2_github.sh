@@ -264,6 +264,11 @@ cp docs/q2-books-card-app.md "$card/.books/README.txt"
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.books/dictionary-starter.tsv"
 cp crosspoint-core/assets/connected.conf.example "$card/.books/connected.conf.example"
+# Menu translations, used when Q2 Pod is set to that language (lang/README.md).
+mkdir -p "$card/.books/lang"
+for table in crosspoint-core/lang/*.tsv; do
+  [ "$(basename "$table")" = en.tsv ] || cp "$table" "$card/.books/lang/"
+done
 # HTTPS trust: Mozilla's root list (the runner's ca-certificates). Q2 Pod's
 # /etc/scrobble-ca.pem has only the 8 roots its scrobbler needs, so many Kavita
 # hosts (Sectigo/ZeroSSL RSA, SSL.com, Amazon) would fail on the device.
@@ -494,7 +499,7 @@ unzip -t "$base/dist/books-q2-reader-alpha.zip"
 unzip -Z1 "$base/dist/books-q2-reader-alpha.zip" | python3 -c '
 import re,sys
 bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
-  r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|"
+  r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
   r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"

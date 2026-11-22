@@ -1,22 +1,31 @@
-// M3 translated menus: default English, the saved choice, lookups, and the
-// table itself (no duplicate keys, valid UTF-8, no empty text).
+// Menus follow Q2 Pod's language: English by default; config.ini's
+// [Q2POD] LANG only while Q2 Pod's copy of the language is there; Books' own
+// table only (not Q2 Pod's); lines with other printf conversions skipped;
+// letters the menu font lacks shown in English.
+// Also checks Books' shipped tables (lang/*.tsv) against the template.
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <set>
 #include <string>
 #include <unistd.h>
 
 #include "UiLanguage.hpp"
 
-static bool validUtf8(const char* s) {
-  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(s); *p;) {
-    const int n = *p < 0x80 ? 1 : (*p >> 5) == 6 ? 2 : (*p >> 4) == 14 ? 3 : (*p >> 3) == 30 ? 4 : 0;
-    if (!n) return false;
-    for (int k = 1; k < n; ++k)
-      if ((p[k] & 0xC0) != 0x80) return false;
-    p += n;
+static void put(const std::string& path, const std::string& text) {
+  FILE* f = std::fopen(path.c_str(), "wb");
+  assert(f && std::fputs(text.c_str(), f) >= 0 && std::fclose(f) == 0);
+}
+static bool validUtf8(const std::string& s) {
+  for (size_t i = 0; i < s.size();) {
+    const unsigned char b = static_cast<unsigned char>(s[i]);
+    const size_t n = b < 0x80 ? 1 : (b >> 5) == 6 ? 2 : (b >> 4) == 14 ? 3 : (b >> 3) == 30 ? 4 : 0;
+    if (!n || i + n > s.size()) return false;
+    for (size_t k = 1; k < n; ++k)
+      if ((static_cast<unsigned char>(s[i + k]) & 0xC0) != 0x80) return false;
+    i += n;
   }
   return true;
 }
@@ -24,27 +33,88 @@ static bool validUtf8(const char* s) {
 int main() {
   char dir[] = "/tmp/books-lang-XXXXXX";
   assert(mkdtemp(dir));
-  setenv("BOOKS_STATE_DIR", dir, 1);
-  assert(books::uiLanguage() == books::UiLanguage::English);
-  assert(std::strcmp(books::tr("Reading settings"), "Reading settings") == 0);
-  assert(books::setUiLanguage(books::UiLanguage::Vietnamese));
-  assert(std::strcmp(books::tr("Reading settings"), "Cài đặt đọc") == 0);
-  assert(std::strcmp(books::tr("A book title"), "A book title") == 0);  // not UI text: unchanged
-  assert(books::tr(std::string("On")) == "Bật");
-  std::set<std::string> keys;
-  for (const auto& t : books::kVietnamese) {
-    assert(*t.en && *t.vi && validUtf8(t.vi));
-    assert(keys.insert(t.en).second);  // one translation per string
+  const std::string root = dir, data = root + "/data", state = root + "/books";
+  assert(system(("mkdir -p " + data + " " + state + "/lang").c_str()) == 0);
+  setenv("BOOKS_STATE_DIR", state.c_str(), 1);
+  setenv("BOOKS_SYSTEM_CONFIG", (data + "/config.ini").c_str(), 1);
+  unsetenv("BOOKS_LANG");
+
+  // No config.ini: English, and tr() hands back the same pointer.
+  books::reloadUiLanguage();
+  const char* english = "Reading settings";
+  assert(!books::uiTranslated() && books::tr(english) == english);
+
+  // LANG=de with no copy of the language (the pack removed): English.
+  put(data + "/config.ini", "[SYSSET]\nLANGUAGE=2\n[Q2POD]\nWHEELSENSITIVITY=50\nLANG = de \n");
+  books::reloadUiLanguage();
+  assert(!books::uiTranslated());
+
+  // With Q2 Pod's copy: German, from Books' table alone.
+  put(data + "/q2-lang-de.tsv",
+      "# Deutsch\nmsg_no\tCancel\tAbbrechen\nSave\tSave\tSpeichern\nSearch\tSearch\tSuche\n"
+      "%u songs\t%u songs\t%s Titel\n");  // wrong conversion: skipped
+  put(state + "/lang/de.tsv",
+      "# Deutsch\nReading settings\tReading settings\tLese\\neinstellungen\n"
+      "Search\tSearch\tSuchen (Books)\nBooks: %zu/%zu\tBooks: %zu/%zu\tBücher: %zu/%zu\n"
+      "Online\tOnline\t\n"                         // no translation: English
+      "Bad\tBooks: %zu/%zu\tBücher %s\n"            // conversions differ: skipped
+      "Wide\tWide\t\xE5\xBA\x83\n");               // a CJK letter
+  books::reloadUiLanguage();
+  assert(books::uiTranslated() && books::uiLanguageCode() == "de");
+  assert(books::tr(std::string("Reading settings")) == "Lese\neinstellungen");
+  assert(books::tr(std::string("Cancel")) == "Cancel");  // only in Q2 Pod's table: English
+  assert(books::tr(std::string("Search")) == "Suchen (Books)");
+  assert(books::tr(std::string("Books: %zu/%zu")) == "Bücher: %zu/%zu");
+  assert(books::tr(std::string("Online")) == "Online" && books::tr(std::string("%u songs")) == "%u songs");
+  assert(books::tr(std::string("A book title")) == "A book title");
+  // A menu font with Latin only: the CJK translation stays English.
+  assert(books::tr(std::string("Wide")) == "\xE5\xBA\x83");
+  books::setUiGlyphCheck([](uint32_t cp) { return cp < 0x3000; });
+  assert(books::tr(std::string("Wide")) == "Wide" && books::tr(std::string("Search")) == "Suchen (Books)");
+
+  // Not a code, or another section's LANG: English.
+  put(data + "/config.ini", "[Q2POD]\nLANG=../x\n");
+  books::reloadUiLanguage();
+  assert(!books::uiTranslated());
+  put(data + "/config.ini", "[OTHER]\nLANG=de\n");
+  books::reloadUiLanguage();
+  assert(!books::uiTranslated());
+  // BOOKS_LANG (host and tests) picks the language without Q2 Pod.
+  setenv("BOOKS_LANG", "de", 1);
+  books::reloadUiLanguage();
+  assert(books::uiLanguageCode() == "de" && books::tr(std::string("Search")) == "Suchen (Books)");
+  unsetenv("BOOKS_LANG");
+  assert(books::printfConversions("%zu / %zu 100%% %s") == "%zu%zu%s");
+
+  // The tables Books ships: every line's English is in the template, no
+  // English twice, valid UTF-8, the same conversions.
+  std::set<std::string> templ;
+  {
+    std::ifstream in(BOOKS_LANG_DIR "/en.tsv");
+    std::string line;
+    assert(std::getline(in, line) && line.rfind("# ", 0) == 0);
+    while (std::getline(in, line)) {
+      const auto t1 = line.find('\t'), t2 = line.find('\t', t1 + 1);
+      assert(t1 != std::string::npos && t2 != std::string::npos);
+      assert(templ.insert(line.substr(t1 + 1, t2 - t1 - 1)).second);
+    }
   }
-  // Saved: a new process (static re-read) would see Vietnamese.
-  FILE* f = std::fopen(books::uiLanguageFile().c_str(), "rb");
-  assert(f);
-  char line[32] = {};
-  assert(std::fgets(line, sizeof line, f) && std::string(line) == "BOOKS-LANG1 vi\n");
-  std::fclose(f);
-  assert(books::setUiLanguage(books::UiLanguage::English));
-  assert(std::strcmp(books::tr("On"), "On") == 0);
-  std::system((std::string("rm -rf ") + dir).c_str());
-  std::puts("Books UI language: PASS");
+  assert(templ.count("Reading settings") && templ.count("Catalog servers") && templ.count("Books: %zu/%zu"));
+  for (const char* code : {"de", "es", "fr", "it", "pl", "ru", "uk", "vi"}) {
+    std::ifstream in(std::string(BOOKS_LANG_DIR "/") + code + ".tsv");
+    std::string line;
+    assert(std::getline(in, line) && line.rfind("# ", 0) == 0);
+    std::set<std::string> seen;
+    while (std::getline(in, line)) {
+      const auto t1 = line.find('\t'), t2 = line.find('\t', t1 + 1);
+      assert(t1 != std::string::npos && t2 != std::string::npos);
+      const std::string en = line.substr(t1 + 1, t2 - t1 - 1), tx = line.substr(t2 + 1);
+      assert(templ.count(en) && seen.insert(en).second && validUtf8(tx) && !tx.empty());
+      assert(books::printfConversions(books::unescapeLanguageField(en)) ==
+             books::printfConversions(books::unescapeLanguageField(tx)));
+    }
+  }
+  assert(system(("rm -rf " + root).c_str()) == 0);
+  std::puts("Books UI language follows Q2 Pod: PASS");
   return 0;
 }

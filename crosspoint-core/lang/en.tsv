@@ -1,0 +1,201 @@
+# English
+Reading settings	Reading settings	
+Font	Font	
+Size	Size	
+Line spacing	Line spacing	
+Margins	Margins	
+Alignment	Alignment	
+Hyphenation	Hyphenation	
+Book CSS	Book CSS	
+Night mode	Night mode	
+Add bookmark	Add bookmark	
+Bookmarks	Bookmarks	
+Chapters	Chapters	
+Page links	Page links	
+Return link	Return link	
+Select text	Select text	
+Sync: upload	Sync: upload	
+Sync: download	Sync: download	
+Focus read	Focus read	
+Auto turn	Auto turn	
+Go to %	Go to %	
+About	About	
+Dictionaries	Dictionaries	
+Export notes	Export notes	
+On	On	
+Off	Off	
+Justify	Justify	
+Book default	Book default	
+Save page	Save page	
+Saved pages	Saved pages	
+Browse book	Browse book	
+Footnotes / links	Footnotes / links	
+Go back	Go back	
+No previous link	No previous link	
+Highlight / define	Highlight / define	
+Save position	Save position	
+Use remote position	Use remote position	
+To Clippings	To Clippings	
+installed	installed	
+Wheel: scroll  Center: select	Wheel: scroll  Center: select	
+Over 2 min idle needs Q2 Pod Smart Awake	Over 2 min idle needs Q2 Pod Smart Awake	
+Reading settings not saved	Reading settings not saved	
+Bookmark saved	Bookmark saved	
+Cannot save bookmark	Cannot save bookmark	
+No highlights or bookmarks yet	No highlights or bookmarks yet	
+Cannot write Clippings	Cannot write Clippings	
+Selected font file missing	Selected font file missing	
+Font file not installed	Font file not installed	
+Go to percent	Go to percent	
+Wheel: 1%   Keys: 10%	Wheel: 1%   Keys: 10%	
+Center: go   Back: cancel	Center: go   Back: cancel	
+Any key: back	Any key: back	
+Center: on/off   Back: settings	Center: on/off   Back: settings	
+None installed.	None installed.	
+Put StarDict folders in	Put StarDict folders in	
+Links and footnotes	Links and footnotes	
+No links on this page	No links on this page	
+Wheel: pick  Center: go	Wheel: pick  Center: go	
+Back: close   Center: jump	Back: close   Center: jump	
+Back: selected text	Back: selected text	
+Offline dictionary	Offline dictionary	
+No match in the dictionaries	No match in the dictionaries	
+Wheel: more  Back: selected text	Wheel: more  Back: selected text	
+Footnote	Footnote	
+No bookmarks yet	No bookmarks yet	
+No chapters	No chapters	
+Wheel: select  Center: go  Back: settings	Wheel: select  Center: go  Back: settings	
+Wheel: word   Center: start	Wheel: word   Center: start	
+Wheel: extend  Center: actions	Wheel: extend  Center: actions	
+Highlight	Highlight	
+Define	Define	
+Remove	Remove	
+Cancel	Cancel	
+Page text unavailable	Page text unavailable	
+Home	Home	
+Current book	Current book	
+No books yet	No books yet	
+Continue reading	Continue reading	
+Browse files	Browse files	
+Sort: 	Sort: 	
+Title A-Z	Title A-Z	
+Recently read	Recently read	
+Recently added	Recently added	
+Folders	Folders	
+Online	Online	
+Search | Online	Search | Online	
+OK: open   Back: exit	OK: open   Back: exit	
+OK: open   Back: home	OK: open   Back: home	
+OK: open   Back: up	OK: open   Back: up	
+OK: open/get   Back: prev	OK: open/get   Back: prev	
+OK: press   Back: close	OK: press   Back: close	
+No EPUB books found	No EPUB books found	
+No matching books	No matching books	
+No EPUBs or folders	No EPUBs or folders	
+Back: leave catalog	Back: leave catalog	
+Search library	Search library	
+Search catalog	Search catalog	
+Done: search	Done: search	
+Wheel: key   Centre: press   Again: next letter	Wheel: key   Centre: press   Again: next letter	
+Search this catalog	Search this catalog	
+More results	More results	
+Loading catalog...	Loading catalog...	
+Downloading EPUB...	Downloading EPUB...	
+EPUB downloaded to Books/Online	EPUB downloaded to Books/Online	
+Searching...	Searching...	
+No results	No results	
+Opening EPUB...	Opening EPUB...	
+Cannot read this EPUB	Cannot read this EPUB	
+Set .books/connected.conf	Set .books/connected.conf	
+Type a search first	Type a search first	
+This catalog has no search	This catalog has no search	
+Connected library	Connected library	
+Catalog servers	Catalog servers	
+Choose a server to edit	Choose a server to edit	
+New server	New server	
+Edit server	Edit server	
++ Add server	+ Add server	
+Edit a server	Edit a server	
+Name	Name	
+User	User	
+Password	Password	
+Save	Save	
+Delete server	Delete server	
+Press again to delete	Press again to delete	
+(the host name)	(the host name)	
+(none)	(none)	
+Server name	Server name	
+Catalog URL	Catalog URL	
+User name	User name	
+Done: keep	Done: keep	
+Server saved	Server saved	
+Server deleted	Server deleted	
+Add a catalog server	Add a catalog server	
+Up to 8 servers	Up to 8 servers	
+OK: edit   Back: cancel	OK: edit   Back: cancel	
+Type the catalog URL	Type the catalog URL	
+URL must start http:// or https://	URL must start http:// or https://	
+Password needs a user	Password needs a user	
+Value too long	Value too long	
+Cannot save settings	Cannot save settings	
+Offline copy	Offline copy	
+Book details	Book details	
+No description	No description	
+On the card	On the card	
+Already on the card	Already on the card	
+OK: download   Back: list	OK: download   Back: list	
+OK: show on card   Back: list	OK: show on card   Back: list	
+Loading...	Loading...	
+An ebook reader for Q2 Pod	An ebook reader for Q2 Pod	
+on the Shanling Q2.	on the Shanling Q2.	
+A port of CrossPoint Reader:	A port of CrossPoint Reader:	
+its EPUB engine, layout and	its EPUB engine, layout and	
+fonts, on the Q2's Linux.	fonts, on the Q2's Linux.	
+MIT license; see LICENSE files	MIT license; see LICENSE files	
+Enable sync in connected.conf	Enable sync in connected.conf	
+Progress uploaded	Progress uploaded	
+No remote progress	No remote progress	
+Remote position applied	Remote position applied	
+Remote ahead. Pull first.	Remote ahead. Pull first.	
+Remote is behind	Remote is behind	
+Reading positions differ	Reading positions differ	
+This Q2: 	This Q2: 	
+Server: 	Server: 	
+Another device read further.	Another device read further.	
+The server's position is older.	The server's position is older.	
+Go to the server's 	Go to the server's 	
+Upload this Q2's 	Upload this Q2's 	
+Keep and upload 	Keep and upload 	
+%zu / %zu books	%zu / %zu books	
+Books: %zu/%zu	Books: %zu/%zu	
+Books	Books	
+Copy EPUBs to /Books	Copy EPUBs to /Books	
+Tap title to edit search	Tap title to edit search	
+Untitled	Untitled	
+Cannot hash EPUB	Cannot hash EPUB	
+Cannot map text position	Cannot map text position	
+Could not open synced position	Could not open synced position	
+Could not repaginate	Could not repaginate	
+Could not update page layout	Could not update page layout	
+Remote text location unsupported	Remote text location unsupported	
+Settings not saved to SD	Settings not saved to SD	
+Sync not configured	Sync not configured	
+Invalid sync position	Invalid sync position	
+Invalid remote position	Invalid remote position	
+Too many servers	Too many servers	
+Connection unavailable	Connection unavailable	
+Connection ended unexpectedly	Connection ended unexpectedly	
+HTTPS certificate not trusted (check the device clock)	HTTPS certificate not trusted (check the device clock)	
+HTTPS redirect refused (origin or scheme changed)	HTTPS redirect refused (origin or scheme changed)	
+HTTPS unavailable	HTTPS unavailable	
+Download too large	Download too large	
+Download already in progress	Download already in progress	
+Invalid download link	Invalid download link	
+Invalid OPDS XML	Invalid OPDS XML	
+Cannot save EPUB	Cannot save EPUB	
+Books directory unavailable	Books directory unavailable	
+Cannot create Online folder	Cannot create Online folder	
+Bad search template	Bad search template	
+Not a complete EPUB ZIP	Not a complete EPUB ZIP	
+Catalog request failed	Catalog request failed	
+Search description failed	Search description failed	

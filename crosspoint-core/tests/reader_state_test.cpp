@@ -20,6 +20,18 @@ int main() {
   assert(std::fwrite("book",1,4,f)==4);
   assert(std::fclose(f)==0);
 
+  // A normal app exit must persist the exact page, not just the book title.
+  crosspod::ReadingPosition restored{};
+  assert(!crosspod::loadReadingPosition(book,restored));
+  assert(crosspod::saveReadingPosition(book,{2,17}));
+  assert(crosspod::loadReadingPosition(book,restored));
+  assert(restored.spine==2 && restored.page==17);
+  assert(crosspod::saveReadingPosition(book,{2,18}));
+  assert(crosspod::loadReadingPosition(book,restored));
+  assert(restored.spine==2 && restored.page==18);
+  assert(!crosspod::saveReadingPosition(book,{-1,0}));
+  assert(!crosspod::saveReadingPosition(book,{0,1000001}));
+
   // UI font is independent; persisted oversized reader settings migrate to 12pt.
   crosspod::Typography textSize{};
   assert(crosspod::validTypography(textSize));
@@ -66,6 +78,8 @@ int main() {
   f=std::fopen(book.c_str(),"ab");
   assert(f);assert(std::fwrite("x",1,1,f)==1);std::fclose(f);
   assert(crosspod::loadBookmarks(book).empty());
+  assert(!crosspod::loadReadingPosition(book,restored));
+  std::remove(crosspod::positionFile(book).c_str());
   std::remove(crosspod::bookmarksFile(book).c_str());
   std::remove(crosspod::readerPreferencesFile().c_str());
   std::remove(book.c_str());

@@ -130,12 +130,11 @@ inline ConnectedConfig parseConnectedConfig(const std::string& text) {
     else if(key=="name" && value.size()<=64)current->name=value;
     else if(key=="opds_username" && value.size()<=128)current->username=value;
     else if(key=="opds_password" && value.size()<=256)current->password=value;
-    else if(current==&legacy) {
-      if(key=="sync_url" && value.size()<=1536)config.syncUrl=value;
-      else if(key=="sync_username" && value.size()<=128)config.username=value;
-      else if(key=="sync_password" && value.size()<=256)config.password=value;
-      else if(key=="enable_sync")config.enableSync=value=="true"||value=="1";
-    }
+    // The sync settings are the file's, wherever they are written.
+    else if(key=="sync_url" && value.size()<=1536)config.syncUrl=value;
+    else if(key=="sync_username" && value.size()<=128)config.username=value;
+    else if(key=="sync_password" && value.size()<=256)config.password=value;
+    else if(key=="enable_sync")config.enableSync=value=="true"||value=="1";
   }
   if(legacy.valid())config.servers.push_back(std::move(legacy));
   for(auto& server:found)

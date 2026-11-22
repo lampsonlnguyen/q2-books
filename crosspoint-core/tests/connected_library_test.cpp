@@ -154,7 +154,7 @@ int main() {
       "# comment\nopds_url=https://a.example/opds\nopds_username=lam\nopds_password=pw\n"
       "sync_url=https://k.example/sync\nsync_username=u\nsync_password=p\nenable_sync=true\n"
       "[server]\nname=Calibre\nopds_url=http://192.168.1.5:8083/opds\nopds_username=me\n"
-      "sync_url=https://ignored.example/\n"   // sync keys belong to the top
+      "sync_password=p2\n"   // sync keys count wherever they are
       "[server]\nname=Broken\nopds_url=ftp://nope\n"
       "[server]\nopds_url=https://c.example/feed\n";
     for(int i=0;i<10;++i)many+="[server]\nopds_url=https://x"+std::to_string(i)+".example/\n";
@@ -163,7 +163,7 @@ int main() {
     assert(parsed.servers[0].url=="https://a.example/opds" && parsed.servers[0].username=="lam");
     assert(parsed.servers[1].name=="Calibre" && parsed.servers[1].username=="me");
     assert(parsed.servers[2].url=="https://c.example/feed");  // the ftp block is dropped
-    assert(parsed.syncUrl=="https://k.example/sync" && parsed.syncConfigured());
+    assert(parsed.syncUrl=="https://k.example/sync" && parsed.syncConfigured() && parsed.password=="p2");
     assert(opdsServerLabel(parsed.servers[2])=="c.example");
     // Credentials go only to the server's own origin.
     const auto& a=parsed.servers[0];
@@ -184,7 +184,7 @@ int main() {
     const auto again=loadConnectedConfig();
     assert(again.servers.size()==3 && again.servers[2].name=="Third");
     assert(again.servers[1].password.empty() && again.servers[0].password=="pw");
-    assert(again.syncConfigured() && again.password=="p");
+    assert(again.syncConfigured() && again.password=="p2");
     // What the Q2's form refuses.
     assert(opdsServerProblem({"","",""," "})=="Type the catalog URL");
     assert(!opdsServerProblem({"","ftp://x","",""}).empty());

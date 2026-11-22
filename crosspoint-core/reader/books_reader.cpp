@@ -643,6 +643,14 @@ class Reader {
     // Section layout cache from a Latin-only build after enabling CJK.
     mix(0x434a4b01ull);
     mix(static_cast<uint64_t>(scriptFonts_.coverageMask()));
+    // RD-05: a user font slot's file can change between sessions; pages laid
+    // out with another file under the same slot must not be reused.
+    for(int f=static_cast<int>(books::Typography::Family::User1);
+        f<static_cast<int>(books::Typography::Family::Count);++f)
+      for(int size=10;size<=12;++size)
+        for(unsigned char byte:books::typographyFontIdentity({static_cast<books::Typography::Family>(f),size})) {
+          hash^=byte;hash*=1099511628211ull;
+        }
     const char* state=std::getenv("BOOKS_STATE_DIR");
     struct stat cardDir{};
     const bool cardMounted=::stat("/mnt/mmc/.books",&cardDir)==0 &&
@@ -879,7 +887,7 @@ class Reader {
       (void)useTypography(typography_);
     }
     std::printf("Books typeface: %s %dpt%s\n",
-        books::typographyFamilyName(typography_.family),typography_.size,
+        books::typographyFamilyName(typography_.family).c_str(),typography_.size,
         typographyNotice_.empty()?"":" (saved font unavailable; fallback)");
     std::printf("Books font source: %s\n",
         selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");

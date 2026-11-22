@@ -24,11 +24,38 @@ from crosspoint_script_fonts import SCRIPT_FONTS
 CROSSPOINT_REF = "42d58daaabcf469a2e5e1ba871714fb9dcf51d29"
 CROSSPOINT_URL = "https://github.com/crosspoint-reader/crosspoint-reader.git"
 SIZES = (10, 11)
+# CrossInk's named reader font catalog. The extra families are generated at
+# all three 10/11/12pt sizes; the original two and script fallbacks reuse the
+# officially SHA-pinned 12pt CrossPoint releases.
+CROSSINK_REF = "9914146eeae7b46b300f475a16c32426fc02ec1f"
+CROSSINK_URL = "https://github.com/uxjulia/CrossInk.git"
+CROSSINK_FAMILIES = {
+    "Bitter": "bitter",
+    "Lexend Deca": "lexenddeca",
+    "ChareInk": "chareink",
+    "Literata": "literata",
+    "Merriweather": "merriweather",
+    "Inter": "inter",
+    "AtkinsonHyperlegibleNext": "atkinson",
+}
 FAMILIES = {
     "NotoSansExtended": "sans",
     "NotoSerifExtended": "serif",
     "NotoSansCJKJP": "cjk",
     **{font: slug for slug, (font, _desc, _assets) in SCRIPT_FONTS.items()},
+    **CROSSINK_FAMILIES,
+}
+INDIC_RANGES = {
+    "devanagari": "(0x0900-0x097F)",
+    "bengali": "(0x0980-0x09FF)",
+    "gurmukhi": "(0x0A00-0x0A7F)",
+    "gujarati": "(0x0A80-0x0AFF)",
+    "oriya": "(0x0B00-0x0B7F)",
+    "tamil": "(0x0B80-0x0BFF)",
+    "telugu": "(0x0C00-0x0C7F)",
+    "kannada": "(0x0C80-0x0CFF)",
+    "malayalam": "(0x0D00-0x0D7F)",
+    "sinhala": "(0x0D80-0x0DFF)",
 }
 
 
@@ -54,6 +81,19 @@ def main() -> int:
         scripts = upstream / "lib/EpdFont/scripts"
         config = yaml.safe_load((scripts / "sd-fonts.yaml").read_text())
         catalog = {item["name"]: item for item in config["families"]}
+        crossink = workspace / "crossink"
+        run("git", "init", "-q", str(crossink))
+        run("git", "-C", str(crossink), "remote", "add", "origin", CROSSINK_URL)
+        run("git", "-C", str(crossink), "fetch", "--quiet", "--depth", "1",
+            "origin", CROSSINK_REF)
+        run("git", "-C", str(crossink), "checkout", "--quiet", "--detach", "FETCH_HEAD")
+        ink_catalog = yaml.safe_load((
+            crossink/"lib/EpdFont/scripts/sd-fonts.yaml").read_text())
+        ink_families = {item["name"]:item for item in ink_catalog["families"]}
+        for name in CROSSINK_FAMILIES:
+            if name not in ink_families:
+                raise RuntimeError("CrossInk font missing from manifest: "+name)
+            catalog[name] = ink_families[name]
         # Some script families appear in CrossPoint font *releases*, but are
         # absent from the particular pinned YAML snapshot. For those, use
         # Ubuntu 24.04's system Noto font sources on the CI host. The original
@@ -64,15 +104,27 @@ def main() -> int:
         for name in missing:
             if name == "NotoSansCJKJP":
                 root = pathlib.Path("/usr/share/fonts/opentype/noto")
-                regular = root / "NotoSansCJK-Regular.ttc"
-                bold = root / "NotoSansCJK-Bold.ttc"
+                regular_collection = root / "NotoSansCJK-Regular.ttc"
+                # The pinned font converter expects TTF/OTF, not a TTC.
+                # Extract the JP member (index 0) from Ubuntu's Noto
+                # collection as a CI-host-only TTF, then rasterize it.
+                from fontTools.ttLib import TTCollection
+                extracted = workspace / "cjk-jp-regular.ttf"
+                collection = TTCollection(str(regular_collection))
+                try:
+                    collection.fonts[0].save(str(extracted))
+                finally:
+                    collection.close()
+                regular = extracted
+                bold = pathlib.Path("/nonexistent")
                 intervals = "cjk,latin-ext,punctuation,reading,symbols"
             else:
                 root = pathlib.Path("/usr/share/fonts/truetype/noto")
                 regular = root / f"{name}-Regular.ttf"
                 bold = root / f"{name}-Bold.ttf"
                 slug = FAMILIES[name]
-                intervals = f"{slug},latin-ext,punctuation"
+                intervals = (INDIC_RANGES[slug] if slug in INDIC_RANGES
+                             else slug)+",latin-ext,punctuation"
             if not regular.is_file():
                 raise RuntimeError(f"Missing font source for {name}: {regular}")
             styles = {"regular": {"path": str(regular)}}
@@ -87,7 +139,8 @@ def main() -> int:
         families = []
         for name in FAMILIES:
             source = dict(catalog[name])
-            source["sizes"] = list(SIZES)
+            source["sizes"] = list(
+                (10, 11, 12) if name in CROSSINK_FAMILIES else SIZES)
             families.append(source)
 
         subset = workspace / "crosspod-sizes-10-11.yaml"
@@ -101,7 +154,7 @@ def main() -> int:
 
         checksums = []
         for name, slug in FAMILIES.items():
-            for size in SIZES:
+            for size in ((10, 11, 12) if name in CROSSINK_FAMILIES else SIZES):
                 source = built / name / f"{name}_{size}.cpfont"
                 if not source.is_file():
                     raise RuntimeError(f"Missing freshly rasterized font: {source}")
@@ -119,7 +172,7 @@ def main() -> int:
         shutil.copyfile(built / "LICENSE", target / "CrossPoint-font-licenses.txt")
         # Validate these sizes exist for *all* 14 scripts and both primary
         # families, or fail the package rather than silently drop glyphs.
-        assert len(checksums) == len(FAMILIES) * len(SIZES)
+        assert len(checksums) == (len(FAMILIES) - len(CROSSINK_FAMILIES))*len(SIZES) + len(CROSSINK_FAMILIES)*3
     return 0
 
 

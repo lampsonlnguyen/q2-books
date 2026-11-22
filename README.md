@@ -1,6 +1,16 @@
 # CrossPod — direct CrossPoint Reader port to Shanling Q2
 
-**This repository contains an incomplete CrossPoint engine port. It is not yet a functional Q2 e-reader.**
+**Current status:** v0.7.0 is a published Q2 MIPS beta with EPUB reading,
+multilingual rendering, library navigation, OPDS catalog access and optional
+manual KOReader-compatible progress synchronization. Actual Shanling Q2 hardware
+testing is still required. The v0.8.0 device integration work is tracked in
+[the v0.8 verification plan](docs/v0.8.0-device-integration.md) and PR #32.
+
+**Historical note:** The detailed porting inventory below was written during
+the early CrossPoint source migration. Its "not yet done" and host-only notes
+describe those earlier milestones, not the complete v0.7 beta state. Refer to
+[the connected library guide](docs/v0.7.0-connected-library.md) and the v0.8
+verification plan for current capabilities and release requirements.
 
 The earlier CrossPod prototype has been replaced on `main` by the CrossPoint reader-port foundation. The old prototype remains available in Git history; this implementation does not use its custom EPUB extractor or rendering engine.
 

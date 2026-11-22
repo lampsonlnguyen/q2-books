@@ -591,8 +591,8 @@ class Reader {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
   }
   int fontIdForTypography(crosspod::Typography value) const {
-    return 100+(value.family==crosspod::Typography::Family::Serif?5:0)+
-           (value.size-8);
+    return 100+(value.family==crosspod::Typography::Family::Serif?3:0)+
+           (value.size-10);
   }
   ReaderRenderSpec upstreamSpec() const {
     return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,

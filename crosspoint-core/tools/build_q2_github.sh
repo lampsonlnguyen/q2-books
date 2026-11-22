@@ -393,6 +393,13 @@ assert all("Selected font file missing" not in log and "Font file not installed"
 print("MIPS Q2 font switching and rendering: PASS")
 PY
 rm -f "$card/.crosspod/typography.conf"
+# Stress-regression for v0.8: validate EPUB3 HTML entities and the actual
+# bundled italic/bold cpfont raster on the MIPS binary (not a host skip).
+CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
+  python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" entities
+CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
+  python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" italic
+
 # Never ship QEMU-generated Section/page caches from the CI sample book.
 rm -rf -- "$card/.crosspod/cache"
 chmod +x "$card/.crosspod/q2-crosspod" "$card/.crosspod/crosspod-engine"

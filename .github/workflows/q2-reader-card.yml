@@ -2,9 +2,11 @@ name: CrossPod Q2 v0.8.0 beta build and release
 on:
   workflow_dispatch:
   push:
-    branches: [main, v0.8-device-integration]
+    branches: [main, v0.8-device-integration, v0.10-font-sizes-8-12]
     paths:
       - "crosspoint-core/tools/build_q2_github.sh"
+      - "crosspoint-core/tools/build_q2_small_font_assets.py"
+      - "crosspoint-core/tools/fetch_q2_fonts.py"
       - ".github/workflows/q2-reader-card.yml"
       - "crosspoint-core/reader/**"
       - "crosspoint-core/tests/**"
@@ -42,7 +44,7 @@ jobs:
 
   build-q2-reader:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - name: Install Q2 cross-build tools
@@ -51,7 +53,7 @@ jobs:
           sudo apt-get install -y clang lld llvm cmake git curl zip unzip \
             squashfs-tools qemu-user binutils-mipsel-linux-gnu \
             gcc-mipsel-linux-gnu g++-mipsel-linux-gnu \
-            libc6-dev-mipsel-cross
+            libc6-dev-mipsel-cross python3-venv
       - name: Provision Q2 runtime, link reader, validate and package
         shell: bash
         run: bash crosspoint-core/tools/build_q2_github.sh

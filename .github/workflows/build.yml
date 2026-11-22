@@ -2,7 +2,7 @@ name: CrossPoint Core CI
 
 on:
   push:
-    branches: [main, v0.7.0-connected-library]
+    branches: [main, v0.8-device-integration]
   pull_request:
     branches: [main]
   workflow_dispatch:

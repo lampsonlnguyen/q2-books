@@ -20,8 +20,8 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 |---|---|---|
 | M0 — HTTPS transport (v0.9) | HTTPS OPDS and KOReader sync through Q2 Pod's libcurl, mandatory certificate and hostname checks, same-origin redirects, stall timeouts | Code done and released. Open: tests against a real HTTPS Kavita server from a Q2 |
 | M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
-| M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt | Done except RD-05 (user-installed fonts) |
-| M3 — Dictionary, fonts, languages (v0.11) | StarDict dictionaries, paged definitions | Partly done (DI-01 to DI-03). Open items below |
+| M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt, your own fonts (RD-05) | Done |
+| M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, Vietnamese menus | Done on `main` (after 1.1.0). Open: more languages, CJK letters in menus |
 | M4 — Library and servers (v0.12) | OPDS paging and catalog search | Partly done. Open items below |
 | M5 — EPUB3 fidelity and resilience (v0.13) | Golden reference corpus compared with upstream CrossPoint; tables, ruby, RTL, footnotes, embedded fonts | Not started (fuzzing and stress tests exist) |
 | M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
@@ -38,11 +38,9 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - Idle and active RAM, CPU, SD writes, battery drain and heat over a 30-minute session.
 - Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
 
-**Reader and languages (M2/M3)**
-- RD-05: install and select your own `.cpfont` fonts from the SD card; evaluate TTF/OTF only with a memory benchmark.
-- Translated menus (Vietnamese and English first) and a menu font with CJK glyphs; menus show `?` for CJK today.
-- Dictionary: Unicode case folding (e.g. `Đ`/`đ`), choosing which dictionaries to use, look-up history (vocabulary log), defining a selected phrase.
-- Export highlights and clippings as plain text.
+**Reader and languages (M3 follow-ups)**
+- More menu languages than English and Vietnamese; CJK letters in menus (book text has them; menus show `?`).
+- Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 
 **Library and servers (M4)**
 - Several saved OPDS servers (add, edit, delete) with their own credentials.

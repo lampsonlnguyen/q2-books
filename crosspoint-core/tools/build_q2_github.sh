@@ -268,7 +268,7 @@ python3 crosspoint-core/tests/make_language_visibility_epub.py \
   "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" --check
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
-# Build authentic CrossPoint glyphs at 8/9/10/11pt from its pinned source,
+# Build authentic CrossPoint glyphs at 10/11pt from its pinned source,
 # including all 14 fallback scripts. Do not scale the 12pt bitmap or silently
 # ship missing fonts. The font build stays entirely on the CI host.
 python3 -m venv "$work/font-build-venv"
@@ -276,7 +276,7 @@ python3 -m venv "$work/font-build-venv"
   freetype-py fonttools PyYAML
 "$work/font-build-venv/bin/python" \
   crosspoint-core/tools/build_q2_small_font_assets.py "$card/.crosspod/fonts"
-(cd "$card/.crosspod/fonts" && sha256sum -c crosspod-fonts-8-11.sha256)
+(cd "$card/.crosspod/fonts" && sha256sum -c crosspod-fonts-10-11.sha256)
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.
@@ -382,7 +382,7 @@ grep -q 'CrossPod font source: original CrossPoint extended cpfont' "$work/defau
 # original CrossPoint font files. Each size must retain all 14 scripts,
 # produce distinct paginated pixels, and never fall back to the 12pt bitmap.
 for family in sans serif; do
-  for point in 8 9 10 11 12; do
+  for point in 10 11 12; do
     setting="$family $point"
     echo "CROSSPOD-TYPE1 $setting" > "$card/.crosspod/typography.conf"
     slug="$family-$point"
@@ -401,16 +401,16 @@ import sys
 work = Path(sys.argv[1])
 for family in ("sans", "serif"):
     previous = None
-    for size in range(8, 13):
+    for size in range(10, 13):
         data = (work / f"{family}-{size}.pgm").read_bytes()
         assert data.startswith(b"P5\n375 320\n255\n") and len(data)==120015
         assert data[15:].count(0)>50, (family,size)
         assert previous!=data, f"Size {size} did not change raster for {family}"
         previous = data
-for size in range(8, 13):
+for size in range(10, 13):
     assert (work/f"sans-{size}.pgm").read_bytes() != \
            (work/f"serif-{size}.pgm").read_bytes(), size
-print("MIPS Q2 8-12pt 5-size font switching and multilingual rendering: PASS")
+print("MIPS Q2 10-12pt 3-size font switching and multilingual rendering: PASS")
 PY
 rm -f "$card/.crosspod/typography.conf"
 # Stress-regression for v0.8: validate EPUB3 HTML entities and the actual

@@ -3,7 +3,10 @@
 // Offline dictionary: optional user-supplied UTF-8 tab-separated word/definition
 // file in the app state dir. No network, no paid lookup, no firmware changes.
 #include "ReadingPosition.hpp"
+#include "StarDict.hpp"
 #include <algorithm>
+#include <memory>
+#include <vector>
 #include <cctype>
 #include <cstdio>
 #include <string>
@@ -52,5 +55,60 @@ inline std::string lookupDefinition(const std::string& raw) {
     std::fclose(f);
   }
   return {};
+}
+// One definition for the overlay: which dictionary, the headword as the
+// dictionary spells it, and plain text.
+struct DictionaryMatch {
+  std::string source,headword,text;
+};
+// StarDict dictionaries live in <state>/dictionaries/ and in the card's
+// Dictionaries/ folder (one folder per dictionary, or .ifo files directly).
+inline std::string dictionaryStateDir() {
+  const auto file=dictionaryFile();
+  return file.substr(0,file.find_last_of('/'));
+}
+inline std::vector<std::string> stardictFolders() {
+  return {dictionaryStateDir()+"/dictionaries","/mnt/mmc/Dictionaries"};
+}
+// Opened once per process; an .ifo that fails to open is reported once and
+// left out. Each open dictionary holds only its sample table in memory.
+inline std::vector<std::unique_ptr<stardict::Dictionary>>& openStardicts() {
+  static std::vector<std::unique_ptr<stardict::Dictionary>> dictionaries;
+  static bool scanned=false;
+  if(scanned)return dictionaries;
+  scanned=true;
+  const std::string cache=dictionaryStateDir()+"/cache";
+  for(const auto& folder:stardictFolders()) {
+    for(const auto& ifo:stardict::findDictionaries(folder)) {
+      if(dictionaries.size()>=16)break;
+      auto d=std::make_unique<stardict::Dictionary>();
+      if(d->open(ifo,cache))dictionaries.push_back(std::move(d));
+      else std::fprintf(stderr,"CrossPod: dictionary skipped (%s)\n",d->error.c_str());
+    }
+  }
+  return dictionaries;
+}
+// StarDict matches first (each dictionary in path order), then the TSV.
+inline std::vector<DictionaryMatch> lookupDefinitions(const std::string& raw) {
+  std::vector<DictionaryMatch> out;
+  const std::string needle=normalizedDictionaryWord(raw);
+  if(needle.empty()||needle.size()>stardict::kMaxWordBytes)return out;
+  size_t total=0;
+  for(auto& d:openStardicts()) {
+    for(auto& [headword,text]:d->lookup(needle)) {
+      if(total>=stardict::kMaxDefinitionText*2)break;
+      if(text.size()>stardict::kMaxDefinitionText) {
+        size_t cut=stardict::kMaxDefinitionText;
+        while(cut>0&&(static_cast<unsigned char>(text[cut])&0xC0)==0x80)--cut;
+        text.resize(cut);
+        text+="...";
+      }
+      total+=text.size();
+      out.push_back({d->name,headword,std::move(text)});
+    }
+  }
+  const std::string tsv=lookupDefinition(raw);
+  if(!tsv.empty())out.push_back({"dictionary.tsv",needle,tsv});
+  return out;
 }
 } // namespace crosspod

@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import ssl
 import sys
 import tempfile
 import threading
@@ -56,6 +57,16 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
+        if self.path.startswith("/api/opds/redirect-"):
+            location = ("/api/opds/key" if self.path.endswith("safe")
+                        else "http://localhost:1/private" if self.path.endswith("downgrade")
+                        else "https://example.org/private")
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
         if self.path == "/api/opds/key":
             payload = b"""<?xml version="1.0"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -110,11 +121,24 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
         if fonts.is_dir():
             (temp / "state" / "fonts").symlink_to(fonts)
     listener = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    tls = os.environ.get("CROSSPOD_TEST_HTTPS") == "1"
+    ca = temp / "local-ca.pem"
+    if tls:
+        key = temp / "local-ca.key"
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+            "-days", "1", "-sha256", "-subj", "/CN=localhost",
+            "-addext", "subjectAltName=DNS:localhost",
+            "-keyout", str(key), "-out", str(ca)
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(ca), str(key))
+        listener.socket = context.wrap_socket(listener.socket, server_side=True)
     server = threading.Thread(target=listener.serve_forever, daemon=True)
     server.start()
     try:
         host, port = listener.server_address
-        base = f"http://{host}:{port}"
+        base = f"https://localhost:{port}" if tls else f"http://{host}:{port}"
         config = temp / "state" / "connected.conf"
         config.write_text(
             f"opds_url={base}/api/opds/key\n"
@@ -123,6 +147,8 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
             "enable_sync=1\n", encoding="utf-8"
         )
         env = dict(os.environ, CROSSPOD_STATE_DIR=str(temp / "state"))
+        if tls:
+            env["CROSSPOD_TEST_CA_BUNDLE"] = str(ca)
         prefix = (["qemu-mipsel", "-L", str(QEMU_ROOT), str(READER)]
                   if QEMU_ROOT else [str(READER)])
         def call(*args):
@@ -136,6 +162,27 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
                     f"\nstderr={result.stderr[-2000:]}"
                 )
             return result.stdout
+        if tls:
+            # No CA trust and wrong hostname MUST fail. Never weaken TLS
+            # verification to make a development server appear to work.
+            untrusted = dict(env)
+            untrusted.pop("CROSSPOD_TEST_CA_BUNDLE", None)
+            attempt = subprocess.run(
+                [*prefix, "--opds-probe", f"{base}/api/opds/key"],
+                capture_output=True, text=True, timeout=30, env=untrusted)
+            assert attempt.returncode != 0, "Untrusted certificate accepted"
+            wrong_name = subprocess.run(
+                [*prefix, "--opds-probe",
+                 f"https://127.0.0.1:{port}/api/opds/key"],
+                capture_output=True, text=True, timeout=30, env=env)
+            assert wrong_name.returncode != 0, "Wrong TLS hostname accepted"
+            safe = call("--opds-probe", f"{base}/api/opds/redirect-safe")
+            assert "Test Kavita Library" in safe
+            for kind in ("evil", "downgrade"):
+                attempt = subprocess.run(
+                    [*prefix, "--opds-probe", f"{base}/api/opds/redirect-{kind}"],
+                    capture_output=True, text=True, timeout=30, env=env)
+                assert attempt.returncode != 0, f"Unsafe {kind} redirect followed"
         output = call("--opds-probe", f"{base}/api/opds/key")
         assert "Test Kavita Library" in output, output
         assert "entries=2" in output, output
@@ -162,7 +209,10 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
         assert "CrossPod KOReader XPath progress roundtrip: PASS" in output
         assert received and received[-1]["document"] == digest
         assert "DocFragment[" in received[-1]["progress"]
-        print("CrossPod OPDS, download, partial-MD5 and KOSync: PASS")
+        if tls:
+            print("CrossPod HTTPS OPDS, download, partial-MD5 and KOSync: PASS")
+        else:
+            print("CrossPod OPDS, download, partial-MD5 and KOSync: PASS")
     finally:
         listener.shutdown()
         listener.server_close()

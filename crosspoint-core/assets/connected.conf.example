@@ -1,10 +1,21 @@
-# CrossPod v0.7 — Optional local-network library
+# CrossPod v0.9+ — Optional OPDS and KOReader sync
 # Copy this file to /mnt/mmc/.crosspod/connected.conf and edit it.
+# Catalog search and "More results" paging (v0.11 development) need no
+# setting: they appear when the catalog's feed offers them.
 # Do not put real API keys/passwords in GitHub, issue reports or screenshots.
-# Use ONLY on a private, trusted Wi-Fi/LAN. This first Q2 POSIX build does
-# not implement HTTPS/TLS; it refuses https:// rather than downgrading.
+# HTTPS uses Q2 Pod's libcurl and the Mozilla roots in .crosspod/ca-bundle.pem
+# (shipped in the card ZIP); /etc/scrobble-ca.pem is only a fallback.
+# Use https://your-server.example/... for remote access; the certificate
+# hostname must match and be trusted. Invalid/untrusted certificates FAIL.
+# The http:// examples below are for a private, trusted LAN ONLY.
+# Never put credentials in an HTTP URL on an untrusted Wi-Fi network.
 # Enable your Q2 Wi-Fi in Q2 Pod before opening CrossPod.
 #
+#
+# Example after configuring valid HTTPS on a private server/reverse proxy:
+# opds_url=https://books.example.com/api/opds/YOUR_KAVITA_AUTH_KEY
+# sync_url=https://books.example.com/api/koreader/YOUR_KAVITA_AUTH_KEY
+# Do NOT disable certificate checking or forward to another origin.
 # From Kavita: User settings -> 3rd Party Clients -> Auth Key / OPDS URL.
 # OPDS browse/download:
 opds_url=http://192.168.5.100:5150/api/opds/REPLACE_WITH_KAVITA_AUTH_KEY

@@ -44,7 +44,7 @@ add_test(NAME crosspod_advanced_reading_persistence_dictionary_footnote
 
 add_executable(crosspod_connected_tests tests/connected_library_test.cpp)
 target_include_directories(crosspod_connected_tests PRIVATE reader)
-target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT)
+target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT curl)
 target_compile_options(crosspod_connected_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_opds_kavita_and_koreader_transport_contract
     COMMAND crosspod_connected_tests)
@@ -80,6 +80,28 @@ add_executable(crosspod_reader_state_tests tests/reader_state_test.cpp)
 target_include_directories(crosspod_reader_state_tests PRIVATE reader)
 target_compile_options(crosspod_reader_state_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_reader_state_and_bookmarks COMMAND crosspod_reader_state_tests)
+
+add_executable(crosspod_txt_package_tests tests/txt_package_test.cpp)
+target_include_directories(crosspod_txt_package_tests PRIVATE reader)
+target_link_libraries(crosspod_txt_package_tests PRIVATE crosspoint_txt crosspoint_zip)
+target_compile_options(crosspod_txt_package_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_txt_epub_package COMMAND crosspod_txt_package_tests)
+
+# DI-01/DI-02 StarDict: plain and dictzip fixtures, synonyms, sidecar, fuzz.
+set(STARDICT_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/stardict-fixture")
+add_custom_command(OUTPUT "${STARDICT_FIXTURE_DIR}/plain/plain.ifo"
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_stardict_fixture.py" "${STARDICT_FIXTURE_DIR}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_stardict_fixture.py"
+    VERBATIM)
+add_custom_target(stardict_fixture ALL DEPENDS "${STARDICT_FIXTURE_DIR}/plain/plain.ifo")
+add_executable(crosspod_stardict_tests tests/stardict_test.cpp)
+target_include_directories(crosspod_stardict_tests PRIVATE reader)
+target_link_libraries(crosspod_stardict_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(crosspod_stardict_tests PRIVATE -UNDEBUG)
+add_dependencies(crosspod_stardict_tests stardict_fixture)
+add_test(NAME crosspod_stardict_lookup_and_fuzz
+    COMMAND crosspod_stardict_tests "${STARDICT_FIXTURE_DIR}")
 
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
@@ -196,6 +218,8 @@ target_link_libraries(crosspoint_opf PUBLIC crosspoint_book_cache)
 # No AWTK or ESP32 dependencies are needed for this interface.
 add_library(crosspod_q2_input STATIC platform/q2/Q2SocketInput.cpp)
 target_include_directories(crosspod_q2_input PUBLIC platform/q2)
+find_package(Threads REQUIRED)
+target_link_libraries(crosspod_q2_input PUBLIC Threads::Threads)
 add_executable(crosspod_q2_input_tests tests/socket_input_test.cpp)
 target_link_libraries(crosspod_q2_input_tests PRIVATE crosspod_q2_input)
 target_compile_options(crosspod_q2_input_tests PRIVATE -UNDEBUG)
@@ -497,7 +521,7 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspod_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
+    crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
@@ -521,11 +545,35 @@ add_test(NAME crosspod_reader_real_page_links
 # Disposable localhost OPDS/Kavita mock: test Atom navigation, an actual
 # streamed EPUB ZIP, KOReader partial-MD5 and XPath push/pull against a real
 # crosspoint-reader process. No external server or credentials required.
+add_test(NAME crosspod_opds_paging_and_search
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_paging_search_test.py"
+    "$<TARGET_FILE:crosspod-reader>")
 add_test(NAME crosspod_connected_network_end_to_end
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
     "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
+# Exercise the same reader/OPDS/KOReader flows with a local TLS server.
+# Trust is injected only into the host build; the Q2 binary always uses the
+# firmware CA bundle and does not accept a test-CA environment override.
+add_test(NAME crosspod_connected_https_verify_and_sync
+  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
+
+# Downloads across SIGTERM, a SIGKILL's leftover .part and a slow, steady link.
+add_test(NAME crosspod_opds_download_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+add_test(NAME crosspod_opds_download_lifecycle_https
+  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")
@@ -681,6 +729,10 @@ add_custom_command(OUTPUT "${LONG_EPUB_FIXTURE}"
     VERBATIM)
 add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
 add_dependencies(crosspod-reader long_epub_fixture)
+add_test(NAME crosspod_reader_txt_and_go_to_percent
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/txt_progress_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
 add_test(NAME crosspod_reader_incremental_large_chapter
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/incremental_reader_test.py"

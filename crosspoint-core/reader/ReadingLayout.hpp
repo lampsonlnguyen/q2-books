@@ -21,6 +21,8 @@ inline ReaderRenderSpec makeReaderRenderSpec(
   spec.paragraphAlignment=static_cast<uint8_t>(preferences.alignment);
   spec.hyphenationEnabled=preferences.hyphenation;
   spec.embeddedStyle=preferences.embeddedStyle;
+  // Upstream Focus Reading; part of the Section cache key, so a toggle re-lays chapters.
+  spec.focusReadingEnabled=preferences.focusReading;
   // 0 means CrossPoint's default monochrome image rendering on Q2;
   // image decoding and rasterization remain in the upstream engine.
   spec.imageRendering=0;

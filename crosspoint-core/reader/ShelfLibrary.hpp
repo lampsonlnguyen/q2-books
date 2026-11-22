@@ -35,6 +35,20 @@ inline bool isEpubFilename(std::string_view name) {
   }
   return true;
 }
+// RD-04: plain-text books (see TxtPackage.hpp) sit on the shelf beside EPUBs.
+inline bool isTxtFilename(std::string_view name) {
+  if(name.size()<5)return false;
+  name.remove_prefix(name.size()-4);
+  constexpr std::string_view suffix=".txt";
+  for(size_t i=0;i<suffix.size();++i) {
+    const unsigned char ch=static_cast<unsigned char>(name[i]);
+    if(static_cast<char>(std::tolower(ch))!=suffix[i])return false;
+  }
+  return true;
+}
+inline bool isBookFilename(std::string_view name) {
+  return isEpubFilename(name) || isTxtFilename(name);
+}
 inline std::vector<ShelfEntry> scanCardBooks(
     const std::string& root,const ShelfScanLimits limits={}) {
   std::vector<ShelfEntry> books;
@@ -66,7 +80,7 @@ inline std::vector<ShelfEntry> scanCardBooks(
           nested.push_back({path,folder.depth+1});
         continue;
       }
-      if(!S_ISREG(st.st_mode) || !isEpubFilename(filename) ||
+      if(!S_ISREG(st.st_mode) || !isBookFilename(filename) ||
          books.size()>=limits.maxBooks)continue;
       books.push_back({path,filename.substr(0,filename.size()-5),st.st_mtime});
     }

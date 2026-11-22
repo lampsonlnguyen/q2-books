@@ -591,8 +591,7 @@ class Reader {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
   }
   int fontIdForTypography(crosspod::Typography value) const {
-    return 100+(value.family==crosspod::Typography::Family::Serif?3:0)+
-           (value.size-10);
+    return 100+static_cast<int>(value.family)*3+(value.size-10);
   }
   ReaderRenderSpec upstreamSpec() const {
     return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
@@ -2700,8 +2699,7 @@ int runCardApp(const std::string& bookDir) {
           else {
             auto next=reader->typography();
             if(typeSelection==0) {
-              next.family=next.family==crosspod::Typography::Family::Sans?
-                crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+              next.family=crosspod::nextInstalledTypographyFamily(next);
             } else next.size=crosspod::nextTypographySize(next.size);
             (void)reader->configureTypography(next);
           }
@@ -3250,8 +3248,7 @@ int main(int argc,char** argv) {
         else {
           auto next=reader.typography();
           if(typeSelection==0)
-            next.family=next.family==crosspod::Typography::Family::Sans?
-              crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
+            next.family=crosspod::nextInstalledTypographyFamily(next);
           else next.size=crosspod::nextTypographySize(next.size);
           (void)reader.configureTypography(next);
         }

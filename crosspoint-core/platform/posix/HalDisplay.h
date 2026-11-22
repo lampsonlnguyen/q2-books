@@ -53,7 +53,28 @@ class HalDisplay {
   uint16_t getDisplayHeight() const {return DISPLAY_HEIGHT;}
   uint16_t getDisplayWidthBytes() const {return DISPLAY_WIDTH_BYTES;}
   uint32_t getBufferSize() const {return BUFFER_SIZE;}
+  // Q2 Pod theme colours. The canvas stays 1 bit per pixel; at present time
+  // each pixel takes the ink or paper colour of the last zone holding it,
+  // else the base palette. A zone may round its corners and give its paper
+  // one colour per row (a gradient, as Q2 Pod's Classic bars and bands).
+  struct ColorZone {
+    int16_t x=0,y=0,w=0,h=0;
+    uint8_t radius=0;
+    uint32_t ink=0,paper=0;   // 0xRRGGBB
+    const uint32_t* paperRows=nullptr;  // optional, rowCount colours top to bottom
+    uint8_t rowCount=0;
+  };
+  static constexpr int kMaxZones=64;
+  void setPalette(uint32_t ink,uint32_t paper) {themed_=true;baseInk_=ink;basePaper_=paper;}
+  bool themed() const {return themed_;}
+  void addZone(const ColorZone& zone) const {if(zoneCount_<kMaxZones)zones_[zoneCount_++]=zone;}
+  void clearZones() const {zoneCount_=0;}
+  int zoneCount() const {return zoneCount_;}
  private:
+  bool themed_=false;
+  uint32_t baseInk_=0,basePaper_=0xffffff;
+  mutable ColorZone zones_[kMaxZones];
+  mutable int zoneCount_=0;
   mutable std::unique_ptr<uint8_t[]> raster_;
   std::unique_ptr<uint8_t[]> inkRaster_;
   bool inverted_=false;

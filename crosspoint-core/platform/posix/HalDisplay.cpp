@@ -14,6 +14,7 @@ HalDisplay::HalDisplay() : raster_(new (std::nothrow) uint8_t[BUFFER_SIZE]),
 HalDisplay::~HalDisplay() = default;
 void HalDisplay::begin(bool) { if (!raster_) return; }
 void HalDisplay::clearScreen(uint8_t color) const {
+  zoneCount_=0;  // a new screen: its colours are set again as it is drawn
   if (raster_ && !loaned_) std::memset(raster_.get(), color, BUFFER_SIZE);
 }
 void HalDisplay::drawImage(const uint8_t* img, uint16_t x, uint16_t y,
@@ -39,6 +40,18 @@ void HalDisplay::displayBuffer(RefreshMode,bool) {
   if (!tried) {tried=true; available=presenter.open();}
   if (!available) return;
   for(unsigned i=0;i<BUFFER_SIZE;i++)inkRaster_[i]=static_cast<uint8_t>(~raster_[i]);
+  if(themed_) {
+    std::vector<books::Q2Display::Zone> zones;
+    zones.reserve(static_cast<size_t>(zoneCount_));
+    for(int i=0;i<zoneCount_;++i) {
+      const auto& z=zones_[i];
+      zones.push_back({z.x,z.y,z.w,z.h,z.radius,z.ink,z.paper,z.paperRows,z.rowCount});
+    }
+    if(!presenter.presentThemed(inkRaster_.get(),BUFFER_SIZE,baseInk_,basePaper_,
+                                zones.data(),zones.size()))
+      std::fputs("Books: framebuffer publish failed\n",stderr);
+    return;
+  }
   if(!presenter.presentBW(inkRaster_.get(),BUFFER_SIZE,0,inverted_))
     std::fputs("Books: framebuffer publish failed\n",stderr);
 }

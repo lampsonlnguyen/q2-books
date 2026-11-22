@@ -31,6 +31,7 @@
 #include "About.hpp"
 #include "Clippings.hpp"
 #include "UiLanguage.hpp"
+#include "Q2Theme.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -874,6 +875,7 @@ class Reader {
     display_.begin();
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
+    books::applyThemePalette(display_);  // Q2 Pod's page colours, when it gives them
     renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
     // UI font is always fixed; book typography updates must not touch it.
     renderer_.insertFont(2,EpdFontFamily(12,&bodyFont_));
@@ -1326,6 +1328,7 @@ class Reader {
     render();
     renderer_.fillRect(10,58,355,250,true);
     renderer_.fillRect(12,60,351,246,false);
+    books::paintFrame(display_,10,58,355,250,2);
     renderer_.drawText(2,20,70,books::tr("Footnote"));
     if(note.empty())note="Preview unavailable. Center: open note";
     size_t cursor=0;
@@ -1358,6 +1361,7 @@ class Reader {
     render();
     renderer_.fillRect(10,38,355,258,true);
     renderer_.fillRect(12,40,351,254,false);
+    books::paintFrame(display_,10,38,355,258,2);
     drawMenuText(22,48,"Links and footnotes");
     const auto links=pageLinks();
     if(links.empty())drawMenuText(22,118,"No links on this page",1);
@@ -1471,7 +1475,7 @@ class Reader {
              books::overlapsVisibleWord(word,h.begin,h.end)) {
             marked=true;break;
           }
-      if(marked)invertMenuRect(word.x-1,word.y+2,word.width+2,
+      if(marked)books::paintHighlight(display_,word.x-1,word.y+2,word.width+2,
                               std::max(8,word.height-7));
     }
   }
@@ -1479,6 +1483,7 @@ class Reader {
     render();
     renderer_.fillRect(10,254,355,47,true);
     renderer_.fillRect(12,256,351,43,false);
+    books::paintFrame(display_,10,254,355,47,2);
     drawMenuText(20,265,extending?
         "Wheel: extend  Center: actions":
         "Wheel: word   Center: start");
@@ -1488,6 +1493,7 @@ class Reader {
     render();
     renderer_.fillRect(10,207,355,96,true);
     renderer_.fillRect(12,209,351,92,false);
+    books::paintFrame(display_,10,207,355,96,2);
     renderer_.drawText(2,20,215,books::tr("Select text"));
     const auto text=clippedLabel(selectedText(),44);
     renderer_.drawText(2,20,235,text.c_str());
@@ -1552,6 +1558,7 @@ class Reader {
     render();
     renderer_.fillRect(10,90,355,195,true);
     renderer_.fillRect(12,92,351,191,false);
+    books::paintFrame(display_,10,90,355,195,2);
     renderer_.drawText(2,20,103,books::tr("Offline dictionary"));
     if(dictionaryPages_.empty()) {
       renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
@@ -1618,6 +1625,7 @@ class Reader {
     render();
     renderer_.fillRect(9,38,357,255,true);
     renderer_.fillRect(11,40,353,251,false);
+    books::paintFrame(display_,9,38,357,255,2);
     renderer_.drawText(1,23,44,books::tr(showingBookmarks?"Bookmarks":"Chapters"));
     renderer_.fillRect(18,72,337,1,true);
     const auto marks=showingBookmarks?bookmarks():
@@ -1737,8 +1745,26 @@ class Reader {
       x+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
     }
   }
+  // The width drawMenuText gives |str| at |scale| (pixel font or glyphs).
+  int menuTextWidth(const char* str,int scale) {
+    if(books::uiLanguage()==books::UiLanguage::English && !books::uiTheme().active())
+      return static_cast<int>(std::strlen(str))*6*scale;
+    const std::string text=books::tr(str);
+    const int scale256=scale>=2?196:118;
+    int width=0;
+    const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
+    while(*p) {
+      const uint32_t cp=utf8NextCodepoint(&p);
+      int32_t advance=0;int topBearing=0;
+      if(renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,topBearing))
+        width+=fp4::toPixel(advance*scale256/256);
+    }
+    return width;
+  }
   void drawMenuText(int x,int top,const char* str,int scale=2,int maxX=352) {
-    if(books::uiLanguage()!=books::UiLanguage::English) {
+    // Translated menus need accents; Q2 Pod's themes draw smooth text: both
+    // use the reading font's glyphs instead of the pixel font.
+    if(books::uiLanguage()!=books::UiLanguage::English || books::uiTheme().active()) {
       drawGlyphMenuText(x,top,books::tr(str),scale,maxX);
       return;
     }
@@ -1852,14 +1878,9 @@ class Reader {
       x+=6*scale;
     }
   }
-  void invertMenuRect(int x,int y,int w,int h) {
-    uint8_t* fb=display_.getFrameBuffer();
-    if(!fb)return;
-    for(int py=std::max(0,y);py<std::min(320,y+h);++py)
-      for(int px=std::max(0,x);px<std::min(375,x+w);++px)
-        fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=
-          static_cast<uint8_t>(0x80u>>(px&7));
-  }
+  // The chosen row of a menu: Q2 Pod's selection when a theme is set,
+  // else inverted.
+  void invertMenuRect(int x,int y,int w,int h) {books::paintSelection(display_,x,y,w,h);}
   // First visible row of the 9-row settings list for a selected row.
   static int menuFirstRow(int selectedRow,int count) {
     return std::max(0,std::min(selectedRow-8,count-9));
@@ -1883,8 +1904,10 @@ class Reader {
     const int first=menuFirstRow(std::min(selectedRow,listed-1),listed);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
+    books::paintFrame(display_,10,37,355,258,2);
     drawMenuText(22,47,"Reading settings");
     renderer_.fillRect(18,66,337,1,true);
+    if(books::uiTheme().style==books::UiTheme::Style::Classic)books::paintBar(display_,12,39,351,27);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
@@ -1919,7 +1942,7 @@ class Reader {
       // Separate columns prevent long values from colliding with labels.
       // English: the bitmap font, cut by characters; translated: the reading
       // font's glyphs, cut by width at the value column.
-      const bool english=books::uiLanguage()==books::UiLanguage::English;
+      const bool english=books::uiLanguage()==books::UiLanguage::English && !books::uiTheme().active();
       const std::string label=english?clippedLabel(labels[item],12):books::tr(labels[item]);
       const std::string value=english?clippedLabel(values[item],12):books::tr(values[item]);
       drawMenuText(24,y+3,label.c_str(),2,186);
@@ -2115,8 +2138,10 @@ class Reader {
     renderer_.clearScreen(0xff);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
+    books::paintFrame(display_,10,37,355,258,2);
     drawMenuText(22,47,"Dictionaries");
     renderer_.fillRect(18,66,337,1,true);
+    if(books::uiTheme().style==books::UiTheme::Style::Classic)books::paintBar(display_,12,39,351,27);
     if(names.empty()) {
       drawMenuText(22,90,"None installed.",1);
       drawMenuText(22,106,"Put StarDict folders in",1);
@@ -2164,8 +2189,10 @@ class Reader {
     renderer_.clearScreen(0xff);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
+    books::paintFrame(display_,10,37,355,258,2);
     drawMenuText(22,47,(std::string("Books ")+BOOKS_VERSION).c_str());
     renderer_.fillRect(18,66,337,1,true);
+    if(books::uiTheme().style==books::UiTheme::Style::Classic)books::paintBar(display_,12,39,351,27);
     int y=76;
     for(const char* line:books::kAboutLines) {
       const bool small=!line[0] || std::strncmp(line,"github",6)==0 || std::strncmp(line,"MIT",3)==0;
@@ -2179,6 +2206,7 @@ class Reader {
     renderer_.clearScreen(0xff);
     renderer_.fillRect(10,70,355,170,true);
     renderer_.fillRect(12,72,351,166,false);
+    books::paintFrame(display_,10,70,355,170,2);
     drawMenuText(22,82,"Go to percent");
     renderer_.fillRect(18,101,337,1,true);
     const std::string value=std::to_string(std::clamp(percent,0,100))+"%";
@@ -2198,7 +2226,7 @@ class Reader {
     const std::string label=std::to_string(currentPage_+1)+"/"+
         (isBuilding()?"~":"")+std::to_string(pages)+"  "+std::to_string(bookPercent())+"%";
     // drawMenuText stops at x 352; the bar takes the width left of the label.
-    const int labelX=352-static_cast<int>(label.size())*6;
+    const int labelX=352-menuTextWidth(label.c_str(),1);
     const int barEnd=std::max(60,labelX-10);
     const float progress=bookProgressPpm()/1000000.0f;
     const int filled=static_cast<int>(progress*static_cast<float>(barEnd-14));
@@ -2216,6 +2244,7 @@ class Reader {
     slot.pixels.assign(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
   }
   void render() {
+    display_.clearZones();  // a cached page is copied, not cleared
     uint8_t* framebuffer=display_.getFrameBuffer();
     constexpr size_t kBytes=HalDisplay::BUFFER_SIZE;
     if(framebuffer) {
@@ -2425,6 +2454,7 @@ class CardShelf {
     display_.begin();
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
+    books::applyThemePalette(display_,true);
     renderer_.insertFont(1,EpdFontFamily(12,&font_));
     // All scripts in EPUB filenames use the same SD font fallback machinery.
     scriptFonts_.load(renderer_,12,{1});
@@ -2725,13 +2755,7 @@ class CardShelf {
     }
     return true;
   }
-  void invertRect(int x0,int y0,int width,int height) {
-    uint8_t* fb=display_.getFrameBuffer();
-    if(!fb)return;
-    for(int y=std::max(0,y0);y<std::min<int>(HalDisplay::DISPLAY_HEIGHT,y0+height);++y)
-      for(int x=std::max(0,x0);x<std::min<int>(HalDisplay::DISPLAY_WIDTH,x0+width);++x)
-        fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=static_cast<uint8_t>(0x80u>>(x&7));
-  }
+  void invertRect(int x0,int y0,int width,int height) {books::paintSelection(display_,x0,y0,width,height);}
   // One book or catalog row: the title in font 1, an author beneath it in a
   // smaller line when there is one (else the title is centred in the row).
   // Clip at a whole character to a pixel width: wide CJK titles clipped by a
@@ -2770,11 +2794,21 @@ class CardShelf {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
     // Invert the header raster so its text stays white on the dark title bar.
-    drawRowLabel(16,0,39,"Books");
-    uint8_t* fb=display_.getFrameBuffer();
-    for(int y=0;y<39;++y)
-      for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
-        fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+byte]^=0xff;
+    if(books::uiTheme().active()) {
+      // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
+      const char* title=onlineMode_?"Online":"Books";
+      int width=0;
+      for(const char* c=books::tr(title);*c;++c) {
+        int32_t advance=0;int top=0;
+        if(renderer_.getCodepointMetrics(1,static_cast<unsigned char>(*c),EpdFontFamily::REGULAR,advance,top))
+          width+=fp4::toPixel(advance*170/256);
+      }
+      drawCompactLabel((375-width)/2,19,title,170);
+      books::paintBar(display_,0,0,375,26);
+    } else {
+      drawRowLabel(16,0,39,"Books");
+      books::paintBar(display_,0,0,375,39);  // the title strip
+    }
     if(onlineMode_ && !onlineSearching_) {
       // Placed as Home's header is: drawn at y 49 its glyphs crossed the rule.
       drawRowLabel(16,39,35,
@@ -2822,21 +2856,18 @@ class CardShelf {
       }
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
-        if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
-        drawRowLabel(22,158,37,"Continue reading",homeSelection_!=0);
+        drawRowLabel(22,158,37,"Continue reading");
+        if(homeSelection_==0)books::paintSelection(display_,12,158,350,37);
       }
-      if(homeSelection_==1 || books_.empty())
-        renderer_.fillRect(12,204,350,37,true);
-      drawRowLabel(22,204,37,"Browse files",
-          homeSelection_!=1 && !books_.empty());
+      drawRowLabel(22,204,37,"Browse files");
+      if(homeSelection_==1 || books_.empty())books::paintSelection(display_,12,204,350,37);
       std::string sortText=books::tr("Sort: ");
       sortText+=books::tr(books::shelfSortLabel(sortMode_));
-      if(homeSelection_==2)renderer_.fillRect(12,244,HOME_ONLINE_X-22,23,true);
-      if(homeSelection_==3)renderer_.fillRect(HOME_ONLINE_X,244,362-HOME_ONLINE_X,23,true);
       drawRowLabel(22,244,23,
-          renderer_.truncatedText(1,sortText.c_str(),HOME_ONLINE_X-42).c_str(),
-          homeSelection_!=2);
-      drawRowLabel(HOME_ONLINE_X+10,244,23,"Online",homeSelection_!=3);
+          renderer_.truncatedText(1,sortText.c_str(),HOME_ONLINE_X-42).c_str());
+      drawRowLabel(HOME_ONLINE_X+10,244,23,"Online");
+      if(homeSelection_==2)books::paintSelection(display_,12,244,HOME_ONLINE_X-22,23);
+      if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       drawCompactLabel(16,56,onlineSearching_?"Search catalog":"Search library",176);
@@ -2893,7 +2924,9 @@ class CardShelf {
         }
         const int tx=x+(KB_W-width)/2;
         drawCompactLabel(tx,y+25,label.c_str(),scale);
-        if(fn)invertRect(x,y,KB_W,KB_H);  // white letters on a dark key
+        // Function keys dark (Done as the selection when themed), as the
+        // Q2's own keyboard; the wheel's key is the selection.
+        if(fn)books::paintKey(display_,x,y,KB_W,KB_H,key==books::T9Keypad::Done);
         if(focus) {
           invertRect(x,y,KB_W,KB_H);
           renderer_.drawRect(x-1,y-1,KB_W+2,KB_H+2,true);
@@ -2927,13 +2960,13 @@ class CardShelf {
     }
     // A single footer line; previous "Wheel: choose" at y=261 overlapped
     // the dark footer and became partly invisible on the actual LCD.
-    renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
       :searchEditing_?"OK: press   Back: close":
        onlineMode_?"OK: open/get   Back: prev":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
-    drawRowLabel(22,269,51,footer.c_str(),false);
+    drawRowLabel(22,269,51,footer.c_str());
+    books::paintBar(display_,0,269,375,51);  // the footer strip
   }
   void present() {paint();display_.displayBuffer();}
   bool savePgm(const std::string& out) {

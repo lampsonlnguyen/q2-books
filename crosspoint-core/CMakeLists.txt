@@ -526,6 +526,15 @@ add_test(NAME crosspod_connected_network_end_to_end
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
     "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
+# Exercise the same reader/OPDS/KOReader flows with a local TLS server.
+# Trust is injected only into the host build; the Q2 binary always uses the
+# firmware CA bundle and does not accept a test-CA environment override.
+add_test(NAME crosspod_connected_https_verify_and_sync
+  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

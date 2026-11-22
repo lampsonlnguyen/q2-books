@@ -2,7 +2,7 @@
 """Real-world markup a reader must take: HTML entities in EPUB3 chapters, and italic/bold
 drawn in their own faces with intact word spaces.
 
-Usage: markup_tolerance_test.py READER
+Usage: markup_tolerance_test.py READER entities|italic
 CROSSPOD_TEST_FONTS: a folder of the card's .cpfont files (tools/fetch_q2_fonts.py). Without
 it, the italic check is skipped (exit 77): the built-in emergency font has no italic face."""
 import io
@@ -13,7 +13,8 @@ import sys
 import tempfile
 import zipfile
 
-reader = sys.argv[1]
+reader, part = sys.argv[1:]
+assert part in ('entities', 'italic'), part
 SKIP = 77
 
 CONTAINER = (b'<?xml version="1.0"?><container version="1.0" '
@@ -65,16 +66,19 @@ with tempfile.TemporaryDirectory(prefix='crosspod-markup-') as tmp:
     tmp = pathlib.Path(tmp)
     # &nbsp;, &mdash;, &hellip;: HTML entities the reader's table expands. Under EPUB3's
     # <!DOCTYPE html> or no DOCTYPE, expat used to fail the chapter and the whole book.
-    for name, doctype in (('html5', '<!DOCTYPE html>\n'), ('none', ''),
-                          ('xhtml11', '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" '
-                                      '"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n')):
+    doctypes = (('html5', '<!DOCTYPE html>\n'), ('none', ''),
+                ('xhtml11', '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" '
+                            '"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n'))
+    for name, doctype in doctypes if part == 'entities' else ():
         book = tmp / f'entity-{name}.epub'
         epub(book, doctype, '<p>Tom&nbsp;and&nbsp;Jerry &mdash; again&hellip;</p>')
         state = tmp / f'state-{name}'
         state.mkdir()
         w, h, px = render(book, state)
         assert ink_rows(w, h, px), f'{name}: entity chapter drew nothing'
-    print('HTML entities: EPUB3, no-DOCTYPE and XHTML 1.1 chapters open and draw')
+    if part == 'entities':
+        print('HTML entities: EPUB3, no-DOCTYPE and XHTML 1.1 chapters open and draw')
+        sys.exit(0)
 
     fonts = os.environ.get('CROSSPOD_TEST_FONTS')
     if not fonts or not (pathlib.Path(fonts) / 'sans-12.cpfont').exists():

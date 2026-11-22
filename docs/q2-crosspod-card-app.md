@@ -74,22 +74,22 @@ on your firmware version.
 TYPOGRAPHY MENU (experimental font builds):
 While reading, press Centre or tap the top 45 pixels to open Reading appearance.
 Turn the wheel to choose Font or Size; Centre cycles the selected value.
-Back closes the menu. Choose Sans or Serif and **8, 9, 10, 11, or 12 pt (maximum)**. Size changes
-cycle through those five choices; 12 pt remains the default.
+Back closes the menu. Choose Sans or Serif and **10, 11, or 12 pt (maximum)**. Size changes
+cycle through those three choices; 12 pt remains the default.
 CrossPod repaginates the current chapter and saves your choices in
 /mnt/mmc/.crosspod/typography.conf. The book's page number may shift when
 font size changes; location anchoring is still a follow-up.
 
 The card app CI installs original CrossPoint NotoSansExtended and
-NotoSerifExtended at 8/9/10/11/12pt, using the official pinned 12pt release
+NotoSerifExtended at 10/11/12pt, using the official pinned 12pt release
 and source-rasterized smaller fonts. It also installs upstream
 NotoSansCJKJP (Japanese and common Chinese), Pretendard (Korean Hangul),
 NotoSansDevanagari (Hindi, Marathi, Nepali), NotoSansBengali (Bengali),
 NotoSansGujarati, NotoSansGurmukhi (Punjabi), NotoSansKannada,
 NotoSansMalayalam, NotoSansOriya (Odia), NotoSansSinhala, NotoSansTamil,
 NotoSansTelugu, NotoNaskhArabicUI (Arabic), and Alef (Hebrew). Each
-fallback family is present at 8/9/10/11/12pt. The 12pt packages are downloaded from the original CrossPoint release and
-SHA-256 verified. The 8–11pt variants are built from a pinned CrossPoint
+fallback family is present at 10/11/12pt. The 12pt packages are downloaded from the original CrossPoint release and
+SHA-256 verified. The 10–11pt variants are built from a pinned CrossPoint
 source snapshot using its own original font converter, with a generated
 asset-checksum manifest; upstream source-font URLs are not all content-pinned.
 The optional script faces stay on SD until their glyphs are requested.

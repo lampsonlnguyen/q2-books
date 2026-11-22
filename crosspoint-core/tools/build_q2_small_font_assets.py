@@ -63,6 +63,38 @@ def run(*args: str) -> None:
     subprocess.run(list(args), check=True)
 
 
+def write_license_bundle(out: pathlib.Path, upstream: pathlib.Path,
+                         crossink: pathlib.Path, catalog: dict) -> None:
+    """One text file with, per generated family, its source and license, then
+    every license text found in the pinned repositories and the CI host's
+    Noto packages. (build-sd-fonts.py writes no LICENSE of its own.)"""
+    lines = ["Fonts generated for CrossPod (Shanling Q2) from these sources.",
+             "Every family listed is under the SIL Open Font License 1.1",
+             "unless its own license text below says otherwise.", ""]
+    for name in FAMILIES:
+        style = catalog[name]["styles"]["regular"]
+        source = style.get("url") or style.get("path") or "?"
+        lines.append(f"- {name}: {source}")
+    texts = []
+    for root in (upstream, crossink):
+        texts.append(root / "LICENSE")
+        for pattern in ("lib/EpdFont/**/OFL*.txt", "lib/EpdFont/**/*-OFL.txt",
+                        "lib/EpdFont/**/UFL.txt", "lib/EpdFont/scalableFonts/licenses/*.txt"):
+            texts.extend(sorted(root.glob(pattern)))
+    texts += [pathlib.Path("/usr/share/doc/fonts-noto-core/copyright"),
+              pathlib.Path("/usr/share/doc/fonts-noto-cjk/copyright")]
+    seen = set()
+    for path in texts:
+        if not path.is_file() or path in seen:
+            continue
+        seen.add(path)
+        lines += ["", "=" * 72, f"{path.name} ({path.parent.name})", "=" * 72,
+                  path.read_text(errors="replace")]
+    if not any(p.name.upper().startswith("OFL") or "-OFL" in p.name for p in seen):
+        raise RuntimeError("No SIL OFL text found for the font license bundle")
+    out.write_text("\n".join(lines) + "\n")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: build_q2_small_font_assets.py OUTPUT_DIRECTORY", file=sys.stderr)
@@ -169,7 +201,8 @@ def main() -> int:
 
         (target / "crosspod-fonts-10-11.sha256").write_text(
             "\n".join(checksums) + "\n")
-        shutil.copyfile(built / "LICENSE", target / "CrossPoint-font-licenses.txt")
+        write_license_bundle(target / "CrossPoint-font-licenses.txt",
+                             upstream, crossink, catalog)
         # Validate these sizes exist for *all* 14 scripts and both primary
         # families, or fail the package rather than silently drop glyphs.
         assert len(checksums) == (len(FAMILIES) - len(CROSSINK_FAMILIES))*len(SIZES) + len(CROSSINK_FAMILIES)*3

@@ -5,6 +5,9 @@
 #include <cstring>
 #include <fcntl.h>
 #include <poll.h>
+#include <climits>
+#include <csignal>
+#include <pthread.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -94,32 +97,141 @@ bool Q2SocketInput::open(std::string path) {
     return false;
   }
   const int flags = ::fcntl(fd, F_GETFL);
-  if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+  if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ||
+      ::pipe2(wake_, O_NONBLOCK | O_CLOEXEC) != 0) {
+    ::close(fd);
+    ::unlink(path.c_str());
+    return false;
+  }
+  if (::pipe2(stop_, O_NONBLOCK | O_CLOEXEC) != 0) {
+    ::close(wake_[0]); ::close(wake_[1]); wake_[0] = wake_[1] = -1;
     ::close(fd);
     ::unlink(path.c_str());
     return false;
   }
   fd_ = fd;
   path_ = std::move(path);
+  failed_ = false;
+  // SIGINT/SIGTERM must reach the main thread (its poll returns EINTR and it
+  // saves the position), so the drain thread starts with them blocked.
+  sigset_t blocked, oldMask;
+  sigemptyset(&blocked);
+  sigaddset(&blocked, SIGINT);
+  sigaddset(&blocked, SIGTERM);
+  pthread_sigmask(SIG_BLOCK, &blocked, &oldMask);
+  try {
+    thread_ = std::thread(&Q2SocketInput::drain, this);
+  } catch (...) {
+    pthread_sigmask(SIG_SETMASK, &oldMask, nullptr);
+    close();
+    return false;
+  }
+  pthread_sigmask(SIG_SETMASK, &oldMask, nullptr);
   return true;
+}
+bool Q2SocketInput::push(const PhysicalEvent& event) {
+  std::lock_guard<std::mutex> guard(lock_);
+  if (!queue_.empty()) {
+    PhysicalEvent& last = queue_.back();
+    // Merge what the reader would only add up or overwrite: wheel travel (one
+    // datagram can carry several ticks) and touch moves (the latest wins).
+    if (event.kind == PhysicalKind::WheelStep && last.kind == PhysicalKind::WheelStep &&
+        (event.value < 0) == (last.value < 0)) {
+      const long long sum = static_cast<long long>(last.value) + event.value;
+      last.value = static_cast<int>(sum > INT_MAX ? INT_MAX : sum < INT_MIN ? INT_MIN : sum);
+      return false;
+    }
+    if (event.kind == PhysicalKind::TouchMove && last.kind == PhysicalKind::TouchMove) {
+      last = event;
+      return false;
+    }
+  }
+  if (queue_.size() >= maxQueued) return false;  // bounded: a flood cannot grow memory
+  queue_.push_back(event);
+  return true;
+}
+void Q2SocketInput::drain() {
+  pollfd watch[2] = {{fd_, POLLIN, 0}, {stop_[0], POLLIN, 0}};
+  for (;;) {
+    const int ready = ::poll(watch, 2, -1);
+    if (ready < 0) {
+      if (errno == EINTR) continue;
+      failed_ = true;
+      break;
+    }
+    if (watch[1].revents) break;  // close()
+    if (watch[0].revents & (POLLERR | POLLNVAL)) { failed_ = true; break; }
+    bool any = false;
+    for (;;) {
+      char data[96];
+      const ssize_t n = ::recv(fd_, data, sizeof(data), 0);
+      if (n < 0) {
+        if (errno == EINTR) continue;
+        if (errno != EAGAIN && errno != EWOULDBLOCK) failed_ = true;
+        break;
+      }
+      PhysicalEvent event{};
+      if (n > 0 && parse_q2_input(std::string_view(data, static_cast<size_t>(n)), event)) {
+        push(event);
+        any = true;
+      }
+    }
+    if (any) {
+      const char byte = 1;
+      (void)!::write(wake_[1], &byte, 1);  // a full pipe already means "ready"
+    }
+    if (failed_) break;
+  }
+  const char byte = 1;
+  (void)!::write(wake_[1], &byte, 1);  // let a waiter see the failure
 }
 bool Q2SocketInput::receive(PhysicalEvent& result) {
   if (fd_ < 0) return false;
-  char data[96];
-  const ssize_t n = ::recv(fd_, data, sizeof(data), 0);
-  if (n < 0) return false;  // nonblocking EAGAIN or transport error
-  if (n == 0) return false;
-  return parse_q2_input(std::string_view(data, static_cast<size_t>(n)), result);
+  std::lock_guard<std::mutex> guard(lock_);
+  if (queue_.empty()) return false;
+  result = queue_.front();
+  queue_.pop_front();
+  if (queue_.empty()) {
+    char sink[64];
+    while (::read(wake_[0], sink, sizeof(sink)) > 0) {
+    }
+  }
+  return true;
 }
 int Q2SocketInput::waitForInput(int timeoutMs) const {
   if (fd_ < 0) return -1;
-  pollfd descriptor{fd_, POLLIN, 0};
+  {
+    std::lock_guard<std::mutex> guard(lock_);
+    if (!queue_.empty()) return 1;
+  }
+  if (failed_) return -1;
+  pollfd descriptor{wake_[0], POLLIN, 0};
   const int result = ::poll(&descriptor, 1, timeoutMs);
   if (result < 0) return errno == EINTR ? 0 : -1;
   if (result == 0) return 0;
-  return (descriptor.revents & POLLIN) ? 1 : -1;
+  if (failed_) return -1;
+  std::lock_guard<std::mutex> guard(lock_);
+  if (queue_.empty()) {  // a wake whose event receive() already took
+    char sink[64];
+    while (::read(wake_[0], sink, sizeof(sink)) > 0) {
+    }
+    return 0;
+  }
+  return 1;
 }
 void Q2SocketInput::close() {
+  if (thread_.joinable()) {
+    const char byte = 1;
+    (void)!::write(stop_[1], &byte, 1);
+    thread_.join();
+  }
+  for (int* pipe : {wake_, stop_})
+    for (int i = 0; i < 2; ++i)
+      if (pipe[i] >= 0) { ::close(pipe[i]); pipe[i] = -1; }
+  {
+    std::lock_guard<std::mutex> guard(lock_);
+    queue_.clear();
+  }
   if (fd_ >= 0) {
     ::close(fd_);
     fd_ = -1;

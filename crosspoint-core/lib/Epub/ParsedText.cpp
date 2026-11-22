@@ -1110,6 +1110,7 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     // First word needs to fit in reduced width if there's an indent
     const int effectiveWidth = i == 0 ? pageWidth - firstLineIndent : pageWidth;
     while (wordWidths[i] > effectiveWidth) {
+      if (crosspodlayout::shouldAbort()) break;  // CrossPod: exiting (see ParsedText.h)
       if (!hyphenateWordAtIndex(i, effectiveWidth, renderer, fontId, wordWidths, /*allowFallbackBreaks=*/true)) {
         break;
       }
@@ -1347,6 +1348,7 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
 
   // Iterate over each legal breakpoint and retain the widest prefix that still fits.
   for (const auto& info : breakInfos) {
+    if (crosspodlayout::shouldAbort()) return false;  // CrossPod: exiting (see ParsedText.h)
     const size_t offset = info.byteOffset;
     if (offset == 0 || offset >= word.size()) {
       continue;

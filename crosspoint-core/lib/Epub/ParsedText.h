@@ -2,6 +2,7 @@
 
 #include <EpdFontFamily.h>
 
+#include <csignal>
 #include <cstdint>
 #include <deque>
 #include <functional>
@@ -14,6 +15,21 @@
 #include "blocks/TextBlock.h"
 
 class GfxRenderer;
+
+// CrossPod (Linux) lifecycle hook, not upstream CrossPoint: the host process
+// points layoutAbortFlag at its SIGTERM flag, so splitting a pathological
+// overlong word (seconds of work on a Q2) stops when the reader must exit;
+// Q2 Pod SIGKILLs a card app 3 s after its SIGTERM. layoutAborted() then tells
+// the caller the last layout was cut short and must not be cached.
+namespace crosspodlayout {
+inline volatile std::sig_atomic_t* layoutAbortFlag = nullptr;
+inline bool abortedFlag = false;
+inline bool shouldAbort() {
+  if (layoutAbortFlag && *layoutAbortFlag) { abortedFlag = true; return true; }
+  return false;
+}
+inline bool layoutAborted() { return abortedFlag; }
+}  // namespace crosspodlayout
 
 class ParsedText {
   // Word text lives in wordStore (chunked bump arena, NUL-terminated entries);

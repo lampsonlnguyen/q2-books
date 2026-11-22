@@ -7,6 +7,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(crosspod_platform STATIC Q2SocketInput.cpp Q2Framebuffer.cpp)
 target_include_directories(crosspod_platform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+find_package(Threads REQUIRED)
+target_link_libraries(crosspod_platform PUBLIC Threads::Threads)
 
 # Standalone hardware diagnostic: intentionally NOT named "crosspod" so the
 # native Books launcher cannot mistake it for an EPUB reader.

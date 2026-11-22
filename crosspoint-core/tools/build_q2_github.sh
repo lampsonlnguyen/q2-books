@@ -264,6 +264,11 @@ cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
 cp crosspoint-core/assets/connected.conf.example "$card/.crosspod/connected.conf.example"
+# HTTPS trust: Mozilla's root list (the runner's ca-certificates). Q2 Pod's
+# /etc/scrobble-ca.pem has only the 8 roots its scrobbler needs, so many Kavita
+# hosts (Sectigo/ZeroSSL RSA, SSL.com, Amazon) would fail on the device.
+python3 crosspoint-core/tools/check_ca_bundle.py /etc/ssl/certs/ca-certificates.crt
+cp /etc/ssl/certs/ca-certificates.crt "$card/.crosspod/ca-bundle.pem"
 
 
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
@@ -408,9 +413,24 @@ CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
 CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
   python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" italic
 
-# Never ship QEMU-generated Section/page caches from the CI sample book.
-rm -rf -- "$card/.crosspod/cache"
+# Ship only the app's own files: the QEMU tests above ran with this folder as
+# their state directory and leave caches, positions, highlights, settings and
+# logs (v0.8.0-beta shipped a test's progress-*.highlights). Allow-list, so a
+# new kind of state can never leak into a release.
+find "$card/.crosspod" -mindepth 1 -maxdepth 1 ! -name crosspod-engine ! -name q2-crosspod \
+  ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
+find "$card/.crosspod/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
 chmod +x "$card/.crosspod/q2-crosspod" "$card/.crosspod/crosspod-engine"
 (cd "$card" && zip -q -r "$base/dist/crosspod-q2-reader-alpha.zip" .crosspod Books)
 sha256sum "$base/dist/crosspod-q2-reader-alpha.zip" > "$base/dist/crosspod-q2-reader-alpha.zip.sha256"
 unzip -t "$base/dist/crosspod-q2-reader-alpha.zip"
+# Verify the allow-list held: nothing but the app's files and the sample books.
+unzip -Z1 "$base/dist/crosspod-q2-reader-alpha.zip" | python3 -c '
+import re,sys
+bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
+  r"(\.crosspod/|Books/|\.crosspod/fonts/|Books/[^/]+\.epub|\.crosspod/fonts/[^/]+\.(cpfont|txt)|"
+  r"\.crosspod/(crosspod-engine|q2-crosspod|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
+  r"connected\.conf\.example|ca-bundle\.pem))",n)]
+assert not bad, f"release ZIP carries state or unexpected files: {bad}"
+print("Release ZIP contents: PASS")'

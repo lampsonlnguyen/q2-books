@@ -27,6 +27,12 @@ programs = read(readelf, "-l")
 attrs = read(readelf, "-A")
 sections = read(readelf, "-S")
 private = read(objdump, "-p")
+FIRMWARE_LIBRARIES = {"libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "librt.so.1",
+                      "libstdc++.so.6", "libgcc_s.so.1", "libcurl.so.4"}
+needed = re.findall(r"NEEDED\s+(\S+)", private)
+unexpected_needed = sorted(set(needed) - FIRMWARE_LIBRARIES)
+if unexpected_needed:
+    print(f"Unexpected DT_NEEDED: {unexpected_needed}")
 interpreter = re.search(r"Requesting program interpreter:\s*([^]\n]+)", programs)
 dynamic_loader = interpreter.group(1).strip() if interpreter else None
 if dynamic_loader:
@@ -49,7 +55,10 @@ checks = {
     "FP64 hard-float": bool(re.search(r"FP ABI:\s+Hard float.*64-bit FPU", attrs, re.IGNORECASE)),
     "Q2 loader or static executable": loader_ok,
     "glibc symbols no newer than 2.28": glibc_ok,
-    "static binary has no DT_NEEDED": dynamic_loader is not None or "NEEDED" not in private,
+    # A static binary needs nothing; a dynamic one only the stock firmware's own
+    # libraries (curl and its TLS are Q2 Pod's; nothing may be bundled or host-only).
+    ("DT_NEEDED only firmware libraries" if dynamic_loader else "static binary has no DT_NEEDED"):
+        (not unexpected_needed) if dynamic_loader else "NEEDED" not in private,
     "ELF entry point": bool(re.search(r"Entry point address:\s+0x[1-9a-fA-F]", header)),
 }
 for name, ok in checks.items():

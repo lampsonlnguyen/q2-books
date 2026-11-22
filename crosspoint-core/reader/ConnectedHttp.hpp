@@ -4,6 +4,7 @@
 // Q2 Pod's existing libcurl and CA bundle; no ESP32 or firmware ownership.
 #include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <chrono>
 #include <cctype>
 #include <cstdint>
@@ -18,11 +19,23 @@
 #include <string>
 #include <string_view>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <vector>
 
 namespace crosspod {
+// The reader points this at its SIGINT/SIGTERM flag. A transfer checks it at
+// least every 250 ms (curl: every progress callback, about once a second or
+// sooner) and stops: Q2 Pod SIGKILLs a card app 3 s after its SIGTERM, and a
+// download used to run on for up to its whole timeout.
+inline volatile std::sig_atomic_t* httpAbortFlag=nullptr;
+inline bool httpAborted() { return httpAbortFlag && *httpAbortFlag; }
+// A transfer fails when it makes no progress for this long, not when a whole
+// download takes long: a large EPUB on a slow link is not a stalled one.
+constexpr unsigned httpStallSeconds=30;
+constexpr unsigned httpTotalSeconds=30*60;
+
 struct HttpUrl {
   std::string host;
   std::string port="80";
@@ -191,6 +204,9 @@ inline size_t httpsBodyCallback(char* bytes,size_t unit,size_t count,void* conte
   state.count+=length;
   return length;
 }
+inline int httpsProgressCallback(void*,long long,long long,long long,long long) {
+  return httpAborted()?1:0;  // non-zero: CURLE_ABORTED_BY_CALLBACK
+}
 inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* context) {
   auto& state=*static_cast<HttpsStream*>(context);
   if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
@@ -223,6 +239,14 @@ inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* con
   }
   return length;
 }
+inline std::string httpsCaBundle() {
+  const char* state=std::getenv("CROSSPOD_STATE_DIR");
+  const std::string card=std::string(state&&*state?state:"/mnt/mmc/.crosspod")+"/ca-bundle.pem";
+  struct stat info{};
+  if(::stat(card.c_str(),&info)==0 && S_ISREG(info.st_mode) && info.st_size>1024 &&
+     ::access(card.c_str(),R_OK)==0)return card;
+  return "/etc/scrobble-ca.pem";
+}
 inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sink,
                                  size_t maxBytes,const std::string& method,
                                  const std::string& body,
@@ -248,7 +272,8 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
       headerListOpt=10023, timeoutOpt=13, connectTimeoutOpt=78,
       noSignalOpt=99, followOpt=52, caOpt=10065, peerOpt=64, hostOpt=81,
       protocolsOpt=181, redirectProtocolsOpt=182, customMethodOpt=10036,
-      bodyOpt=10015, bodySizeOpt=60;
+      bodyOpt=10015, bodySizeOpt=60, progressOpt=20219, noProgressOpt=43,
+      lowSpeedLimitOpt=19, lowSpeedTimeOpt=20;
   constexpr long httpsOnly=2L; // CURLPROTO_HTTPS
   bool settings=
       curl_easy_setopt(curl,urlOpt,original.c_str())==0 &&
@@ -257,7 +282,11 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
       curl_easy_setopt(curl,writeDataOpt,&stream)==0 &&
       curl_easy_setopt(curl,headerOpt,httpsHeaderCallback)==0 &&
       curl_easy_setopt(curl,headerDataOpt,&stream)==0 &&
-      curl_easy_setopt(curl,timeoutOpt,90L)==0 &&
+      curl_easy_setopt(curl,timeoutOpt,static_cast<long>(httpTotalSeconds))==0 &&
+      curl_easy_setopt(curl,lowSpeedLimitOpt,1024L)==0 &&  // under 1 KB/s ...
+      curl_easy_setopt(curl,lowSpeedTimeOpt,static_cast<long>(httpStallSeconds))==0 &&  // ... for 30 s
+      curl_easy_setopt(curl,progressOpt,httpsProgressCallback)==0 &&
+      curl_easy_setopt(curl,noProgressOpt,0L)==0 &&
       curl_easy_setopt(curl,connectTimeoutOpt,10L)==0 &&
       curl_easy_setopt(curl,noSignalOpt,1L)==0 &&
       curl_easy_setopt(curl,followOpt,0L)==0 &&
@@ -266,8 +295,13 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
       curl_easy_setopt(curl,peerOpt,1L)==0 &&
       curl_easy_setopt(curl,hostOpt,2L)==0;
 #ifdef CROSSPOD_Q2_RUNTIME
-  // Fail closed if the stock Q2 Pod CA file is missing or unusable.
-  settings=settings && curl_easy_setopt(curl,caOpt,"/etc/scrobble-ca.pem")==0;
+  // Q2 Pod's /etc/scrobble-ca.pem holds only the 8 roots its scrobbler needs
+  // (no Sectigo/ZeroSSL RSA, DigiCert G1, Amazon or SSL.com: Cloudflare's edge
+  // certificates come from SSL.com too). The card ships Mozilla's root list as
+  // .crosspod/ca-bundle.pem, beside the reader binary it already trusts; that
+  // bundle is used when present, Q2 Pod's file otherwise. Verification itself
+  // is never relaxed, and curl fails closed if the file is unusable.
+  settings=settings && curl_easy_setopt(curl,caOpt,httpsCaBundle().c_str())==0;
 #else
   // Only host tests can substitute a certificate authority. Never compiled
   // into the device binary (which always uses the firmware-trusted roots).
@@ -305,7 +339,10 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
   result.status=static_cast<int>(status);
   result.bytes=stream.count;
   if(code!=0) {
-    result.error=stream.aborted?"HTTPS download too large or rejected":
+    result.error=code==42?"Transfer stopped":   // CURLE_ABORTED_BY_CALLBACK
+        stream.aborted?"HTTPS download too large or rejected":
+        code==28?"HTTPS transfer stalled":       // CURLE_OPERATION_TIMEDOUT
+        code==60?"HTTPS certificate not trusted (check the device clock)":
         "HTTPS transfer failed ("+std::to_string(code)+")";
     return result;
   }
@@ -325,20 +362,35 @@ class HttpSocketReader {
   int fd_=-1;
   char buf_[8192]{};
   size_t cursor_=0,count_=0;
-  std::chrono::steady_clock::time_point deadline_;
+  std::chrono::steady_clock::time_point deadline_,stall_;
+  unsigned stallSeconds_;
 public:
-  explicit HttpSocketReader(int fd,unsigned seconds=20):fd_(fd),
-      deadline_(std::chrono::steady_clock::now()+std::chrono::seconds(seconds)) {}
+  bool timedOut=false;
+  explicit HttpSocketReader(int fd,unsigned stallSeconds=httpStallSeconds,
+                            unsigned totalSeconds=httpTotalSeconds):fd_(fd),
+      deadline_(std::chrono::steady_clock::now()+std::chrono::seconds(totalSeconds)),
+      stall_(std::chrono::steady_clock::now()+std::chrono::seconds(stallSeconds)),
+      stallSeconds_(stallSeconds) {}
   bool fill() {
     if(cursor_<count_)return true;
-    while(std::chrono::steady_clock::now()<deadline_) {
-      const ssize_t n=::recv(fd_,buf_,sizeof(buf_),0);
-      if(n>0) {cursor_=0;count_=static_cast<size_t>(n);return true;}
+    for(;;) {
+      const auto now=std::chrono::steady_clock::now();
+      if(now>=deadline_ || now>=stall_) {timedOut=true;return false;}
+      if(httpAborted())return false;
+      pollfd ready{fd_,POLLIN,0};
+      const int polled=::poll(&ready,1,250);
+      if(polled<0 && errno!=EINTR)return false;
+      if(polled<=0)continue;
+      const ssize_t n=::recv(fd_,buf_,sizeof(buf_),MSG_DONTWAIT);
+      if(n>0) {
+        cursor_=0;count_=static_cast<size_t>(n);
+        stall_=std::chrono::steady_clock::now()+std::chrono::seconds(stallSeconds_);
+        return true;
+      }
       if(n==0)return false;
       if(errno==EINTR || errno==EAGAIN || errno==EWOULDBLOCK)continue;
       return false;
     }
-    return false;
   }
   bool line(std::string& out,size_t limit=8192) {
     out.clear();
@@ -371,7 +423,7 @@ public:
          !sink(buf_+cursor_,take))return false;
       consumed+=take;cursor_+=take;
     }
-    return std::chrono::steady_clock::now()<deadline_;
+    return !timedOut && !httpAborted();
   }
 };
 
@@ -393,7 +445,9 @@ inline int connectHttpSocket(const HttpUrl& url) {
     int ret=::connect(fd,ai->ai_addr,ai->ai_addrlen);
     if(ret<0 && errno==EINPROGRESS) {
       pollfd probe{fd,POLLOUT,0};
-      ret=::poll(&probe,1,3000);
+      ret=0;
+      for(int waited=0;ret==0 && waited<3000 && !httpAborted();waited+=250)
+        ret=::poll(&probe,1,250);  // 3 s, in slices a SIGTERM can stop
       if(ret>0) {
         int err=0;socklen_t n=sizeof(err);
         ret=::getsockopt(fd,SOL_SOCKET,SO_ERROR,&err,&n)==0 && !err?0:-1;

@@ -2,6 +2,7 @@
 // Q2 control-to-CrossPoint navigation adapter. No Q2 Pod app framework dependencies.
 #pragma once
 #include <charconv>
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 
@@ -16,7 +17,10 @@ struct PhysicalEvent {
     int value{}; // wheel count, or button code (Q2: 218 confirm, 170 back)
     int x{},y{}; // landscape touch pixel position
 };
-struct MappedEvent { LogicalAction action{LogicalAction::None};int x{},y{}; };
+// repeat: how many times the action happened. A wheel datagram carries all the
+// travel Q2 Pod gathered since its last one, which can be several ticks.
+struct MappedEvent { LogicalAction action{LogicalAction::None};int x{},y{};int repeat{1}; };
+inline constexpr int maxWheelStepsPerEvent=64; // a bound for absurd deltas, not a real turn
 inline constexpr int defaultWheelSensitivity=50;
 
 inline int parseWheelSensitivity(std::string_view value) {
@@ -48,10 +52,14 @@ public:
             if((travel<0 && wheel_accumulator_>0) || (travel>0 && wheel_accumulator_<0))
                 wheel_accumulator_=0;
             const int64_t total=wheel_accumulator_+travel;
+            // Every tick in the datagram counts, the remainder carries on, as Q2 Pod's
+            // own wheel_sample does: one step per datagram lost a fast turn's ticks.
+            const int64_t steps=total/wheelThreshold_;
             wheel_accumulator_=total%wheelThreshold_;
-            if(total>=wheelThreshold_)return {A::Next};
-            if(total<=-wheelThreshold_)return {A::Previous};
-            return {};
+            if(steps==0)return {};
+            const int count=static_cast<int>(std::min<int64_t>(
+                steps<0?-steps:steps,maxWheelStepsPerEvent));
+            return {steps>0?A::Next:A::Previous,0,0,count};
         }
         case K::KeyDown:
             if(event.value==218){

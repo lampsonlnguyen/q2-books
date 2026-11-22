@@ -2,7 +2,7 @@ name: CrossPod Q2 v0.8.0 beta build and release
 on:
   workflow_dispatch:
   push:
-    branches: [main, v0.8-device-integration]
+    branches: [main, v0.9-https-transport]
     paths:
       - "crosspoint-core/tools/build_q2_github.sh"
       - ".github/workflows/q2-reader-card.yml"
@@ -78,7 +78,7 @@ jobs:
   publish-v0-8-beta:
     name: Publish v0.8.0 beta from verified MIPS package
     needs: [host-tests, build-q2-reader]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && github.sha == '8f82f195c462de770a5676d52e4688cf93deccdc'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

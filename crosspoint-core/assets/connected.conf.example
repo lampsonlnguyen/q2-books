@@ -1,7 +1,10 @@
-# CrossPod v0.9 (development) — Optional OPDS and KOReader sync
+# CrossPod v0.9+ — Optional OPDS and KOReader sync
 # Copy this file to /mnt/mmc/.crosspod/connected.conf and edit it.
+# Catalog search and "More results" paging (v0.11 development) need no
+# setting: they appear when the catalog's feed offers them.
 # Do not put real API keys/passwords in GitHub, issue reports or screenshots.
-# HTTPS is now supported with libcurl and the Q2 Pod certificate bundle.
+# HTTPS uses Q2 Pod's libcurl and the Mozilla roots in .crosspod/ca-bundle.pem
+# (shipped in the card ZIP); /etc/scrobble-ca.pem is only a fallback.
 # Use https://your-server.example/... for remote access; the certificate
 # hostname must match and be trusted. Invalid/untrusted certificates FAIL.
 # The http:// examples below are for a private, trusted LAN ONLY.

@@ -1,16 +1,31 @@
 # CrossPod — direct CrossPoint Reader port to Shanling Q2
 
-**Current status:** v0.7.0 is a published Q2 MIPS beta with EPUB reading,
-multilingual rendering, library navigation, OPDS catalog access and optional
-manual KOReader-compatible progress synchronization. Actual Shanling Q2 hardware
-testing is still required. The v0.8.0 device integration work is tracked in
-[the v0.8 verification plan](docs/v0.8.0-device-integration.md) and PR #32.
+**Current status (main, November 2026):** v0.8.0-beta is the latest
+published Q2 MIPS beta. `main` also carries, unreleased and still needing
+physical Q2 testing:
+
+- **v0.9 HTTPS transport** (PR #35, #37, #38): HTTPS OPDS and KOReader sync
+  through Q2 Pod's libcurl with mandatory certificate and hostname checks —
+  see [v0.9 HTTPS transport](docs/v0.9.0-https-transport.md).
+- **v0.10 reading** (PR #39): go to percent, auto page turn, focus reading,
+  plain-text (.txt) books, page counter with book percentage.
+- **v0.11 dictionaries** (PR #40): StarDict dictionaries (.idx/.dict/.dict.dz/
+  .syn) with a bounded index, paged multi-match definitions, TSV fallback; a
+  text-selection touch fix.
+- **OPDS paging and search** (PR #41): "More results" for `rel="next"` and
+  catalog search through OpenSearch.
+
+How to use the new features: [v0.10–v0.11 development notes](docs/v0.10-v0.11-reading-dictionaries-opds.md).
+Nothing here is released until it passes the Q2 hardware gates
+([v0.8 verification plan](docs/v0.8.0-device-integration.md)) and a release is
+approved.
 
 **Historical note:** The detailed porting inventory below was written during
 the early CrossPoint source migration. Its "not yet done" and host-only notes
-describe those earlier milestones, not the complete v0.7 beta state. Refer to
-[the connected library guide](docs/v0.7.0-connected-library.md) and the v0.8
-verification plan for current capabilities and release requirements.
+describe those earlier milestones, not the current state. Refer to the
+status above, [the connected library guide](docs/v0.7.0-connected-library.md)
+and the v0.8 verification plan for current capabilities and release
+requirements.
 
 The earlier CrossPod prototype has been replaced on `main` by the CrossPoint reader-port foundation. The old prototype remains available in Git history; this implementation does not use its custom EPUB extractor or rendering engine.
 

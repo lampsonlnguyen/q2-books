@@ -37,7 +37,20 @@ with tempfile.TemporaryDirectory(prefix="crosspod-chapter-") as tmp:
 assert "CrossPod original Section:" in opening, opening
 assert "(incremental)" in opening, "First open must not paginate whole chapter"
 
-walking=run("--walk",120)
+# Cold cache: the first page and every turn must draw while the Section is still
+# being laid out (pages read back from the .bin being written), not only once an
+# earlier run has cached the chapter.
+with tempfile.TemporaryDirectory(prefix="crosspod-cold-") as cold:
+    env = dict(os.environ, CROSSPOD_STATE_DIR=cold)
+    result = subprocess.run([reader, "--render-walk", book], capture_output=True,
+                            text=True, timeout=120, env=env)
+    assert result.returncode == 0 and "refusing blank cache" not in result.stderr, (
+        result.returncode, result.stdout, result.stderr)
+
+# One fresh state folder for the runs below: the default /tmp cache outlives the
+# test, so a second run found this chapter cached and the checks above failed.
+state = tempfile.TemporaryDirectory(prefix="crosspod-incremental-")
+walking=run("--walk",120,state=state.name)
 match=re.search(r"CrossPod walked (\d+) pages forward and (\d+) backward",
                 walking)
 assert match, walking
@@ -45,10 +58,10 @@ forward,backward=map(int,match.groups())
 assert forward>=10, f"Long chapter yielded only {forward} page turns"
 assert forward==backward, (forward,backward)
 
-raster=run("--render-walk",120)
+raster=run("--render-walk",120,state=state.name)
 assert f"CrossPod rendered {forward} pages forward and {backward} backward" in raster, raster
 
-stats=run("--bench",120)
+stats=run("--bench",120,state=state.name)
 match=re.search(
     r"open_ms=(\d+) first_render_us=(\d+) cached_render_us=(\d+) "
     r"sample_pages=(\d+) walk_ms=(\d+) maxrss_kb=(\d+)",

@@ -651,9 +651,9 @@ class Reader {
     if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
     const int nextFontId=fontIdForTypography(settings);
     if(next && next->getEpdFont()) {
-      renderer_.insertFont(1,EpdFontFamily(settings.size,next->getEpdFont()));
+      renderer_.insertFont(1,crosspod::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
       renderer_.registerSdCardFont(1,next.get());
-      renderer_.insertFont(nextFontId,EpdFontFamily(settings.size,next->getEpdFont()));
+      renderer_.insertFont(nextFontId,crosspod::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
       renderer_.registerSdCardFont(nextFontId,next.get());
     } else {
       renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
@@ -2352,8 +2352,7 @@ class CardShelf {
         const int row=static_cast<int>(key/7);
         const int x=12+column*50, y=88+row*27;
         const bool active=key==searchKey_;
-        if(active)renderer_.fillRect(x,y,48,25,true);
-        else renderer_.drawLine(x,y+24,x+47,y+24,true);
+        if(!active)renderer_.drawLine(x,y+24,x+47,y+24,true);
         char single[2]={0,0};
         const char* label=nullptr;
         if(key<36) {single[0]=SEARCH_LETTERS[key];label=single;}
@@ -2361,7 +2360,12 @@ class CardShelf {
         else if(key==37)label="DEL";
         else if(key==38)label="DONE";
         else label="CLR";
-        renderer_.drawText(1,x+3,y+2,label,!active);
+        // 25 px cells: full-size font 1 overran them (the cell rule crossed every
+        // glyph, DONE ran into CLR); the compact scaled label fits, as the header's does.
+        drawCompactLabel(x+5,y+18,label,key<36?176:136);
+        if(auto* fb=active?display_.getFrameBuffer():nullptr)  // selected: inverted cell
+          for(int py=y;py<y+25;++py)for(int px=x;px<x+48;++px)
+            fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=static_cast<uint8_t>(0x80u>>(px&7));
       }
       char count[72];
       std::snprintf(count,sizeof(count),"%zu matching / %zu books",

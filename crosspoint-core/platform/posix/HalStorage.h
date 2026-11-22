@@ -88,7 +88,10 @@ class HalStorage {
     return file.isOpen();
   }
   bool openFileForWrite(const char*, const std::string& path, HalFile& file) {
-    file = HalFile(std::fopen(path.c_str(), "wb"));
+    // Read-write, as SdFat's O_RDWR on the ESP32: Section reads finished pages back from the
+    // .bin it is still writing (loadPageDuringBuild). "wb" made every such read fail, so a page
+    // of a chapter still being laid out never drew.
+    file = HalFile(std::fopen(path.c_str(), "w+b"));
     return file.isOpen();
   }
   bool exists(const char* path) {

@@ -15,7 +15,22 @@ int main() {
   assert(md5String("")=="d41d8cd98f00b204e9800998ecf8427e");
   assert(md5String("abc")=="900150983cd24fb0d6963f7d28e17f72");
   assert(md5String("message digest")=="f96b697d7cb7938d525a2f31aaf161d0");
-  assert(!parseHttpUrl("https://host/api").valid); // never downgrade TLS
+  assert(parseHttpUrl("https://host/api").valid);
+  assert(parseHttpUrl("https://host/api").secure);
+  assert(parseHttpUrl("https://host/api").port=="443");
+  assert(parseHttpUrl("https://host:8443/api").port=="8443");
+  assert(absoluteHttpUrl(parseHttpUrl("https://host:443/a"))=="https://host/a");
+  assert(absoluteHttpUrl(parseHttpUrl("https://host:8443/a"))==
+         "https://host:8443/a");
+  assert(resolveHttpHref("https://host/api/root","../books")==
+         "https://host/books");
+  assert(resolveHttpHref("https://host/api","https://host/b")==
+         "https://host/b");
+  assert(resolveHttpHref("https://host/api","http://host/b").empty());
+  assert(resolveHttpHref("http://host/api","https://host/b").empty());
+  assert(resolveHttpHref("https://host/api","https://different/b").empty());
+  assert(resolveHttpHref("https://host:8443/api","https://host/api").empty());
+  assert(resolveHttpHref("https://host/a","//evil.example/b").empty());
   assert(!parseHttpUrl("http://host:0/a").valid);
   assert(!parseHttpUrl("http://user@host/a").valid);
   assert(!parseHttpUrl("http://host/a\r\nInjected: x").valid);

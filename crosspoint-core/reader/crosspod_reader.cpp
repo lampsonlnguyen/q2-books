@@ -2274,6 +2274,9 @@ class CardShelf {
   std::vector<crosspod::OpdsEntry> onlineEntries_;
   std::vector<std::string> onlineHistory_;
   size_t onlineSelection_=0;
+  crosspod::OpdsFeed onlineFeed_;     // links of the page shown (search, next)
+  bool onlineSearching_=false;        // the keyboard is for a catalog search
+  bool searchSubmit_=false;
   int homeSelection_ = 0;
   std::string notice_;
   static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
@@ -2334,9 +2337,7 @@ class CardShelf {
     if(saveHistory && onlineHistory_.size()<12)
       onlineHistory_.push_back(onlineUrl_);
     onlineUrl_=url;
-    onlineTitle_=feed.title.empty()?"Connected library":feed.title;
-    onlineEntries_=std::move(feed.entries);
-    onlineSelection_=0;
+    showFeed(std::move(feed));
     onlineMode_=true;
     browsing_=true;
     searchEditing_=false;
@@ -2355,10 +2356,51 @@ class CardShelf {
       onlineMode_=false;onlineEntries_.clear();goHome();return;
     }
     onlineUrl_=previous;
-    onlineTitle_=feed.title;
-    onlineEntries_=std::move(feed.entries);
-    onlineSelection_=0;
+    showFeed(std::move(feed));
     notice_.clear();
+  }
+  // M4: a feed's search link becomes a first "Search" row and its rel="next"
+  // link a last "More results" row (OPDS catalogs page long lists).
+  void showFeed(crosspod::OpdsFeed feed) {
+    onlineTitle_=feed.title.empty()?"Connected library":feed.title;
+    onlineEntries_=std::move(feed.entries);
+    feed.entries.clear();
+    if(!feed.searchTemplate.empty() || !feed.searchDescription.empty()) {
+      crosspod::OpdsEntry search;
+      search.kind=crosspod::OpdsEntry::Kind::Search;
+      search.title="Search this catalog";
+      onlineEntries_.insert(onlineEntries_.begin(),std::move(search));
+    }
+    if(!feed.nextHref.empty()) {
+      crosspod::OpdsEntry more;
+      more.kind=crosspod::OpdsEntry::Kind::More;
+      more.title="More results";
+      more.href=feed.nextHref;
+      onlineEntries_.push_back(std::move(more));
+    }
+    onlineFeed_=std::move(feed);
+    onlineSelection_=0;
+    onlineSearching_=false;searchEditing_=false;
+  }
+  void enterOnlineSearch() {
+    onlineSearching_=true;searchEditing_=true;searchKey_=0;searchQuery_.clear();
+    notice_.clear();
+  }
+  bool onlineSearching() const {return onlineMode_ && onlineSearching_ && searchEditing_;}
+  // DONE on the catalog keyboard asks for the search (applySearchChoice).
+  bool takeSearchSubmit() {const bool r=searchSubmit_;searchSubmit_=false;return r;}
+  // Run the typed query against the catalog; the results page is pushed on
+  // the history, so Back returns to the page that was searched.
+  bool submitOnlineSearch() {
+    std::string error;
+    const std::string url=crosspod::opdsSearchUrl(onlineFeed_,searchQuery_,error);
+    if(url.empty()) {
+      notice_=searchQuery_.empty()?"Type a search first":error;
+      return false;
+    }
+    if(!loadOnlinePage(url,true))return false;  // showFeed closes the keyboard
+    if(onlineEntries_.empty())notice_="No results";
+    return true;
   }
   bool onlineHasSelection() const {return onlineSelection_<onlineEntries_.size();}
   crosspod::OpdsEntry onlineEntry() const {
@@ -2380,7 +2422,7 @@ class CardShelf {
     browsing_=true;searchEditing_=true;searchKey_=0;
     notice_.clear();
   }
-  void endSearch() {searchEditing_=false;notice_.clear();}
+  void endSearch() {searchEditing_=false;onlineSearching_=false;notice_.clear();}
   static constexpr size_t SEARCH_KEY_COUNT=40;
   static constexpr const char* SEARCH_LETTERS=
       "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -2392,10 +2434,12 @@ class CardShelf {
     } else if(searchKey_==37) {
       if(!searchQuery_.empty())searchQuery_.pop_back();
     } else if(searchKey_==38) {
+      if(onlineSearching_){searchSubmit_=true;return true;}
       endSearch();return true;
     } else {
       searchQuery_.clear();
     }
+    if(onlineSearching_)return true;  // a catalog query: nothing local to filter
     refreshVisible();
     selected_=0;
     return true;
@@ -2414,7 +2458,7 @@ class CardShelf {
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
     notice_.clear();
-    if(onlineMode_) {
+    if(onlineMode_ && !onlineSearching_) {
       if(onlineEntries_.empty())return false;
       const size_t before=onlineSelection_;
       if(direction>0 && onlineSelection_+1<onlineEntries_.size())
@@ -2443,7 +2487,7 @@ class CardShelf {
   }
   bool tap(int x,int y) {
     if(x<0||x>=375)return false;
-    if(onlineMode_) {
+    if(onlineMode_ && !onlineSearching_) {
       if(y<73) {returnFromOnline();return true;}
       onlineTouch(x,y);return true;
     }
@@ -2610,7 +2654,7 @@ class CardShelf {
     for(int y=0;y<39;++y)
       for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
         fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+byte]^=0xff;
-    if(onlineMode_) {
+    if(onlineMode_ && !onlineSearching_) {
       // Placed as Home's header is: drawn at y 49 its glyphs crossed the rule.
       drawRowLabel(16,39,35,
           clippedLabel(onlineTitle_.empty()?"Online library":onlineTitle_,35).c_str());
@@ -2625,8 +2669,10 @@ class CardShelf {
         const int y=TOP_Y+static_cast<int>(row)*ROW_H;
         const bool active=index==onlineSelection_;
         const auto& entry=onlineEntries_[index];
-        const std::string prefix=entry.kind==crosspod::OpdsEntry::Kind::Epub?
-          "[EPUB] ":"[DIR] ";
+        const std::string prefix=
+          entry.kind==crosspod::OpdsEntry::Kind::Epub?"[EPUB] ":
+          entry.kind==crosspod::OpdsEntry::Kind::Search?"[FIND] ":
+          entry.kind==crosspod::OpdsEntry::Kind::More?">> ":"[DIR] ";
         drawListRow(y,clippedLabel(prefix+entry.title,31),entry.author,active);
       }
     } else if(!browsing_) {
@@ -2669,7 +2715,7 @@ class CardShelf {
           homeSelection_!=2);
       drawRowLabel(HOME_ONLINE_X+10,244,23,"Online",homeSelection_!=3);
     } else if(searchEditing_) {
-      drawCompactLabel(16,59,"Search library",190);
+      drawCompactLabel(16,59,onlineSearching_?"Search catalog":"Search library",190);
       const std::string query="Find: "+searchQuery_;
       drawCompactLabel(16,77,clippedLabel(query,34).c_str(),175);
       for(size_t key=0;key<SEARCH_KEY_COUNT;++key) {
@@ -2693,7 +2739,8 @@ class CardShelf {
             fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=static_cast<uint8_t>(0x80u>>(px&7));
       }
       char count[72];
-      std::snprintf(count,sizeof(count),"%zu matching / %zu books",
+      if(onlineSearching_)std::snprintf(count,sizeof(count),"DONE: search  Back: cancel");
+      else std::snprintf(count,sizeof(count),"%zu matching / %zu books",
                     visible_.size(),books_.size());
       drawCompactLabel(16,262,count,165);
     } else {
@@ -3183,6 +3230,20 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
+    if(shelf->onlineSearching()) {
+      if(action==crosspod::LogicalAction::Back)shelf->endSearch();
+      else if(action==crosspod::LogicalAction::Previous)(void)shelf->change(-1);
+      else if(action==crosspod::LogicalAction::Next)(void)shelf->change(1);
+      else if(action==crosspod::LogicalAction::Confirm)(void)shelf->applySearchChoice();
+      else if(event.kind==crosspod::PhysicalKind::TouchUp)(void)shelf->tap(event.x,event.y);
+      if(shelf->takeSearchSubmit()) {
+        shelf->setNotice("Searching...");
+        shelf->present();
+        (void)shelf->submitOnlineSearch();  // on failure the keyboard stays, with the reason
+      }
+      shelf->present();
+      continue;
+    }
     if(shelf->onlineMode()) {
       if(action==crosspod::LogicalAction::Back) {
         shelf->returnFromOnline();
@@ -3204,7 +3265,13 @@ int runCardApp(const std::string& bookDir) {
       }
       if(!activate || !shelf->onlineHasSelection())continue;
       const auto selected=shelf->onlineEntry();
-      if(selected.kind==crosspod::OpdsEntry::Kind::Catalog) {
+      if(selected.kind==crosspod::OpdsEntry::Kind::Search) {
+        shelf->enterOnlineSearch();
+        shelf->present();
+        continue;
+      }
+      if(selected.kind==crosspod::OpdsEntry::Kind::Catalog ||
+         selected.kind==crosspod::OpdsEntry::Kind::More) {
         shelf->setNotice("Loading catalog...");
         shelf->present();
         (void)shelf->loadOnlinePage(selected.href,true);
@@ -3352,6 +3419,36 @@ int main(int argc,char** argv) {
       std::printf("%s: %s\n",
         entry.kind==crosspod::OpdsEntry::Kind::Epub?"EPUB":"CATALOG",
         entry.title.c_str());
+    return 0;
+  }
+  if((argc==3 && std::strcmp(argv[1],"--opds-pages")==0) ||
+     (argc==4 && std::strcmp(argv[1],"--opds-search")==0)) {
+    // M4: follow rel="next" (at most 50 pages, no page twice), or search.
+    std::string url=argv[2];
+    if(argc==4) {
+      const auto root=crosspod::fetchOpdsFeed(url);
+      if(!root.error.empty())return 8;
+      std::string error;
+      url=crosspod::opdsSearchUrl(root,argv[3],error);
+      if(url.empty()){std::fprintf(stderr,"CrossPod OPDS search: %s\n",error.c_str());return 11;}
+      std::printf("CrossPod OPDS search URL: %s\n",url.c_str());
+    }
+    std::vector<std::string> seen;
+    size_t total=0;
+    for(int page=0;page<50 && !url.empty();++page) {
+      if(std::find(seen.begin(),seen.end(),url)!=seen.end()) {
+        std::puts("CrossPod OPDS: next link loops; stopped");break;
+      }
+      seen.push_back(url);
+      const auto feed=crosspod::fetchOpdsFeed(url);
+      if(!feed.error.empty())return 8;
+      total+=feed.entries.size();
+      std::printf("CrossPod OPDS page %d: %zu entries%s\n",page+1,feed.entries.size(),
+                  feed.nextHref.empty()?"":" (next)");
+      for(const auto& e:feed.entries)std::printf("  %s\n",e.title.c_str());
+      url=feed.nextHref;
+    }
+    std::printf("CrossPod OPDS total: %zu entries in %zu pages\n",total,seen.size());
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--opds-download")==0) {

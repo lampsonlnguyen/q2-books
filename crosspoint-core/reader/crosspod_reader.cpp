@@ -1587,32 +1587,44 @@ class Reader {
     persistPosition();
     return true;
   }
+  // Chapter/bookmark list geometry. Rows are as tall as the list font's
+  // line (they were a fixed 25 px, shorter than the 12pt line, so each row's
+  // text was cut by the next row and the selection bar).
+  static constexpr int kNavTop=76, kNavFooter=270;
+  int navRowHeight() const {return std::max(20,renderer_.getLineHeight(1)+2);}
+  int navRows() const {return std::max(1,(kNavFooter-4-kNavTop)/navRowHeight());}
+  int navRowAt(int selected,int y) const {
+    const int rows=navRows();
+    return (std::max(0,selected)/rows)*rows+std::max(0,(y-kNavTop)/navRowHeight());
+  }
   void showNavigationMenu(bool showingBookmarks,int selected) {
     render();
     renderer_.fillRect(9,38,357,255,true);
     renderer_.fillRect(11,40,353,251,false);
-    renderer_.drawText(1,23,48,showingBookmarks?"Bookmarks":"Chapters");
+    renderer_.drawText(1,23,44,showingBookmarks?"Bookmarks":"Chapters");
+    renderer_.fillRect(18,72,337,1,true);
     const auto marks=showingBookmarks?bookmarks():
       std::vector<crosspod::Bookmark>{};
     const size_t count=showingBookmarks?marks.size():chapterCount();
-    if(!count)renderer_.drawText(1,25,127,"No bookmarks yet");
-    const int start=selected<0?0:(selected/7)*7;
-    for(int row=0;row<7 && start+row<static_cast<int>(count);++row) {
+    if(!count)renderer_.drawText(1,25,120,showingBookmarks?"No bookmarks yet":"No chapters");
+    const int rows=navRows(),height=navRowHeight();
+    const int start=selected<0?0:(selected/rows)*rows;
+    for(int row=0;row<rows && start+row<static_cast<int>(count);++row) {
       const int item=start+row;
-      const int y=81+row*25;
-      const bool active=item==selected;
-      if(active)renderer_.fillRect(17,y-3,341,22,true);
+      const int y=kNavTop+row*height;
       std::string label;
       if(showingBookmarks) {
         const auto& mark=marks[item];
         label="Ch "+std::to_string(mark.spine+1)+
           " - Page "+std::to_string(mark.page+1);
       } else label=std::to_string(item+1)+". "+chapterName(item);
-      label=clippedLabel(label,34);
-      renderer_.drawText(1,24,y,label.c_str(),!active);
+      renderer_.drawText(1,24,y+1,renderer_.truncatedText(1,label.c_str(),325).c_str());
+      if(item==selected)invertMenuRect(17,y,341,height);
     }
-    renderer_.drawText(1,23,265,"Wheel: select  Center: go");
-    renderer_.drawText(1,23,286,"Back: reading settings");
+    renderer_.fillRect(18,kNavFooter,337,1,true);
+    std::string footer=std::to_string(count?std::max(0,selected)+1:0)+"/"+std::to_string(count)+
+        "  Wheel: select  Center: go  Back: settings";
+    drawMenuText(23,kNavFooter+8,clippedLabel(footer,54).c_str(),1);
     display_.displayBuffer();
   }
 
@@ -2278,7 +2290,9 @@ class CardShelf {
   bool searchSubmit_=false;
   int homeSelection_ = 0;
   std::string notice_;
-  static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
+  // 4 rows of 47 px: a title line and an author line need about 45 px with
+  // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
+  static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
   static constexpr int HOME_ONLINE_X=252;
 
  public:
@@ -2628,17 +2642,18 @@ class CardShelf {
     return dots;
   }
   void drawListRow(int y,const std::string& rawTitle,const std::string& author,bool active) {
+    constexpr int kHeight=ROW_H-2;
     const std::string title=fitWidth(rawTitle,334);
-    if(!active)renderer_.drawLine(15,y+36,359,y+36,true);
+    if(!active)renderer_.drawLine(15,y+kHeight,359,y+kHeight,true);
     const bool second=!author.empty();
-    if(second)renderer_.drawText(1,22,y-7,title.c_str(),true);
-    else drawRowLabel(22,y,36,title.c_str());
-    if(second && !drawSmallLine(24,y+33,author,330)) {
+    if(second)renderer_.drawText(1,22,y-3,title.c_str(),true);
+    else drawRowLabel(22,y,kHeight,title.c_str());
+    if(second && !drawSmallLine(24,y+kHeight-4,author,330)) {
       // no glyphs for the author: centre the title alone instead
-      renderer_.fillRect(13,y,349,36,false);
-      drawRowLabel(22,y,36,title.c_str());
+      renderer_.fillRect(13,y,349,kHeight,false);
+      drawRowLabel(22,y,kHeight,title.c_str());
     }
-    if(active)invertRect(12,y,350,36);
+    if(active)invertRect(12,y,350,kHeight);
   }
   void drawRowLabel(int x,int y,int height,const char* label,bool black=true) {
     const int textY=y+(height-renderer_.getLineHeight(1))/2;
@@ -3086,7 +3101,7 @@ int runCardApp(const std::string& bookDir) {
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             navigationSelection=std::clamp(
-              (navigationSelection/7)*7+(event.y-81)/25,
+              reader->navRowAt(navigationSelection,event.y),
               0,std::max(0,count-1));
           bool changed=false;
           if(count && showingBookmarks) {

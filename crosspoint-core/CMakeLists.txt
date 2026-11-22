@@ -110,6 +110,11 @@ add_dependencies(books_dictionary_lookup_tests stardict_fixture)
 add_test(NAME books_dictionary_spellings_choices_vocabulary
     COMMAND books_dictionary_lookup_tests "${STARDICT_FIXTURE_DIR}")
 
+add_executable(books_ui_language_tests tests/ui_language_test.cpp)
+target_include_directories(books_ui_language_tests PRIVATE reader)
+target_compile_options(books_ui_language_tests PRIVATE -UNDEBUG)
+add_test(NAME books_ui_language_vietnamese COMMAND books_ui_language_tests)
+
 add_executable(books_legacy_migration_tests tests/legacy_state_migration_test.cpp)
 target_include_directories(books_legacy_migration_tests PRIVATE reader)
 target_compile_options(books_legacy_migration_tests PRIVATE -UNDEBUG)

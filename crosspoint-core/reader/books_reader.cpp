@@ -30,6 +30,7 @@
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
 #include "Clippings.hpp"
+#include "UiLanguage.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -100,7 +101,7 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 22;  // 19: About, 20: Dictionaries, 21: Export notes
+constexpr int kTypographyItems = 23;  // 19: About, 20: Dictionaries, 21: Export notes, 22: Language
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -1325,7 +1326,7 @@ class Reader {
     render();
     renderer_.fillRect(10,58,355,250,true);
     renderer_.fillRect(12,60,351,246,false);
-    renderer_.drawText(2,20,70,"Footnote");
+    renderer_.drawText(2,20,70,books::tr("Footnote"));
     if(note.empty())note="Preview unavailable. Center: open note";
     size_t cursor=0;
     for(int line=0;line<9 && cursor<note.size();++line) {
@@ -1487,7 +1488,7 @@ class Reader {
     render();
     renderer_.fillRect(10,207,355,96,true);
     renderer_.fillRect(12,209,351,92,false);
-    renderer_.drawText(2,20,215,"Select text");
+    renderer_.drawText(2,20,215,books::tr("Select text"));
     const auto text=clippedLabel(selectedText(),44);
     renderer_.drawText(2,20,235,text.c_str());
     const char* choices[]={"Highlight","Define","Remove","Cancel"};
@@ -1551,10 +1552,10 @@ class Reader {
     render();
     renderer_.fillRect(10,90,355,195,true);
     renderer_.fillRect(12,92,351,191,false);
-    renderer_.drawText(2,20,103,"Offline dictionary");
+    renderer_.drawText(2,20,103,books::tr("Offline dictionary"));
     if(dictionaryPages_.empty()) {
       renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
-      renderer_.drawText(2,20,158,"No match in the dictionaries");
+      renderer_.drawText(2,20,158,books::tr("No match in the dictionaries"));
       drawMenuText(20,271,"Back: selected text",1);
     } else {
       const auto& page=dictionaryPages_[dictionaryPage_];
@@ -1617,12 +1618,12 @@ class Reader {
     render();
     renderer_.fillRect(9,38,357,255,true);
     renderer_.fillRect(11,40,353,251,false);
-    renderer_.drawText(1,23,44,showingBookmarks?"Bookmarks":"Chapters");
+    renderer_.drawText(1,23,44,books::tr(showingBookmarks?"Bookmarks":"Chapters"));
     renderer_.fillRect(18,72,337,1,true);
     const auto marks=showingBookmarks?bookmarks():
       std::vector<books::Bookmark>{};
     const size_t count=showingBookmarks?marks.size():chapterCount();
-    if(!count)renderer_.drawText(1,25,120,showingBookmarks?"No bookmarks yet":"No chapters");
+    if(!count)renderer_.drawText(1,25,120,books::tr(showingBookmarks?"No bookmarks yet":"No chapters"));
     const int rows=navRows(),height=navRowHeight();
     const int start=selected<0?0:(selected/rows)*rows;
     for(int row=0;row<rows && start+row<static_cast<int>(count);++row) {
@@ -1639,7 +1640,7 @@ class Reader {
     }
     renderer_.fillRect(18,kNavFooter,337,1,true);
     std::string footer=std::to_string(count?std::max(0,selected)+1:0)+"/"+std::to_string(count)+
-        "  Wheel: select  Center: go  Back: settings";
+        "  "+books::tr("Wheel: select  Center: go  Back: settings");
     drawMenuText(23,kNavFooter+8,clippedLabel(footer,54).c_str(),1);
     display_.displayBuffer();
   }
@@ -1721,7 +1722,26 @@ class Reader {
   // Crisp fixed 5x7 pixel glyphs; no bilinear resampling or SD font I/O.
   // 2x integer scale makes 10x14 glyphs and fixed 12px character advance.
   // This typography is isolated from the configurable EPUB reading font.
-  void drawMenuText(int x,int top,const char* str,int scale=2) {
+  // Menu text in the reading font's own glyphs, scaled to the bitmap menu
+  // font's size: used for translated menus, which need accents the 5x8
+  // bitmap font has not. Stops at a whole character before maxX.
+  void drawGlyphMenuText(int x,int top,const std::string& text,int scale,int maxX) {
+    const int scale256=scale>=2?196:118;
+    const int baseline=top+(scale>=2?13:8);
+    const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
+    while(*p) {
+      const uint32_t cp=utf8NextCodepoint(&p);
+      int32_t advance=0;int topBearing=0;
+      if(!renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,topBearing))continue;
+      if(x+fp4::toPixel(advance*scale256/256)>maxX)break;
+      x+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
+    }
+  }
+  void drawMenuText(int x,int top,const char* str,int scale=2,int maxX=352) {
+    if(books::uiLanguage()!=books::UiLanguage::English) {
+      drawGlyphMenuText(x,top,books::tr(str),scale,maxX);
+      return;
+    }
     static constexpr uint8_t glyphs[95][5]={
     {0x00,0x00,0x00,0x00,0x00}, // 32
     {0x00,0x00,0x5f,0x00,0x00}, // 33
@@ -1822,7 +1842,7 @@ class Reader {
     for(const unsigned char* p=
           reinterpret_cast<const unsigned char*>(str);*p;++p) {
       const unsigned cp=*p>=32 && *p<=126?*p:static_cast<unsigned>('?');
-      if(x+6*scale>352)break;
+      if(x+6*scale>maxX)break;
       const uint8_t* glyph=glyphs[cp-32];
       // 8 rows: g j p q y descend into row 7 (in 7 rows "g" read as "9").
       for(int gx=0;gx<5;++gx)
@@ -1868,7 +1888,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Language"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1885,8 +1905,9 @@ class Reader {
       preferences_.autoTurnSeconds?std::to_string(preferences_.autoTurnSeconds)+"s":"Off",
       std::to_string(bookPercent())+"%",
       std::string("v")+BOOKS_VERSION,
-      std::to_string(dictionaryCount())+" installed",
-      "To Clippings"
+      std::to_string(dictionaryCount())+" "+books::tr("installed"),
+      "To Clippings",
+      books::uiLanguageName(books::uiLanguage())
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -1896,18 +1917,21 @@ class Reader {
       const bool active=selected==item;
       // Invert the completed row, including the glyph pixels, after drawing.
       // Separate columns prevent long values from colliding with labels.
-      const std::string label=clippedLabel(labels[item],12);
-      const std::string value=clippedLabel(values[item],12);
-      drawMenuText(24,y+3,label.c_str());
-      drawMenuText(192,y+3,value.c_str());
+      // English: the bitmap font, cut by characters; translated: the reading
+      // font's glyphs, cut by width at the value column.
+      const bool english=books::uiLanguage()==books::UiLanguage::English;
+      const std::string label=english?clippedLabel(labels[item],12):books::tr(labels[item]);
+      const std::string value=english?clippedLabel(values[item],12):books::tr(values[item]);
+      drawMenuText(24,y+3,label.c_str(),2,186);
+      drawMenuText(192,y+3,value.c_str(),2,352);
       if(active)invertMenuRect(18,y,337,kRowHeight);
     }
     renderer_.fillRect(18,267,337,1,true);
     const std::string position=std::to_string(std::min(selectedRow,listed-1)+1)+"/"+
-      std::to_string(listed)+"  Wheel: scroll  Center: select";
+      std::to_string(listed)+"  "+books::tr("Wheel: scroll  Center: select");
     drawMenuText(23,277,clippedLabel(position,48).c_str(),1);
     if(!typographyNotice_.empty()) {
-      const std::string notice=clippedLabel(typographyNotice_,46);
+      const std::string notice=books::tr(typographyNotice_);
       drawMenuText(23,292,clippedLabel(notice,48).c_str(),1);
     }
     display_.displayBuffer();
@@ -2662,11 +2686,12 @@ class CardShelf {
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
   void drawCompactLabel(int x,int baseline,const char* label,int scale=192) {
-    for(const unsigned char* cp=
-          reinterpret_cast<const unsigned char*>(label);*cp;++cp) {
-      if(*cp>=0x80)continue; // these fixed UI labels are ASCII
-      x+=renderer_.drawScaledCodepoint(1,*cp,
-          EpdFontFamily::REGULAR,x,baseline,scale);
+    // UI labels, translated; UTF-8 so translations keep their accents.
+    const std::string text=books::tr(label);
+    const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
+    while(*p) {
+      const uint32_t cp=utf8NextCodepoint(&p);
+      x+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,x,baseline,scale);
     }
   }
   // A list row's second line (an author), in font 1's own glyphs scaled down:
@@ -2739,7 +2764,7 @@ class CardShelf {
   }
   void drawRowLabel(int x,int y,int height,const char* label,bool black=true) {
     const int textY=y+(height-renderer_.getLineHeight(1))/2;
-    renderer_.drawText(1,x,textY,label,black);
+    renderer_.drawText(1,x,textY,books::tr(label),black);
   }
   void paint() {
     renderer_.clearScreen(0xff);
@@ -2756,7 +2781,7 @@ class CardShelf {
           clippedLabel(onlineTitle_.empty()?"Online library":onlineTitle_,35).c_str());
       renderer_.drawLine(15,74,359,74,true);
       if(onlineEntries_.empty()) {
-        renderer_.drawText(1,20,120,"No EPUBs or folders");
+        renderer_.drawText(1,20,120,books::tr("No EPUBs or folders"));
         drawCompactLabel(20,159,"Back: leave catalog",190);
       }
       const size_t start=(onlineSelection_/VISIBLE_ROWS)*VISIBLE_ROWS;
@@ -2783,7 +2808,9 @@ class CardShelf {
         renderer_.drawLine(66,85,66,146,true);
         renderer_.drawLine(17,146,66,146,true);
       }
-      drawRowLabel(82,85,20,"Current book");
+      // Small, so a label with stacked accents (Vietnamese) can't reach the
+      // title line under it.
+      drawCompactLabel(82,100,"Current book",150);
       if(books_.empty())
         drawRowLabel(82,107,20,"No books yet");
       else {
@@ -2802,8 +2829,8 @@ class CardShelf {
         renderer_.fillRect(12,204,350,37,true);
       drawRowLabel(22,204,37,"Browse files",
           homeSelection_!=1 && !books_.empty());
-      std::string sortText="Sort: ";
-      sortText+=books::shelfSortLabel(sortMode_);
+      std::string sortText=books::tr("Sort: ");
+      sortText+=books::tr(books::shelfSortLabel(sortMode_));
       if(homeSelection_==2)renderer_.fillRect(12,244,HOME_ONLINE_X-22,23,true);
       if(homeSelection_==3)renderer_.fillRect(HOME_ONLINE_X,244,362-HOME_ONLINE_X,23,true);
       drawRowLabel(22,244,23,
@@ -2815,7 +2842,9 @@ class CardShelf {
       drawCompactLabel(16,56,onlineSearching_?"Search catalog":"Search library",176);
       char count[48];
       if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
-      else std::snprintf(count,sizeof(count),"%zu / %zu books",visible_.size(),books_.size());
+      else std::snprintf(count,sizeof(count),
+          books::uiLanguage()==books::UiLanguage::English?"%zu / %zu books":"%zu / %zu sách",
+          visible_.size(),books_.size());
       drawCompactLabel(232,56,count,136);
       renderer_.drawRect(12,62,351,28,true);
       const int pending=keypad_.pendingKey();
@@ -2872,12 +2901,14 @@ class CardShelf {
       }
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),"Books: %zu/%zu",visible_.size(),books_.size());
+      std::snprintf(count,sizeof(count),
+          books::uiLanguage()==books::UiLanguage::English?"Books: %zu/%zu":"Sách: %zu/%zu",
+          visible_.size(),books_.size());
       drawCompactLabel(16,61,count);
       drawCompactLabel(212,61,"Search | Online",133);
       renderer_.drawLine(15,72,359,72,true);
       if(visible_.empty()) {
-        renderer_.drawText(1,16,102,books_.empty()?"No EPUB books found":"No matching books");
+        renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));
         renderer_.drawText(1,16,144,
             books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
       } else {
@@ -3286,6 +3317,12 @@ int runCardApp(const std::string& bookDir) {
           }
           if(typeSelection==21) {
             (void)reader->exportNotes();
+            reader->showTypographyMenu(typeSelection);
+            continue;
+          }
+          if(typeSelection==22) {
+            (void)books::setUiLanguage(books::uiLanguage()==books::UiLanguage::English?
+                books::UiLanguage::Vietnamese:books::UiLanguage::English);
             reader->showTypographyMenu(typeSelection);
             continue;
           }
@@ -4005,7 +4042,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,22,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
@@ -4087,6 +4124,12 @@ int main(int argc,char** argv) {
         }
         if(typeSelection==21) {
           (void)reader.exportNotes();
+          reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
+          continue;
+        }
+        if(typeSelection==22) {
+          (void)books::setUiLanguage(books::uiLanguage()==books::UiLanguage::English?
+              books::UiLanguage::Vietnamese:books::UiLanguage::English);
           reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
           continue;
         }

@@ -27,6 +27,8 @@
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
 #include "T9Keypad.hpp"
+#include "LegacyStateMigration.hpp"
+#include "About.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -89,7 +91,7 @@ bool installExitHandlers() {
   sigemptyset(&action.sa_mask);
   if(sigaction(SIGINT,&action,nullptr)==0 && sigaction(SIGTERM,&action,nullptr)==0)
     return true;
-  std::perror("CrossPod: cannot install exit handlers");
+  std::perror("Books: cannot install exit handlers");
   return false;
 }
 
@@ -97,10 +99,10 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 19;
+constexpr int kTypographyItems = 20;  // 19: About
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
-int waitForReaderInput(const crosspod::Q2SocketInput& input,ReaderClock::time_point deadline) {
+int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
   if(interrupted)return 0;
   const auto now=ReaderClock::now();
   const auto delay=std::min(now+std::chrono::seconds(1),deadline)-now;
@@ -112,7 +114,7 @@ int waitForReaderInput(const crosspod::Q2SocketInput& input,ReaderClock::time_po
 int loadWheelSensitivity() {
   std::unique_ptr<std::FILE,decltype(&std::fclose)> config(
       std::fopen("/mnt/data/config.ini","r"),&std::fclose);
-  if(!config)return crosspod::defaultWheelSensitivity;
+  if(!config)return books::defaultWheelSensitivity;
   const auto trim=[](std::string_view text) {
     const auto first=text.find_first_not_of(" \t\r\n");
     if(first==std::string_view::npos)return std::string_view{};
@@ -126,9 +128,9 @@ int loadWheelSensitivity() {
     const auto equals=line.find('=');
     if(inQ2Pod && equals!=std::string_view::npos &&
        trim(line.substr(0,equals))=="WHEELSENSITIVITY")
-      return crosspod::parseWheelSensitivity(trim(line.substr(equals+1)));
+      return books::parseWheelSensitivity(trim(line.substr(equals+1)));
   }
-  return crosspod::defaultWheelSensitivity;
+  return books::defaultWheelSensitivity;
 }
 
 class SessionProfile {
@@ -140,7 +142,7 @@ class SessionProfile {
   }
  public:
   SessionProfile() {
-    const char* value=std::getenv("CROSSPOD_PROFILE_SESSION");
+    const char* value=std::getenv("BOOKS_PROFILE_SESSION");
     enabled_=value && std::strcmp(value,"1")==0 && getrusage(RUSAGE_SELF,&initial_)==0;
   }
   ~SessionProfile() {
@@ -149,7 +151,7 @@ class SessionProfile {
     const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(
         ReaderClock::now()-start_).count();
     std::fprintf(stderr,
-        "CrossPod session: elapsed_ms=%lld user_cpu_us=%lld system_cpu_us=%lld "
+        "Books session: elapsed_ms=%lld user_cpu_us=%lld system_cpu_us=%lld "
         "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld voluntary_switches=%ld "
         "involuntary_switches=%ld\n",
         static_cast<long long>(elapsed),
@@ -491,7 +493,7 @@ bool parseChapter(ZipFile& archive,const std::string& bookPath,
                   const std::string& name,std::vector<Paragraph>& out) {
   size_t size=0;
   if(!archive.getInflatedFileSize(name.c_str(),&size)||!size||size>MAX_XML_BYTES) {
-    std::fprintf(stderr,"CrossPod: unsupported XHTML chapter length: %s (%zu)\n",name.c_str(),size);
+    std::fprintf(stderr,"Books: unsupported XHTML chapter length: %s (%zu)\n",name.c_str(),size);
     return false;
   }
   XML_Parser parser=XML_ParserCreateNS(nullptr,'|');
@@ -506,7 +508,7 @@ bool parseChapter(ZipFile& archive,const std::string& bookPath,
   ZipFile chapterStream(bookPath);
   const bool inflated=chapterStream.readFileToStream(name.c_str(),sink,1024);
   const bool ok=inflated && sink.finish();
-  if(!ok)std::fprintf(stderr,"CrossPod: XHTML stream/parse error %s: %s\n",
+  if(!ok)std::fprintf(stderr,"Books: XHTML stream/parse error %s: %s\n",
       name.c_str(),XML_ErrorString(XML_GetErrorCode(parser)));
   XML_ParserFree(parser);
   if(!ok||collector.limitHit||collector.items.empty())return false;
@@ -517,7 +519,7 @@ class TempCache {
   std::string dir_;
  public:
   TempCache() {
-    char dir[]="/tmp/crosspod-epub-XXXXXX";
+    char dir[]="/tmp/books-epub-XXXXXX";
     if (char* d=mkdtemp(dir)) dir_=d;
   }
   const std::string& path() const { return dir_; }
@@ -531,7 +533,7 @@ class TempCache {
     }
     // Removal of any remaining entries is intentionally NOT recursive.
     if (rmdir(dir_.c_str()) != 0)
-      std::fprintf(stderr,"CrossPod: temporary cache at %s requires cleanup\n",dir_.c_str());
+      std::fprintf(stderr,"Books: temporary cache at %s requires cleanup\n",dir_.c_str());
   }
 };
 
@@ -540,7 +542,7 @@ struct RenderLine {
   int y = 0;
 };
 struct RenderImage {
-  crosspod::PngPreview png;
+  books::PngPreview png;
   int x=0,y=0,width=0,height=0;
 };
 struct RenderPage {
@@ -565,14 +567,14 @@ class Reader {
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   std::unique_ptr<SdCardFont> selectedFont_;
-  crosspod::ScriptFontFallback scriptFonts_;
+  books::ScriptFontFallback scriptFonts_;
   // Keep the complete upstream EPUB parser/Section lifecycle alive for this
-  // book. CrossPod's prior collector remains a fail-safe fallback.
+  // book. Books's prior collector remains a fail-safe fallback.
   std::shared_ptr<Epub> upstreamEpub_;
   std::unique_ptr<Section> upstreamSection_;
   int upstreamFontId_=0;
-  crosspod::Typography typography_{};
-  crosspod::ReaderPreferences preferences_{};
+  books::Typography typography_{};
+  books::ReaderPreferences preferences_{};
   std::string typographyNotice_;
   std::vector<RenderPage> pages_;
   // A bounded 3-page 1-bpp raster cache (~45 KB) avoids repeated SD-page
@@ -588,9 +590,9 @@ class Reader {
   void clearRasterCache() {
     for(auto& item:rasterCache_)item.spine=-1;
   }
-  std::vector<crosspod::Highlight> highlights_;
+  std::vector<books::Highlight> highlights_;
   bool highlightsLoaded_=false;
-  std::vector<crosspod::SelectedWord> selectedWords_;
+  std::vector<books::SelectedWord> selectedWords_;
   int selectionAnchor_=-1;
   int selectionFocus_=-1;
   int currentSpine_ = -1;
@@ -602,28 +604,28 @@ class Reader {
   size_t pageCount() const {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
   }
-  int fontIdForTypography(crosspod::Typography value) const {
+  int fontIdForTypography(books::Typography value) const {
     return 100+static_cast<int>(value.family)*3+(value.size-10);
   }
   ReaderRenderSpec upstreamSpec() const {
-    return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
+    return books::makeReaderRenderSpec(preferences_,upstreamFontId_,
         static_cast<uint16_t>(375),static_cast<uint16_t>(BOTTOM-TOP));
   }
   static std::string stateCacheDir() {
-    const char* state=std::getenv("CROSSPOD_STATE_DIR");
+    const char* state=std::getenv("BOOKS_STATE_DIR");
     struct stat cardDir{};
-    const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&
+    const bool cardMounted=::stat("/mnt/mmc/.books",&cardDir)==0 &&
                           S_ISDIR(cardDir.st_mode);
     const std::string base=state&&*state?state:
-                           (cardMounted?"/mnt/mmc/.crosspod":"/tmp");
+                           (cardMounted?"/mnt/mmc/.books":"/tmp");
     return base+"/cache";
   }
   static std::string resolvePackage(const std::string& book) {
-    if(!crosspod::isTxtFilename(book))return book;
+    if(!books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
-    std::string package=crosspod::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"CrossPod: TXT: %s\n",error.c_str());
+    std::string package=books::packageTxtBook(book,stateCacheDir(),error);
+    if(package.empty())std::fprintf(stderr,"Books: TXT: %s\n",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -640,12 +642,12 @@ class Reader {
     // Section layout cache from a Latin-only build after enabling CJK.
     mix(0x434a4b01ull);
     mix(static_cast<uint64_t>(scriptFonts_.coverageMask()));
-    const char* state=std::getenv("CROSSPOD_STATE_DIR");
+    const char* state=std::getenv("BOOKS_STATE_DIR");
     struct stat cardDir{};
-    const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&
+    const bool cardMounted=::stat("/mnt/mmc/.books",&cardDir)==0 &&
                           S_ISDIR(cardDir.st_mode);
     const std::string base=state&&*state?state:
-                           (cardMounted?"/mnt/mmc/.crosspod":"/tmp");
+                           (cardMounted?"/mnt/mmc/.books":"/tmp");
     const std::string cache=base+"/cache";
     Storage.mkdir(cache.c_str());
     char folder[44];
@@ -657,18 +659,18 @@ class Reader {
     auto* self=static_cast<Reader*>(context);
     if(!self || !self->upstreamEpub_ || !source || !dest)return false;
     HalFile out;
-    if(!Storage.openFileForWrite("CROSSPOD",dest,out))return false;
+    if(!Storage.openFileForWrite("BOOKS",dest,out))return false;
     const bool ok=self->upstreamEpub_->readItemContentsToStream(source,out,4096);
     out.close();
     if(!ok)Storage.remove(dest);
     return ok;
   }
-  bool useTypography(crosspod::Typography settings) {
-    if(!crosspod::validTypography(settings))return false;
+  bool useTypography(books::Typography settings) {
+    if(!books::validTypography(settings))return false;
     auto next=std::make_unique<SdCardFont>();
-    if(!next->load(crosspod::typographyFontPath(settings).c_str()) ||
+    if(!next->load(books::typographyFontPath(settings).c_str()) ||
        !next->getEpdFont()) {
-      if(settings.family!=crosspod::Typography::Family::Sans || settings.size!=12)
+      if(settings.family!=books::Typography::Family::Sans || settings.size!=12)
         return false;
       next.reset();
     }
@@ -679,9 +681,9 @@ class Reader {
     if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
     const int nextFontId=fontIdForTypography(settings);
     if(next && next->getEpdFont()) {
-      renderer_.insertFont(1,crosspod::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
+      renderer_.insertFont(1,books::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
       renderer_.registerSdCardFont(1,next.get());
-      renderer_.insertFont(nextFontId,crosspod::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
+      renderer_.insertFont(nextFontId,books::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
       renderer_.registerSdCardFont(nextFontId,next.get());
     } else {
       renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
@@ -721,15 +723,15 @@ class Reader {
            bytes==0 || bytes>4u*1024u*1024u)continue;
         std::unique_ptr<uint8_t,decltype(&std::free)> resource(
           archive_.readFileToMemory(p.imagePath.c_str(),&bytes,false),&std::free);
-        crosspod::PngPreview png;
+        books::PngPreview png;
         if(!resource)continue;
         const size_t dot=p.imagePath.find_last_of('.');
         std::string extension=dot==std::string::npos?"" :p.imagePath.substr(dot);
         std::transform(extension.begin(),extension.end(),extension.begin(),
                        [](unsigned char c){return static_cast<char>(std::tolower(c));});
         const bool loaded=extension==".png"?
-            crosspod::decodePngPreview(resource.get(),bytes,png):
-            crosspod::decodeJpegPreview(resource.get(),bytes,png);
+            books::decodePngPreview(resource.get(),bytes,png):
+            books::decodeJpegPreview(resource.get(),bytes,png);
         if(!loaded)continue;
         const int width=std::min<int>(TEXT_WIDTH,png.width);
         const int height=std::max<int>(1,static_cast<int>(
@@ -786,7 +788,7 @@ class Reader {
             ++totalLines;
           });
       if (pageLimitReached) {
-        std::fputs("CrossPod: chapter exceeds the bounded page cache\n",stderr);
+        std::fputs("Books: chapter exceeds the bounded page cache\n",stderr);
         return false;
       }
       y+=std::clamp<int>(p.block.bottomInset(),0,48);
@@ -803,10 +805,10 @@ class Reader {
   bool loadLegacyMetadata() {
     temporary_=std::make_unique<TempCache>();
     if (temporary_->path().empty()) {
-      std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;
+      std::fputs("Books: cannot create temporary cache\n",stderr);return false;
     }
     if (!archive_.loadAllFileStatSlims()) {
-      std::fputs("CrossPod: cannot index EPUB ZIP\n",stderr);return false;
+      std::fputs("Books: cannot index EPUB ZIP\n",stderr);return false;
     }
     size_t size=0;
     if (!archive_.getInflatedFileSize("META-INF/container.xml",&size) ||
@@ -852,12 +854,12 @@ class Reader {
   ~Reader() {
     // A layout cut short by the exit is not a page to keep: drop that build
     // instead of suspending it, which would cache its pages.
-    if(upstreamSection_ && crosspodlayout::layoutAborted())upstreamSection_->abandonBuild();
+    if(upstreamSection_ && bookslayout::layoutAborted())upstreamSection_->abandonBuild();
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
   bool open(bool resumeOnOpen=false) {
-    (void)crosspod::loadReaderPreferences(preferences_);
+    (void)books::loadReaderPreferences(preferences_);
     // These are unmodified upstream CrossPoint layout/render sources.
     display_.begin();
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
@@ -868,36 +870,36 @@ class Reader {
     if (!decompressor_.init()) return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
-    crosspod::Typography savedType;
-    if(!crosspod::loadTypography(savedType)) {
+    books::Typography savedType;
+    if(!books::loadTypography(savedType)) {
       (void)useTypography(typography_);
     } else if(!useTypography(savedType)) {
       typographyNotice_="Selected font file missing";
       (void)useTypography(typography_);
     }
-    std::printf("CrossPod typeface: %s %dpt%s\n",
-        crosspod::typographyFamilyName(typography_.family),typography_.size,
+    std::printf("Books typeface: %s %dpt%s\n",
+        books::typographyFamilyName(typography_.family),typography_.size,
         typographyNotice_.empty()?"":" (saved font unavailable; fallback)");
-    std::printf("CrossPod font source: %s\n",
+    std::printf("Books font source: %s\n",
         selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");
-    const char* requestedEngine=std::getenv("CROSSPOD_ENGINE");
+    const char* requestedEngine=std::getenv("BOOKS_ENGINE");
     if(!requestedEngine || std::strcmp(requestedEngine,"legacy")!=0) {
       auto candidate=std::make_shared<Epub>(packagePath_,upstreamCachePath());
       if(candidate->load(true,false)) {
         upstreamEpub_=std::move(candidate);
         ImageBlock::setExtractor(this,&Reader::extractUpstreamImage);
       } else std::fprintf(stderr,
-          "CrossPod: original Section unavailable; using legacy collector\n");
+          "Books: original Section unavailable; using legacy collector\n");
     }
     if(!upstreamEpub_ && !loadLegacyMetadata())return false;
     const auto& info=metadata().coreMetadata;
-    std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
+    std::printf("Books EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata().getSpineCount());
     // Load the saved chapter first; the old startup rendered spine 0 and
     // immediately discarded it when resume opened a later chapter.
-    crosspod::ReadingPosition saved{};
+    books::ReadingPosition saved{};
     const bool hasSaved=resumeOnOpen &&
-        crosspod::loadReadingPosition(bookPath_,saved) &&
+        books::loadReadingPosition(bookPath_,saved) &&
         saved.spine>=0 && saved.spine<metadata().getSpineCount();
     const int firstSpine=hasSaved?saved.spine:0;
     bool loaded=loadSpine(firstSpine,1);
@@ -914,8 +916,8 @@ class Reader {
   }
   void enableResume() {
     resumeEnabled_=true;
-    crosspod::ReadingPosition saved;
-    if(!crosspod::loadReadingPosition(bookPath_,saved))return;
+    books::ReadingPosition saved;
+    if(!books::loadReadingPosition(bookPath_,saved))return;
     if(!loadSpine(saved.spine,1) || currentSpine_!=saved.spine) {
       (void)loadSpine(0,1);
       return;
@@ -925,9 +927,9 @@ class Reader {
     lastPositionAttempt_=std::chrono::steady_clock::now();
   }
   // The place to save: the page, and what names its content for another
-  // engine or a later layout (see crosspod::ReadingPosition).
-  crosspod::ReadingPosition currentPosition() const {
-    crosspod::ReadingPosition position{currentSpine_,currentPage_};
+  // engine or a later layout (see books::ReadingPosition).
+  books::ReadingPosition currentPosition() const {
+    books::ReadingPosition position{currentSpine_,currentPage_};
     if(upstreamSection_) {
       position.engine='o';
       if(auto offset=upstreamSection_->getVisibleTextOffsetForPage(
@@ -946,7 +948,7 @@ class Reader {
   // The original engine finds its own pages by exact text offset; across an
   // engine fallback (a full card, a chapter it cannot lay out) the page index
   // names other content, so the chapter fraction places it instead.
-  void placeSavedPosition(const crosspod::ReadingPosition& saved) {
+  void placeSavedPosition(const books::ReadingPosition& saved) {
     const int spine=currentSpine_;
     if(upstreamSection_ && saved.engine=='o' && saved.textOffset>0) {
       while(!interrupted && upstreamSection_ && currentSpine_==spine &&
@@ -993,7 +995,7 @@ class Reader {
     // Rate-limit retries too. A removed or read-only card should not cause
     // immediate repeated writes. The dirty position survives a failed attempt.
     lastPositionAttempt_=now;
-    if(crosspod::saveReadingPosition(bookPath_,currentPosition()))
+    if(books::saveReadingPosition(bookPath_,currentPosition()))
       positionDirty_=false;
   }
   ReaderClock::time_point nextPositionFlush() const {
@@ -1003,8 +1005,8 @@ class Reader {
   void flushPosition(bool force=true) const {
     if(positionDirty_)persistPosition(force);
   }
-  bool configureTypography(crosspod::Typography requested) {
-    if(!crosspod::validTypography(requested))return false;
+  bool configureTypography(books::Typography requested) {
+    if(!books::validTypography(requested))return false;
     if(requested.family==typography_.family && requested.size==typography_.size)return true;
     const auto previous=typography_;
     const int spine=currentSpine_;
@@ -1032,20 +1034,20 @@ class Reader {
             .value_or(static_cast<uint16_t>(std::min(page,pageCount()-1)));
       } else currentPage_=std::min(page,pageCount()-1);
     }
-    if(!crosspod::saveTypography(typography_))
+    if(!books::saveTypography(typography_))
       typographyNotice_="Settings not saved to SD";
     else typographyNotice_.clear();
     persistPosition();
     return true;
   }
-  crosspod::ShelfDetails shelfDetails() const {
+  books::ShelfDetails shelfDetails() const {
     return {metadata().coreMetadata.title,metadata().coreMetadata.author};
   }
   // Generate a tiny cover once, only after the user has already opened
   // the EPUB. Never inflate cover JPEG/PNG for every bookshelf row or turn.
   bool cacheShelfCover() {
-    crosspod::ShelfCover existing;
-    if(crosspod::loadShelfCover(bookPath_,existing))return true;
+    books::ShelfCover existing;
+    if(books::loadShelfCover(bookPath_,existing))return true;
     const std::string& coverPath=metadata().coreMetadata.coverItemHref;
     if(coverPath.empty()||coverPath.size()>1024 ||
        coverPath.front()=='/' || coverPath.find("..")!=std::string::npos)
@@ -1056,18 +1058,18 @@ class Reader {
     std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
         archive_.readFileToMemory(coverPath.c_str(),&size,false),&std::free);
     if(!bytes || size<8 || size>4u*1024u*1024u)return false;
-    crosspod::PngPreview decoded;
-    bool okay=crosspod::decodePngPreview(bytes.get(),size,decoded);
+    books::PngPreview decoded;
+    bool okay=books::decodePngPreview(bytes.get(),size,decoded);
     if(!okay && bytes.get()[0]==0xff && bytes.get()[1]==0xd8)
-      okay=crosspod::decodeJpegPreview(bytes.get(),size,decoded);
+      okay=books::decodeJpegPreview(bytes.get(),size,decoded);
     if(!okay)return false;
-    crosspod::ShelfCover thumbnail;
-    return crosspod::makeShelfCover(decoded,thumbnail) &&
-           crosspod::saveShelfCover(bookPath_,thumbnail);
+    books::ShelfCover thumbnail;
+    return books::makeShelfCover(decoded,thumbnail) &&
+           books::saveShelfCover(bookPath_,thumbnail);
   }
 
-  crosspod::Typography typography() const {return typography_;}
-  crosspod::ReaderPreferences preferences() const {return preferences_;}
+  books::Typography typography() const {return typography_;}
+  books::ReaderPreferences preferences() const {return preferences_;}
   size_t chapterCount() const {
     if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0)
       return static_cast<size_t>(upstreamEpub_->getTocItemsCount());
@@ -1116,10 +1118,10 @@ class Reader {
   // Sync uses the original CrossPoint XPath/visible-text mapper. Never
   // translate a remote page number directly: each device repaginates EPUBs.
   std::string syncDocumentHash() const {
-    return crosspod::koReaderPartialMd5(bookPath_);
+    return books::koReaderPartialMd5(bookPath_);
   }
   bool pushReadingSync() {
-    const auto config=crosspod::loadConnectedConfig();
+    const auto config=books::loadConnectedConfig();
     if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
       typographyNotice_="Enable sync in connected.conf";
       return false;
@@ -1143,9 +1145,9 @@ class Reader {
       typographyNotice_="Cannot map text position";
       return false;
     }
-    crosspod::RemoteProgress remote{};
+    books::RemoteProgress remote{};
     std::string error;
-    if(!crosspod::pullKoreaderProgress(config,hash,remote,error)) {
+    if(!books::pullKoreaderProgress(config,hash,remote,error)) {
       typographyNotice_="Sync check: "+error;
       return false;
     }
@@ -1157,9 +1159,9 @@ class Reader {
       typographyNotice_="Remote ahead. Pull first.";
       return false;
     }
-    const crosspod::RemoteProgress local{
+    const books::RemoteProgress local{
         mapped.xpath,std::clamp(mapped.percentage,0.f,1.f),true};
-    if(!crosspod::pushKoreaderProgress(config,hash,local,error)) {
+    if(!books::pushKoreaderProgress(config,hash,local,error)) {
       typographyNotice_="Sync upload: "+error;
       return false;
     }
@@ -1167,7 +1169,7 @@ class Reader {
     return true;
   }
   bool pullReadingSync() {
-    const auto config=crosspod::loadConnectedConfig();
+    const auto config=books::loadConnectedConfig();
     if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
       typographyNotice_="Enable sync in connected.conf";
       return false;
@@ -1177,9 +1179,9 @@ class Reader {
       typographyNotice_="Cannot hash EPUB";
       return false;
     }
-    crosspod::RemoteProgress remote{};
+    books::RemoteProgress remote{};
     std::string error;
-    if(!crosspod::pullKoreaderProgress(config,hash,remote,error)) {
+    if(!books::pullKoreaderProgress(config,hash,remote,error)) {
       typographyNotice_="Sync download: "+error;
       return false;
     }
@@ -1214,7 +1216,7 @@ class Reader {
   void dumpToc() {
     if(!upstreamEpub_)return;
     const int count=upstreamEpub_->getTocItemsCount();
-    std::printf("CrossPod TOC entries: %d\n",count);
+    std::printf("Books TOC entries: %d\n",count);
     for(int i=0;i<count;++i) {
       const auto t=upstreamEpub_->getTocItem(i);
       std::printf("toc=%d spine=%d depth=%u title=%s anchor=%s\n",
@@ -1242,11 +1244,11 @@ class Reader {
     }
     return hrefs;
   }
-  std::vector<crosspod::Bookmark> jumpHistory_;
+  std::vector<books::Bookmark> jumpHistory_;
   bool followLink(const std::string& href) {
     if(currentSpine_<0 || !upstreamSection_ || !upstreamEpub_)return false;
     const auto current=metadata().getSpineEntry(currentSpine_).href;
-    const auto destination=crosspod::resolveInternalLink(current,href);
+    const auto destination=books::resolveInternalLink(current,href);
     if(!destination.valid)return false;
     int target=-1;
     for(int i=0;i<metadata().getSpineCount();++i) {
@@ -1256,7 +1258,7 @@ class Reader {
     }
     if(target<0)return false;
     if(jumpHistory_.size()>=16)jumpHistory_.erase(jumpHistory_.begin());
-    const auto original=crosspod::Bookmark{
+    const auto original=books::Bookmark{
         currentSpine_,currentPage_,upstreamSection_->getVisibleTextOffsetForPage(
           static_cast<uint16_t>(currentPage_)).value_or(0)};
     if(target!=currentSpine_ && !loadSpine(target,1))return false;
@@ -1306,7 +1308,7 @@ class Reader {
   }
   std::string footnotePreview(const std::string& href) {
     if(currentSpine_<0)return {};
-    return crosspod::loadFootnotePreview(archive_,
+    return books::loadFootnotePreview(archive_,
       metadata().getSpineEntry(currentSpine_).href,href);
   }
   void showFootnotePopup(const std::string& href) {
@@ -1361,9 +1363,9 @@ class Reader {
     drawMenuText(22,278,"Wheel: pick  Center: go");  // "follow" was clipped
     display_.displayBuffer();
   }
-  const std::vector<crosspod::Highlight>& highlights() {
+  const std::vector<books::Highlight>& highlights() {
     if(!highlightsLoaded_) {
-      highlights_=crosspod::loadHighlights(bookPath_);
+      highlights_=books::loadHighlights(bookPath_);
       highlightsLoaded_=true;
     }
     return highlights_;
@@ -1372,7 +1374,7 @@ class Reader {
     if(!upstreamSection_)return false;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
     if(!page)return false;
-    selectedWords_=crosspod::selectableWords(
+    selectedWords_=books::selectableWords(
         *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
     selectionAnchor_=selectedWords_.empty()?-1:0;
     selectionFocus_=selectionAnchor_;
@@ -1381,7 +1383,7 @@ class Reader {
   bool selectTouchWord(int x,int y,bool extend) {
     if(!extend || selectedWords_.empty())
       if(!beginTextSelection())return false;
-    const int picked=crosspod::hitSelectableWord(selectedWords_,x,y);
+    const int picked=books::hitSelectableWord(selectedWords_,x,y);
     if(picked<0)return false;
     if(!extend)selectionAnchor_=picked;
     selectionFocus_=picked;
@@ -1425,7 +1427,7 @@ class Reader {
   bool saveSelectionHighlight() {
     uint32_t start=0,end=0;
     if(!selectionRange(start,end) ||
-       !crosspod::addHighlight(bookPath_,{
+       !books::addHighlight(bookPath_,{
          static_cast<uint32_t>(currentSpine_),start,end}))return false;
     highlightsLoaded_=false;
     return true;
@@ -1433,7 +1435,7 @@ class Reader {
   bool eraseSelectionHighlight() {
     uint32_t start=0,end=0;
     if(!selectionRange(start,end) ||
-       !crosspod::removeHighlightAt(bookPath_,
+       !books::removeHighlightAt(bookPath_,
          static_cast<uint32_t>(currentSpine_),start))return false;
     highlightsLoaded_=false;
     return true;
@@ -1444,17 +1446,17 @@ class Reader {
     if(highlights.empty() && selectionAnchor_<0)return;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
     if(!page)return;
-    const auto words=crosspod::selectableWords(
+    const auto words=books::selectableWords(
         *page,renderer_,upstreamFontId_,preferences_.margin,TOP);
     uint32_t start=0,end=0;
     const bool active=selectionRange(start,end);
     for(const auto& word:words) {
       bool marked=active &&
-          crosspod::overlapsVisibleWord(word,start,end);
+          books::overlapsVisibleWord(word,start,end);
       if(!marked)
         for(const auto& h:highlights)
           if(h.spine==static_cast<uint32_t>(currentSpine_) &&
-             crosspod::overlapsVisibleWord(word,h.begin,h.end)) {
+             books::overlapsVisibleWord(word,h.begin,h.end)) {
             marked=true;break;
           }
       if(marked)invertMenuRect(word.x-1,word.y+2,word.width+2,
@@ -1493,7 +1495,7 @@ class Reader {
       dictionaryWord_=selected;
       dictionaryPages_.clear();
       dictionaryPage_=0;
-      const auto matches=crosspod::lookupDefinitions(selected);
+      const auto matches=books::lookupDefinitions(selected);
       constexpr int kLines=4;
       constexpr int kWidth=325;  // inside the overlay, in the overlay font
       const auto fits=[&](const std::string& t){return renderer_.getTextWidth(2,t.c_str())<=kWidth;};
@@ -1565,15 +1567,15 @@ class Reader {
     const uint32_t offset=upstreamSection_?
       upstreamSection_->getVisibleTextOffsetForPage(
         static_cast<uint16_t>(currentPage_)).value_or(0):0;
-    const bool saved=crosspod::addBookmark(bookPath_,
+    const bool saved=books::addBookmark(bookPath_,
       {currentSpine_,currentPage_,offset});
     typographyNotice_=saved?"Bookmark saved":"Cannot save bookmark";
     return saved;
   }
-  std::vector<crosspod::Bookmark> bookmarks() const {
-    return crosspod::loadBookmarks(bookPath_);
+  std::vector<books::Bookmark> bookmarks() const {
+    return books::loadBookmarks(bookPath_);
   }
-  bool goToBookmark(const crosspod::Bookmark& mark) {
+  bool goToBookmark(const books::Bookmark& mark) {
     // Bookmark chapter numbers are OPF spine indices, not TOC entry ordinals.
     if(mark.spine<0 || !loadSpine(mark.spine,1))return false;
     if(upstreamSection_ && mark.textOffset) {
@@ -1605,7 +1607,7 @@ class Reader {
     renderer_.drawText(1,23,44,showingBookmarks?"Bookmarks":"Chapters");
     renderer_.fillRect(18,72,337,1,true);
     const auto marks=showingBookmarks?bookmarks():
-      std::vector<crosspod::Bookmark>{};
+      std::vector<books::Bookmark>{};
     const size_t count=showingBookmarks?marks.size():chapterCount();
     if(!count)renderer_.drawText(1,25,120,showingBookmarks?"No bookmarks yet":"No chapters");
     const int rows=navRows(),height=navRowHeight();
@@ -1630,7 +1632,7 @@ class Reader {
   }
 
   bool adjustPreference(int option) {
-    crosspod::ReaderPreferences next=preferences_;
+    books::ReaderPreferences next=preferences_;
     switch(option) {
       case 2: next.linePercent=next.linePercent==100?120:
           (next.linePercent==120?140:100);break;
@@ -1642,18 +1644,18 @@ class Reader {
       case 7: next.nightMode=!next.nightMode;break;
       case 16: next.focusReading=!next.focusReading;break;
       case 17: {
-        const auto& choices=crosspod::autoTurnChoices;
+        const auto& choices=books::autoTurnChoices;
         const auto* at=std::find(std::begin(choices),std::end(choices),next.autoTurnSeconds);
         next.autoTurnSeconds=(at==std::end(choices)||at+1==std::end(choices))?choices[0]:*(at+1);
         break;
       }
       default:return false;
     }
-    if(!crosspod::validReaderPreferences(next))return false;
+    if(!books::validReaderPreferences(next))return false;
     if(option==17) {
       // A timer, not layout: nothing to re-lay out or invalidate.
       preferences_=next;
-      const bool saved=crosspod::saveReaderPreferences(preferences_);
+      const bool saved=books::saveReaderPreferences(preferences_);
       typographyNotice_=!saved?"Reading settings not saved":
           next.autoTurnSeconds?"Over 2 min idle needs Q2 Pod Smart Awake":"";
       return true;
@@ -1663,7 +1665,7 @@ class Reader {
       // SD cache invalidation are necessary.
       preferences_=next;
       clearRasterCache();
-      const bool saved=crosspod::saveReaderPreferences(preferences_);
+      const bool saved=books::saveReaderPreferences(preferences_);
       typographyNotice_=saved?"":"Reading settings not saved";
       return true;
     }
@@ -1695,7 +1697,7 @@ class Reader {
       currentPage_=nextPage.value_or(
         static_cast<uint16_t>(std::min(priorPage,pageCount()-1)));
     } else if(pageCount())currentPage_=std::min(priorPage,pageCount()-1);
-    if(!crosspod::saveReaderPreferences(preferences_))
+    if(!books::saveReaderPreferences(preferences_))
       typographyNotice_="Reading settings not saved";
     else typographyNotice_.clear();
     persistPosition();
@@ -1853,9 +1855,9 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %"};
+        "Focus read","Auto turn","Go to %","About"};
     const std::string values[]={
-      crosspod::typographyFamilyName(typography_.family),
+      books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
       std::to_string(preferences_.linePercent)+"%",
       std::to_string(preferences_.margin)+"px",
@@ -1868,7 +1870,8 @@ class Reader {
       "Save position","Use remote position",
       preferences_.focusReading?"On":"Off",
       preferences_.autoTurnSeconds?std::to_string(preferences_.autoTurnSeconds)+"s":"Off",
-      std::to_string(bookPercent())+"%"
+      std::to_string(bookPercent())+"%",
+      std::string("v")+BOOKS_VERSION
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -1931,13 +1934,13 @@ class Reader {
           currentSpine_=index;
           currentPage_=direction<0?upstreamSection_->pageCount-1:0;
           pages_.clear();
-          std::printf("CrossPod original Section: spine %d/%d, %zu page(s)%s\n",
+          std::printf("Books original Section: spine %d/%d, %zu page(s)%s\n",
               index+1,n,pageCount(),
               upstreamSection_->isBuilding()?" (incremental)":"");
           return true;
         }
         std::fprintf(stderr,
-           "CrossPod: original Section could not lay out spine %d; falling back\n",index+1);
+           "Books: original Section could not lay out spine %d; falling back\n",index+1);
       }
       const auto entry=metadata().getSpineEntry(index);
       std::vector<Paragraph> paragraphs;
@@ -1946,7 +1949,7 @@ class Reader {
         upstreamSection_.reset();
         currentSpine_=index;
         currentPage_=direction<0?pages_.size()-1:0;
-        std::printf("CrossPod legacy fallback: spine %d/%d, %zu page(s)\n",
+        std::printf("Books legacy fallback: spine %d/%d, %zu page(s)\n",
             index+1,n,pages_.size());
         return true;
       }
@@ -1962,7 +1965,7 @@ class Reader {
     if(!upstreamSection_ || !upstreamSection_->isBuilding())return false;
     const size_t before=pageCount();
     if(!upstreamSection_->buildSomeMore(maxPages)) {
-      std::fprintf(stderr,"CrossPod: incremental Section failed; preserving book via fallback\n");
+      std::fprintf(stderr,"Books: incremental Section failed; preserving book via fallback\n");
       const int spine=currentSpine_;
       const size_t page=currentPage_;
       if(!loadLegacyMetadata())return false;
@@ -1975,7 +1978,7 @@ class Reader {
       return true;
     }
     if(!upstreamSection_->isBuilding())
-      std::printf("CrossPod Section completed: %zu pages\n",pageCount());
+      std::printf("Books Section completed: %zu pages\n",pageCount());
     return pageCount()!=before;
   }
   bool isBuilding() const {return upstreamSection_ && upstreamSection_->isBuilding();}
@@ -2060,11 +2063,26 @@ class Reader {
       return true;
     }
     if(!loadSpine(spine,1) || currentSpine_!=spine)return false;
-    crosspod::ReadingPosition place{spine,0,upstreamSection_?'l':'o',0,within};
+    books::ReadingPosition place{spine,0,upstreamSection_?'l':'o',0,within};
     placeSavedPosition(place);
     clearRasterCache();
     persistPosition(true);
     return true;
+  }
+  void showAbout() {
+    renderer_.clearScreen(0xff);
+    renderer_.fillRect(10,37,355,258,true);
+    renderer_.fillRect(12,39,351,254,false);
+    drawMenuText(22,47,(std::string("Books ")+BOOKS_VERSION).c_str());
+    renderer_.fillRect(18,66,337,1,true);
+    int y=76;
+    for(const char* line:books::kAboutLines) {
+      const bool small=!line[0] || std::strncmp(line,"github",6)==0 || std::strncmp(line,"MIT",3)==0;
+      drawMenuText(22,y+(small&&line[0]?4:0),line,small?1:2);
+      y+=!line[0]?8:19;
+    }
+    drawMenuText(22,277,"Any key: back",1);
+    display_.displayBuffer();
   }
   void showPercentDialog(int percent) {
     renderer_.clearScreen(0xff);
@@ -2129,7 +2147,7 @@ class Reader {
         // successful blank page. Preserve the previous framebuffer and retry
         // on the next draw instead of permanently caching an empty raster.
         std::fprintf(stderr,
-            "CrossPod: page %zu in spine %d unavailable; refusing blank cache\n",
+            "Books: page %zu in spine %d unavailable; refusing blank cache\n",
             currentPage_,currentSpine_);
         return;
       }
@@ -2149,7 +2167,7 @@ class Reader {
         // Direct bitmap menu glyphs work even when the SD-book font has
         // failed; leave a visible diagnostic instead of a silent white page.
         drawMenuText(20,140,"Page text unavailable",1);
-        std::fprintf(stderr,"CrossPod: no body ink after glyph retry at spine %d page %zu\n",
+        std::fprintf(stderr,"Books: no body ink after glyph retry at spine %d page %zu\n",
                      currentSpine_,currentPage_);
       }
       drawProgress();
@@ -2158,7 +2176,7 @@ class Reader {
       return;
     }
     if(currentPage_>=pages_.size()) {
-      std::fputs("CrossPod: legacy page unavailable; preserving current framebuffer\n",stderr);
+      std::fputs("Books: legacy page unavailable; preserving current framebuffer\n",stderr);
       return;
     }
     renderer_.clearScreen(0xff);
@@ -2204,7 +2222,7 @@ class Reader {
     if(std::fclose(file)!=0)ok=false;
     return ok;
   }
-  const std::vector<crosspod::SelectedWord>& selectableWordsForTest() const {return selectedWords_;}
+  const std::vector<books::SelectedWord>& selectableWordsForTest() const {return selectedWords_;}
   // Ink bounding box of the book area of the rendered page (no footer).
   bool inkBounds(int& x0,int& y0,int& x1,int& y1) {
     render();
@@ -2243,7 +2261,7 @@ class Reader {
     return n;
   }
   void report() const {
-    std::printf("CrossPod validated %s: page %zu/%zu, spine %d/%d\n",
+    std::printf("Books validated %s: page %zu/%zu, spine %d/%d\n",
         bookPath_.c_str(),currentPage_+1,pageCount(),
         currentSpine_+1,metadata().getSpineCount());
   }
@@ -2253,10 +2271,10 @@ class Reader {
 // Q2 Pod card-app launcher: the card executable receives no book-path argv.
 // The Books shelf is intentionally independent of the stock reader and only
 // discovers regular, non-hidden EPUB files from the SD card (one subdir deep).
-using crosspod::ShelfEntry;
-using crosspod::scanCardBooks;
+using books::ShelfEntry;
+using books::scanCardBooks;
 std::string clippedLabel(const std::string& label,size_t maxCodepoints) {
-  return crosspod::clippedUiLabel(label,maxCodepoints);
+  return books::clippedUiLabel(label,maxCodepoints);
 }
 
 class CardShelf {
@@ -2264,7 +2282,7 @@ class CardShelf {
   HalDisplay display_;
   GfxRenderer renderer_;
   EpdFont font_;
-  crosspod::ScriptFontFallback scriptFonts_;
+  books::ScriptFontFallback scriptFonts_;
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   size_t selected_ = 0;  // index within filtered browsing rows
@@ -2273,21 +2291,21 @@ class CardShelf {
   std::string searchQuery_;
   bool searchEditing_=false;
   size_t searchKey_=0;          // the keypad key the wheel is on
-  crosspod::T9Keypad keypad_;
-  crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
-  std::vector<crosspod::ShelfDetails> cachedDetails_;
+  books::T9Keypad keypad_;
+  books::ShelfSortMode sortMode_=books::ShelfSortMode::Title;
+  std::vector<books::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
-  crosspod::ShelfCover currentCover_{};
+  books::ShelfCover currentCover_{};
   bool currentCoverChecked_=false;
   bool currentCoverAvailable_=false;
   bool browsing_ = false;
   bool onlineMode_=false;
   std::string onlineUrl_;
   std::string onlineTitle_;
-  std::vector<crosspod::OpdsEntry> onlineEntries_;
+  std::vector<books::OpdsEntry> onlineEntries_;
   std::vector<std::string> onlineHistory_;
   size_t onlineSelection_=0;
-  crosspod::OpdsFeed onlineFeed_;     // links of the page shown (search, next)
+  books::OpdsFeed onlineFeed_;     // links of the page shown (search, next)
   bool onlineSearching_=false;        // the keyboard is for a catalog search
   bool searchSubmit_=false;
   int homeSelection_ = 0;
@@ -2300,7 +2318,7 @@ class CardShelf {
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
                      size_t current=0,
-                     crosspod::ShelfSortMode sortMode=crosspod::ShelfSortMode::Title):
+                     books::ShelfSortMode sortMode=books::ShelfSortMode::Title):
       books_(books),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
@@ -2336,15 +2354,15 @@ class CardShelf {
   bool onlineMode() const {return onlineMode_;}
   bool searching() const {return browsing_ && searchEditing_;}
   bool enterOnline() {
-    const auto config=crosspod::loadConnectedConfig();
+    const auto config=books::loadConnectedConfig();
     if(!config.configured()) {
-      notice_="Set .crosspod/connected.conf";
+      notice_="Set .books/connected.conf";
       return false;
     }
     return loadOnlinePage(config.opdsUrl,false);
   }
   bool loadOnlinePage(const std::string& url,bool saveHistory) {
-    auto feed=crosspod::fetchOpdsFeed(url);
+    auto feed=books::fetchOpdsFeed(url);
     if(!feed.error.empty()) {
       notice_=feed.error;
       return false;
@@ -2366,7 +2384,7 @@ class CardShelf {
     const auto previous=onlineHistory_.back();
     onlineHistory_.pop_back();
     // A failed network fetch must not strand the user. Back twice exits.
-    auto feed=crosspod::fetchOpdsFeed(previous);
+    auto feed=books::fetchOpdsFeed(previous);
     if(!feed.error.empty()) {
       onlineMode_=false;onlineEntries_.clear();goHome();return;
     }
@@ -2376,19 +2394,19 @@ class CardShelf {
   }
   // M4: a feed's search link becomes a first "Search" row and its rel="next"
   // link a last "More results" row (OPDS catalogs page long lists).
-  void showFeed(crosspod::OpdsFeed feed) {
+  void showFeed(books::OpdsFeed feed) {
     onlineTitle_=feed.title.empty()?"Connected library":feed.title;
     onlineEntries_=std::move(feed.entries);
     feed.entries.clear();
     if(!feed.searchTemplate.empty() || !feed.searchDescription.empty()) {
-      crosspod::OpdsEntry search;
-      search.kind=crosspod::OpdsEntry::Kind::Search;
+      books::OpdsEntry search;
+      search.kind=books::OpdsEntry::Kind::Search;
       search.title="Search this catalog";
       onlineEntries_.insert(onlineEntries_.begin(),std::move(search));
     }
     if(!feed.nextHref.empty()) {
-      crosspod::OpdsEntry more;
-      more.kind=crosspod::OpdsEntry::Kind::More;
+      books::OpdsEntry more;
+      more.kind=books::OpdsEntry::Kind::More;
       more.title="More results";
       more.href=feed.nextHref;
       onlineEntries_.push_back(std::move(more));
@@ -2398,7 +2416,7 @@ class CardShelf {
     onlineSearching_=false;searchEditing_=false;
   }
   void enterOnlineSearch() {
-    onlineSearching_=true;searchEditing_=true;searchKey_=crosspod::T9Keypad::Abc;searchQuery_.clear();
+    onlineSearching_=true;searchEditing_=true;searchKey_=books::T9Keypad::Abc;searchQuery_.clear();
     keypad_.reset();
     notice_.clear();
   }
@@ -2409,7 +2427,7 @@ class CardShelf {
   // the history, so Back returns to the page that was searched.
   bool submitOnlineSearch() {
     std::string error;
-    const std::string url=crosspod::opdsSearchUrl(onlineFeed_,searchQuery_,error);
+    const std::string url=books::opdsSearchUrl(onlineFeed_,searchQuery_,error);
     if(url.empty()) {
       notice_=searchQuery_.empty()?"Type a search first":error;
       return false;
@@ -2419,9 +2437,9 @@ class CardShelf {
     return true;
   }
   bool onlineHasSelection() const {return onlineSelection_<onlineEntries_.size();}
-  crosspod::OpdsEntry onlineEntry() const {
+  books::OpdsEntry onlineEntry() const {
     return onlineHasSelection()?onlineEntries_[onlineSelection_]:
-      crosspod::OpdsEntry{};
+      books::OpdsEntry{};
   }
   void onlineTouch(int x,int y) {
     if(y<TOP_Y || y>=TOP_Y+VISIBLE_ROWS*ROW_H)return;
@@ -2435,17 +2453,17 @@ class CardShelf {
     searchQuery_.clear();refreshVisible();notice_.clear();
   }
   void enterSearch() {
-    browsing_=true;searchEditing_=true;searchKey_=crosspod::T9Keypad::Abc;keypad_.reset();
+    browsing_=true;searchEditing_=true;searchKey_=books::T9Keypad::Abc;keypad_.reset();
     notice_.clear();
   }
   void endSearch() {searchEditing_=false;onlineSearching_=false;notice_.clear();}
-  static constexpr size_t SEARCH_KEY_COUNT=crosspod::kT9Keys;
+  static constexpr size_t SEARCH_KEY_COUNT=books::kT9Keys;
   // The keypad: rows of 4 keys under the field (Q2's own T9 layout).
   static constexpr int KB_X=12, KB_Y=112, KB_W=86, KB_H=37, KB_GAP=2;
   bool applySearchChoice() {
     const auto result=keypad_.press(static_cast<int>(searchKey_),searchQuery_,
                                     onlineSearching_?40:24);
-    if(result==crosspod::T9Result::Done) {
+    if(result==books::T9Result::Done) {
       if(onlineSearching_){searchSubmit_=true;return true;}
       endSearch();return true;
     }
@@ -2459,7 +2477,7 @@ class CardShelf {
     for(size_t i=0;i<books_.size();++i) {
       if(searchQuery_.empty()) {visible_.push_back(i);continue;}
       const auto& info=details(i);
-      if(crosspod::shelfSearchMatches(
+      if(books::shelfSearchMatches(
           searchQuery_,books_[i].label,info.title,info.author))
         visible_.push_back(i);
     }
@@ -2529,32 +2547,32 @@ class CardShelf {
     selected_=index;
     return true;
   }
-  const crosspod::ShelfDetails& details(size_t index) {
+  const books::ShelfDetails& details(size_t index) {
     if(!detailsChecked_[index]) {
       detailsChecked_[index]=true;
-      (void)crosspod::loadShelfDetails(books_[index].path,cachedDetails_[index]);
+      (void)books::loadShelfDetails(books_[index].path,cachedDetails_[index]);
     }
     return cachedDetails_[index];
   }
   void drawBookCover(int x,int y,size_t index) {
     if(!currentCoverChecked_) {
-      currentCoverAvailable_=crosspod::loadShelfCover(books_[index].path,currentCover_);
+      currentCoverAvailable_=books::loadShelfCover(books_[index].path,currentCover_);
       currentCoverChecked_=true;
     }
-    renderer_.drawLine(x-1,y-1,x+crosspod::ShelfCover::width,y-1,true);
-    renderer_.drawLine(x-1,y-1,x-1,y+crosspod::ShelfCover::height,true);
-    renderer_.drawLine(x+crosspod::ShelfCover::width,y-1,
-                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
-    renderer_.drawLine(x-1,y+crosspod::ShelfCover::height,
-                       x+crosspod::ShelfCover::width,y+crosspod::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y-1,x+books::ShelfCover::width,y-1,true);
+    renderer_.drawLine(x-1,y-1,x-1,y+books::ShelfCover::height,true);
+    renderer_.drawLine(x+books::ShelfCover::width,y-1,
+                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y+books::ShelfCover::height,
+                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
     if(!currentCoverAvailable_) {
       renderer_.drawLine(x+7,y+12,x+39,y+12,true);
       renderer_.drawLine(x+7,y+18,x+39,y+18,true);
       return;
     }
-    for(int py=0;py<crosspod::ShelfCover::height;++py)
-      for(int px=0;px<crosspod::ShelfCover::width;++px)
-        if(currentCover_.ink[py*crosspod::ShelfCover::stride+px/8] &
+    for(int py=0;py<books::ShelfCover::height;++py)
+      for(int px=0;px<books::ShelfCover::width;++px)
+        if(currentCover_.ink[py*books::ShelfCover::stride+px/8] &
            (0x80u>>(px&7)))
           renderer_.drawPixel(x+px,y+py,true);
   }
@@ -2660,7 +2678,7 @@ class CardShelf {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
     // Invert the header raster so its text stays white on the dark title bar.
-    drawRowLabel(16,0,39,"CrossPod");
+    drawRowLabel(16,0,39,"Books");
     uint8_t* fb=display_.getFrameBuffer();
     for(int y=0;y<39;++y)
       for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
@@ -2681,9 +2699,9 @@ class CardShelf {
         const bool active=index==onlineSelection_;
         const auto& entry=onlineEntries_[index];
         const std::string prefix=
-          entry.kind==crosspod::OpdsEntry::Kind::Epub?"[EPUB] ":
-          entry.kind==crosspod::OpdsEntry::Kind::Search?"[FIND] ":
-          entry.kind==crosspod::OpdsEntry::Kind::More?">> ":"[DIR] ";
+          entry.kind==books::OpdsEntry::Kind::Epub?"[EPUB] ":
+          entry.kind==books::OpdsEntry::Kind::Search?"[FIND] ":
+          entry.kind==books::OpdsEntry::Kind::More?">> ":"[DIR] ";
         drawListRow(y,clippedLabel(prefix+entry.title,31),entry.author,active);
       }
     } else if(!browsing_) {
@@ -2718,7 +2736,7 @@ class CardShelf {
       drawRowLabel(22,204,37,"Browse files",
           homeSelection_!=1 && !books_.empty());
       std::string sortText="Sort: ";
-      sortText+=crosspod::shelfSortLabel(sortMode_);
+      sortText+=books::shelfSortLabel(sortMode_);
       if(homeSelection_==2)renderer_.fillRect(12,244,HOME_ONLINE_X-22,23,true);
       if(homeSelection_==3)renderer_.fillRect(HOME_ONLINE_X,244,362-HOME_ONLINE_X,23,true);
       drawRowLabel(22,244,23,
@@ -2762,7 +2780,7 @@ class CardShelf {
       } else drawCompactLabel(20,106,"Wheel: key   Centre: press   Again: next letter",120);
       for(int key=0;key<static_cast<int>(SEARCH_KEY_COUNT);++key) {
         const int x=KB_X+(key%4)*(KB_W+KB_GAP), y=KB_Y+(key/4)*(KB_H+KB_GAP);
-        const bool fn=crosspod::T9Keypad::functionKey(key);
+        const bool fn=books::T9Keypad::functionKey(key);
         const bool focus=static_cast<size_t>(key)==searchKey_;
         const std::string label=keypad_.label(key);
         // Function keys are dark, as Q2's; the wheel's key is inverted.
@@ -2840,24 +2858,24 @@ class CardShelf {
 // RD-01 go-to-percent dialog input, shared by the card app and the Books
 // handoff reader. Returns true while the dialog stays open.
 enum class PercentResult { Open, Cancelled, Moved, Failed };
-PercentResult handlePercentInput(Reader& reader,crosspod::LogicalAction action,
-                                 const crosspod::PhysicalEvent& event,int& percent) {
-  const bool wheel=event.kind==crosspod::PhysicalKind::WheelStep;
-  if(action==crosspod::LogicalAction::Back ||
-     (event.kind==crosspod::PhysicalKind::TouchUp && event.y<70))
+PercentResult handlePercentInput(Reader& reader,books::LogicalAction action,
+                                 const books::PhysicalEvent& event,int& percent) {
+  const bool wheel=event.kind==books::PhysicalKind::WheelStep;
+  if(action==books::LogicalAction::Back ||
+     (event.kind==books::PhysicalKind::TouchUp && event.y<70))
     return PercentResult::Cancelled;
-  if(action==crosspod::LogicalAction::Previous || action==crosspod::LogicalAction::Next) {
+  if(action==books::LogicalAction::Previous || action==books::LogicalAction::Next) {
     const int step=wheel?1:10;
-    percent=std::clamp(percent+(action==crosspod::LogicalAction::Next?step:-step),0,100);
+    percent=std::clamp(percent+(action==books::LogicalAction::Next?step:-step),0,100);
     reader.showPercentDialog(percent);
     return PercentResult::Open;
   }
-  if(event.kind==crosspod::PhysicalKind::TouchUp && event.y>=170 && event.y<=190) {
+  if(event.kind==books::PhysicalKind::TouchUp && event.y>=170 && event.y<=190) {
     percent=std::clamp((event.x-30)*100/315,0,100);
     reader.showPercentDialog(percent);
     return PercentResult::Open;
   }
-  if(action==crosspod::LogicalAction::Confirm || event.kind==crosspod::PhysicalKind::TouchUp)
+  if(action==books::LogicalAction::Confirm || event.kind==books::PhysicalKind::TouchUp)
     return reader.goToBookPercent(percent)?PercentResult::Moved:PercentResult::Failed;
   return PercentResult::Open;
 }
@@ -2883,24 +2901,24 @@ int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
   // Downloads cut off by a kill leave an unlocked .part each: remove them.
-  if(const int stale=crosspod::sweepStaleOpdsDownloads(bookDir))
-    std::fprintf(stderr,"CrossPod: removed %d interrupted download(s)\n",stale);
+  if(const int stale=books::sweepStaleOpdsDownloads(bookDir))
+    std::fprintf(stderr,"Books: removed %d interrupted download(s)\n",stale);
   std::vector<ShelfEntry> books=scanCardBooks(bookDir);
   if(interrupted)return 0;
-  auto recent=crosspod::loadRecentBooks();
-  auto sortMode=crosspod::ShelfSortMode::Title;
-  crosspod::sortShelfBooks(books,sortMode,recent);
-  crosspod::Q2SocketInput input;
+  auto recent=books::loadRecentBooks();
+  auto sortMode=books::ShelfSortMode::Title;
+  books::sortShelfBooks(books,sortMode,recent);
+  books::Q2SocketInput input;
   if(!input.open()) {
-    std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
+    std::fputs("Books card: cannot bind /tmp/q2-books.input.sock\n",stderr);
     return 5;
   }
-  size_t selection=crosspod::lastOpenedIndex(books,recent);
+  size_t selection=books::lastOpenedIndex(books,recent);
   std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
   if(!shelf->open())return 4;
   if(interrupted)return 0;
   shelf->present();
-  crosspod::Q2Controls controls(loadWheelSensitivity());
+  books::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
   bool typeMenu=false;
   bool navigationMenu=false;
@@ -2911,6 +2929,7 @@ int runCardApp(const std::string& bookDir) {
   bool dictionaryOverlay=false;
   bool footnoteOverlay=false;
   bool percentDialog=false;
+  bool aboutShown=false;
   int percentValue=0;
   // RD-02 auto page turn: the next turn is due at this time; reset by input.
   auto nextAutoTurn=ReaderClock::time_point::max();
@@ -2928,11 +2947,11 @@ int runCardApp(const std::string& bookDir) {
       std::chrono::milliseconds(800);
   // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
   // its own step, before reading the next datagram.
-  crosspod::LogicalAction pendingAction=crosspod::LogicalAction::None;
+  books::LogicalAction pendingAction=books::LogicalAction::None;
   int pendingRepeat=0;
   while(!interrupted) {
     if(reader)reader->flushPosition(false);
-    crosspod::PhysicalEvent event{};
+    books::PhysicalEvent event{};
     if(pendingRepeat==0 && !input.receive(event)) {
       const auto now=std::chrono::steady_clock::now();
       // Work only while idle on the bookshelf, not when reading or during
@@ -2940,7 +2959,7 @@ int runCardApp(const std::string& bookDir) {
       // never parse chapter pages or write an index on every wheel turn.
       if(!reader && shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
-        const auto result=crosspod::indexShelfBook(book);
+        const auto result=books::indexShelfBook(book);
         if(result.updated) {
           shelf->onIndexedBook(book);
           shelf->present();
@@ -2969,17 +2988,17 @@ int runCardApp(const std::string& bookDir) {
       if(!reader && shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
-        std::fputs("CrossPod: input socket poll failed\n",stderr);
+        std::fputs("Books: input socket poll failed\n",stderr);
         return 5;
       }
       continue;
     }
     if(interrupted)break;
-    crosspod::LogicalAction action;
+    books::LogicalAction action;
     if(pendingRepeat>0) {
       --pendingRepeat;
-      event=crosspod::PhysicalEvent{};
-      event.kind=crosspod::PhysicalKind::WheelStep;
+      event=books::PhysicalEvent{};
+      event.kind=books::PhysicalKind::WheelStep;
       action=pendingAction;
     } else {
       const auto mapped=controls.translate(event);
@@ -3003,12 +3022,12 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(footnoteOverlay) {
-        if(action==crosspod::LogicalAction::Back ||
-           (event.kind==crosspod::PhysicalKind::TouchUp && event.x<187)) {
+        if(action==books::LogicalAction::Back ||
+           (event.kind==books::PhysicalKind::TouchUp && event.x<187)) {
           footnoteOverlay=false;
           reader->present();
-        } else if(action==crosspod::LogicalAction::Confirm ||
-                  event.kind==crosspod::PhysicalKind::TouchUp) {
+        } else if(action==books::LogicalAction::Confirm ||
+                  event.kind==books::PhysicalKind::TouchUp) {
           footnoteOverlay=false;
           const bool jumped=reader->followLink(footnoteHref);
           if(jumped) {
@@ -3018,12 +3037,12 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(dictionaryOverlay) {
-        if(action==crosspod::LogicalAction::Next ||
-           action==crosspod::LogicalAction::Previous) {
-          reader->showDictionaryDefinition(action==crosspod::LogicalAction::Next?1:-1);
-        } else if(action==crosspod::LogicalAction::Back ||
-           action==crosspod::LogicalAction::Confirm ||
-           event.kind==crosspod::PhysicalKind::TouchUp) {
+        if(action==books::LogicalAction::Next ||
+           action==books::LogicalAction::Previous) {
+          reader->showDictionaryDefinition(action==books::LogicalAction::Next?1:-1);
+        } else if(action==books::LogicalAction::Back ||
+           action==books::LogicalAction::Confirm ||
+           event.kind==books::PhysicalKind::TouchUp) {
           dictionaryOverlay=false;
           selectionActions=true;
           reader->showTextSelectionMenu(selectionAction);
@@ -3031,16 +3050,16 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(selectionActions) {
-        if(action==crosspod::LogicalAction::Back) {
+        if(action==books::LogicalAction::Back) {
           selectionActions=false;reader->discardSelection();reader->present();
-        } else if(action==crosspod::LogicalAction::Next ||
-                  action==crosspod::LogicalAction::Previous) {
+        } else if(action==books::LogicalAction::Next ||
+                  action==books::LogicalAction::Previous) {
           selectionAction=(selectionAction+
-              (action==crosspod::LogicalAction::Next?1:3))%4;
+              (action==books::LogicalAction::Next?1:3))%4;
           reader->showTextSelectionMenu(selectionAction);
-        } else if(action==crosspod::LogicalAction::Confirm ||
-                  event.kind==crosspod::PhysicalKind::TouchUp) {
-          if(event.kind==crosspod::PhysicalKind::TouchUp) {
+        } else if(action==books::LogicalAction::Confirm ||
+                  event.kind==books::PhysicalKind::TouchUp) {
+          if(event.kind==books::PhysicalKind::TouchUp) {
             if(event.y<260||event.y>=302)continue;
             selectionAction=std::clamp((event.x-20)/85,0,3);
           }
@@ -3056,16 +3075,16 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(selectionChoosing) {
-        if(action==crosspod::LogicalAction::Back) {
+        if(action==books::LogicalAction::Back) {
           selectionChoosing=false;selectionExtending=false;
           reader->discardSelection();reader->present();
-        } else if(action==crosspod::LogicalAction::Next ||
-                  action==crosspod::LogicalAction::Previous) {
+        } else if(action==books::LogicalAction::Next ||
+                  action==books::LogicalAction::Previous) {
           (void)reader->stepSelection(
-              action==crosspod::LogicalAction::Next?1:-1,
+              action==books::LogicalAction::Next?1:-1,
               selectionExtending);
           reader->showSelectionPreview(selectionExtending);
-        } else if(action==crosspod::LogicalAction::Confirm) {
+        } else if(action==books::LogicalAction::Confirm) {
           if(!selectionExtending) {
             selectionExtending=true;
             reader->showSelectionPreview(true);
@@ -3074,7 +3093,7 @@ int runCardApp(const std::string& bookDir) {
             selectionActions=true;selectionAction=0;
             reader->showTextSelectionMenu(0);
           }
-        } else if(event.kind==crosspod::PhysicalKind::TouchUp) {
+        } else if(event.kind==books::PhysicalKind::TouchUp) {
           if(reader->selectTouchWord(event.x,event.y,selectionExtending))
             reader->showSelectionPreview(selectionExtending);
         }
@@ -3083,18 +3102,18 @@ int runCardApp(const std::string& bookDir) {
       if(linkMenu) {
         const auto links=reader->pageLinks();
         const int count=static_cast<int>(links.size());
-        if(action==crosspod::LogicalAction::Back) {
+        if(action==books::LogicalAction::Back) {
           linkMenu=false;
           reader->showTypographyMenu(typeSelection);
-        } else if(action==crosspod::LogicalAction::Next ||
-                  action==crosspod::LogicalAction::Previous) {
+        } else if(action==books::LogicalAction::Next ||
+                  action==books::LogicalAction::Previous) {
           if(count)navigationSelection=std::clamp(
               navigationSelection+
-              (action==crosspod::LogicalAction::Next?1:-1),0,count-1);
+              (action==books::LogicalAction::Next?1:-1),0,count-1);
           reader->showLinksMenu(navigationSelection);
-        } else if(action==crosspod::LogicalAction::Confirm ||
-                  event.kind==crosspod::PhysicalKind::TouchUp) {
-          if(event.kind==crosspod::PhysicalKind::TouchUp)
+        } else if(action==books::LogicalAction::Confirm ||
+                  event.kind==books::PhysicalKind::TouchUp) {
+          if(event.kind==books::PhysicalKind::TouchUp)
             navigationSelection=std::clamp(
                 (navigationSelection/8)*8+(event.y-76)/24,
                 0,std::max(0,count-1));
@@ -3116,18 +3135,18 @@ int runCardApp(const std::string& bookDir) {
       if(navigationMenu) {
         const int count=static_cast<int>(showingBookmarks?
           reader->bookmarks().size():reader->chapterCount());
-        if(action==crosspod::LogicalAction::Back) {
+        if(action==books::LogicalAction::Back) {
           navigationMenu=false;
           reader->showTypographyMenu(typeSelection);
-        } else if(action==crosspod::LogicalAction::Next ||
-                  action==crosspod::LogicalAction::Previous) {
+        } else if(action==books::LogicalAction::Next ||
+                  action==books::LogicalAction::Previous) {
           if(count)navigationSelection=std::clamp(
-            navigationSelection+(action==crosspod::LogicalAction::Next?1:-1),
+            navigationSelection+(action==books::LogicalAction::Next?1:-1),
             0,count-1);
           reader->showNavigationMenu(showingBookmarks,navigationSelection);
-        } else if(action==crosspod::LogicalAction::Confirm ||
-                  event.kind==crosspod::PhysicalKind::TouchUp) {
-          if(event.kind==crosspod::PhysicalKind::TouchUp)
+        } else if(action==books::LogicalAction::Confirm ||
+                  event.kind==books::PhysicalKind::TouchUp) {
+          if(event.kind==books::PhysicalKind::TouchUp)
             navigationSelection=std::clamp(
               reader->navRowAt(navigationSelection,event.y),
               0,std::max(0,count-1));
@@ -3145,21 +3164,34 @@ int runCardApp(const std::string& bookDir) {
         }
         continue;
       }
+      if(typeMenu && aboutShown) {
+        if(action==books::LogicalAction::Back || action==books::LogicalAction::Confirm ||
+           action==books::LogicalAction::Next || action==books::LogicalAction::Previous ||
+           event.kind==books::PhysicalKind::TouchUp) {
+          aboutShown=false;reader->showTypographyMenu(typeSelection);
+        }
+        continue;
+      }
       if(typeMenu) {
-        if(action==crosspod::LogicalAction::Back) {
+        if(action==books::LogicalAction::Back) {
           typeMenu=false;
           reader->present();
-        } else if(action==crosspod::LogicalAction::Previous ||
-                  action==crosspod::LogicalAction::Next) {
+        } else if(action==books::LogicalAction::Previous ||
+                  action==books::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:kTypographyItems-1))%kTypographyItems;
+              (action==books::LogicalAction::Next?1:kTypographyItems-1))%kTypographyItems;
           reader->showTypographyMenu(typeSelection);
-        } else if(action==crosspod::LogicalAction::Confirm ||
-                  event.kind==crosspod::PhysicalKind::TouchUp) {
-          if(event.kind==crosspod::PhysicalKind::TouchUp)
+        } else if(action==books::LogicalAction::Confirm ||
+                  event.kind==books::PhysicalKind::TouchUp) {
+          if(event.kind==books::PhysicalKind::TouchUp)
             typeSelection=std::clamp(
                 Reader::menuFirstRow(typeSelection,kTypographyItems)+(event.y-73)/21,
                 0,kTypographyItems-1);
+          if(typeSelection==19) {
+            aboutShown=true;
+            reader->showAbout();
+            continue;
+          }
           if(typeSelection==18) {
             percentDialog=true;
             percentValue=reader->bookPercent();
@@ -3203,8 +3235,8 @@ int runCardApp(const std::string& bookDir) {
           else {
             auto next=reader->typography();
             if(typeSelection==0) {
-              next.family=crosspod::nextInstalledTypographyFamily(next);
-            } else next.size=crosspod::nextTypographySize(next.size);
+              next.family=books::nextInstalledTypographyFamily(next);
+            } else next.size=books::nextTypographySize(next.size);
             (void)reader->configureTypography(next);
           }
           if(navigationMenu)
@@ -3218,12 +3250,12 @@ int runCardApp(const std::string& bookDir) {
       // Hold a word or drag between words to select text. Short taps retain
       // the existing link and left/right page controls. Q2 socket reports
       // touch down/move/up even though ordinary readers used only release.
-      if(event.kind==crosspod::PhysicalKind::TouchDown) {
+      if(event.kind==books::PhysicalKind::TouchDown) {
         touchPressed=true;touchStartX=event.x;touchStartY=event.y;
         touchStartTime=std::chrono::steady_clock::now();
         continue;
       }
-      if(event.kind==crosspod::PhysicalKind::TouchUp && touchPressed) {
+      if(event.kind==books::PhysicalKind::TouchUp && touchPressed) {
         touchPressed=false;
         const auto elapsed=std::chrono::steady_clock::now()-touchStartTime;
         const int dx=event.x-touchStartX,dy=event.y-touchStartY;
@@ -3237,27 +3269,27 @@ int runCardApp(const std::string& bookDir) {
           continue;
         }
       }
-      if(action==crosspod::LogicalAction::Confirm ||
-         (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
+      if(action==books::LogicalAction::Confirm ||
+         (event.kind==books::PhysicalKind::TouchUp && event.y<45)) {
         typeMenu=true;
         typeSelection=0;
         reader->showTypographyMenu(typeSelection);
         continue;
       }
-      if(action==crosspod::LogicalAction::Back) {
+      if(action==books::LogicalAction::Back) {
         (void)reader->cacheShelfCover();
         reader.reset(); // close book/cache BEFORE reopening the card shelf
-        crosspod::sortShelfBooks(books,sortMode,recent);
-        selection=crosspod::lastOpenedIndex(books,recent);
+        books::sortShelfBooks(books,sortMode,recent);
+        selection=books::lastOpenedIndex(books,recent);
         shelf.reset(new CardShelf(books,selection,selection,sortMode));
         if(!shelf->open())return 6;
         shelf->present();
         continue;
       }
       bool changed=false;
-      if(action==crosspod::LogicalAction::Next) changed=reader->move(1);
-      if(action==crosspod::LogicalAction::Previous)changed=reader->move(-1);
-      if(event.kind==crosspod::PhysicalKind::TouchUp) {
+      if(action==books::LogicalAction::Next) changed=reader->move(1);
+      if(action==books::LogicalAction::Previous)changed=reader->move(-1);
+      if(event.kind==books::PhysicalKind::TouchUp) {
         const auto href=reader->touchedLink(event.x,event.y);
         if(!href.empty()) {
           if(reader->isFootnoteLink(href)) {
@@ -3272,11 +3304,11 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->onlineSearching()) {
-      if(action==crosspod::LogicalAction::Back)shelf->endSearch();
-      else if(action==crosspod::LogicalAction::Previous)(void)shelf->change(-1);
-      else if(action==crosspod::LogicalAction::Next)(void)shelf->change(1);
-      else if(action==crosspod::LogicalAction::Confirm)(void)shelf->applySearchChoice();
-      else if(event.kind==crosspod::PhysicalKind::TouchUp)(void)shelf->tap(event.x,event.y);
+      if(action==books::LogicalAction::Back)shelf->endSearch();
+      else if(action==books::LogicalAction::Previous)(void)shelf->change(-1);
+      else if(action==books::LogicalAction::Next)(void)shelf->change(1);
+      else if(action==books::LogicalAction::Confirm)(void)shelf->applySearchChoice();
+      else if(event.kind==books::PhysicalKind::TouchUp)(void)shelf->tap(event.x,event.y);
       if(shelf->takeSearchSubmit()) {
         shelf->setNotice("Searching...");
         shelf->present();
@@ -3286,33 +3318,33 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->onlineMode()) {
-      if(action==crosspod::LogicalAction::Back) {
+      if(action==books::LogicalAction::Back) {
         shelf->returnFromOnline();
         shelf->present();continue;
       }
-      if(action==crosspod::LogicalAction::Next ||
-         action==crosspod::LogicalAction::Previous) {
-        if(shelf->change(action==crosspod::LogicalAction::Next?1:-1))
+      if(action==books::LogicalAction::Next ||
+         action==books::LogicalAction::Previous) {
+        if(shelf->change(action==books::LogicalAction::Next?1:-1))
           shelf->present();
         continue;
       }
-      if(event.kind==crosspod::PhysicalKind::TouchUp && event.y<73) {
+      if(event.kind==books::PhysicalKind::TouchUp && event.y<73) {
         shelf->returnFromOnline();shelf->present();continue;
       }
-      bool activate=action==crosspod::LogicalAction::Confirm;
-      if(event.kind==crosspod::PhysicalKind::TouchUp) {
+      bool activate=action==books::LogicalAction::Confirm;
+      if(event.kind==books::PhysicalKind::TouchUp) {
         shelf->onlineTouch(event.x,event.y);
         activate=true;
       }
       if(!activate || !shelf->onlineHasSelection())continue;
       const auto selected=shelf->onlineEntry();
-      if(selected.kind==crosspod::OpdsEntry::Kind::Search) {
+      if(selected.kind==books::OpdsEntry::Kind::Search) {
         shelf->enterOnlineSearch();
         shelf->present();
         continue;
       }
-      if(selected.kind==crosspod::OpdsEntry::Kind::Catalog ||
-         selected.kind==crosspod::OpdsEntry::Kind::More) {
+      if(selected.kind==books::OpdsEntry::Kind::Catalog ||
+         selected.kind==books::OpdsEntry::Kind::More) {
         shelf->setNotice("Loading catalog...");
         shelf->present();
         (void)shelf->loadOnlinePage(selected.href,true);
@@ -3322,14 +3354,14 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice("Downloading EPUB...");
       shelf->present();
       std::string saved,error;
-      if(!crosspod::opdsDownloadEpub(bookDir,selected,saved,error)) {
+      if(!books::opdsDownloadEpub(bookDir,selected,saved,error)) {
         shelf->setNotice(error.empty()?"Download failed":error);
         shelf->present();continue;
       }
       // The reader only sees fully atomically renamed EPUB ZIPs. Rescan the
       // bounded library after a download, never while a .part is in flight.
       books=scanCardBooks(bookDir);
-      crosspod::sortShelfBooks(books,sortMode,recent);
+      books::sortShelfBooks(books,sortMode,recent);
       auto found=std::find_if(books.begin(),books.end(),
           [&](const ShelfEntry& entry){return entry.path==saved;});
       selection=found==books.end()?0:
@@ -3343,33 +3375,33 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->searching()) {
-      if(action==crosspod::LogicalAction::Back)
+      if(action==books::LogicalAction::Back)
         shelf->endSearch();
-      else if(action==crosspod::LogicalAction::Previous)
+      else if(action==books::LogicalAction::Previous)
         (void)shelf->change(-1);
-      else if(action==crosspod::LogicalAction::Next)
+      else if(action==books::LogicalAction::Next)
         (void)shelf->change(1);
-      else if(action==crosspod::LogicalAction::Confirm)
+      else if(action==books::LogicalAction::Confirm)
         (void)shelf->applySearchChoice();
-      else if(event.kind==crosspod::PhysicalKind::TouchUp)
+      else if(event.kind==books::PhysicalKind::TouchUp)
         (void)shelf->tap(event.x,event.y);
       shelf->present();
       continue;
     }
-    if(action==crosspod::LogicalAction::Back) {
+    if(action==books::LogicalAction::Back) {
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
     }
-    if(action==crosspod::LogicalAction::Previous && shelf->change(-1))shelf->present();
-    if(action==crosspod::LogicalAction::Next && shelf->change(1))shelf->present();
-    bool activate=action==crosspod::LogicalAction::Confirm;
-    if(event.kind==crosspod::PhysicalKind::TouchUp && shelf->browsing() &&
+    if(action==books::LogicalAction::Previous && shelf->change(-1))shelf->present();
+    if(action==books::LogicalAction::Next && shelf->change(1))shelf->present();
+    bool activate=action==books::LogicalAction::Confirm;
+    if(event.kind==books::PhysicalKind::TouchUp && shelf->browsing() &&
        event.y>=39 && event.y<74 && event.x>=190) {
       (void)shelf->enterOnline();
       shelf->present();
       continue;
     }
-    if(event.kind==crosspod::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
+    if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate)continue;
     if(shelf->searching()) {shelf->present();continue;}
     if(shelf->onlineChosen()) {
@@ -3380,13 +3412,13 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->sortChosen()) {
-      sortMode=sortMode==crosspod::ShelfSortMode::Title?
-          crosspod::ShelfSortMode::Recent:
-          (sortMode==crosspod::ShelfSortMode::Recent?
-          crosspod::ShelfSortMode::RecentlyAdded:
-          crosspod::ShelfSortMode::Title);
-      crosspod::sortShelfBooks(books,sortMode,recent);
-      selection=crosspod::lastOpenedIndex(books,recent);
+      sortMode=sortMode==books::ShelfSortMode::Title?
+          books::ShelfSortMode::Recent:
+          (sortMode==books::ShelfSortMode::Recent?
+          books::ShelfSortMode::RecentlyAdded:
+          books::ShelfSortMode::Title);
+      books::sortShelfBooks(books,sortMode,recent);
+      selection=books::lastOpenedIndex(books,recent);
       shelf.reset(new CardShelf(books,selection,selection,sortMode));
       if(!shelf->open())return 6;
       shelf->present();
@@ -3415,9 +3447,9 @@ int runCardApp(const std::string& bookDir) {
       shelf.reset();
       reader=std::move(next);
       reader->present();
-      (void)crosspod::saveShelfDetails(chosen,reader->shelfDetails());
-      if(crosspod::recordRecentBook(chosen))
-        recent=crosspod::loadRecentBooks();
+      (void)books::saveShelfDetails(chosen,reader->shelfDetails());
+      if(books::recordRecentBook(chosen))
+        recent=books::loadRecentBooks();
     }
   }
   return 0;
@@ -3426,39 +3458,50 @@ int runCardApp(const std::string& bookDir) {
 void usage() {
   std::fputs(
     "Usage:\n"
-    "  crosspod-reader --validate <book.epub>       (no framebuffer)\n"
-    "  crosspod-reader --walk <book.epub>           (test pagination)\n"
-    "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
-    "  crosspod-reader --list-books <directory>     (card scanner test)\n"
-    "  crosspod-reader --test-page-links <book.epub> (real link regression)\n"
-    "  crosspod-reader --test-progress <book>         (go-to-percent regression)\n"
-    "  crosspod-reader --define <word>               (dictionary lookup)\n"
-    "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
-    "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
-    "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
-    "  crosspod-reader (no args)                    (Q2 card app)\n"
-    "  crosspod-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
-    "  crosspod-reader <book.epub>                  (Q2 Pod Books handoff)\n"
+    "  books-reader --validate <book.epub>       (no framebuffer)\n"
+    "  books-reader --walk <book.epub>           (test pagination)\n"
+    "  books-reader --bench <book.epub>          (latency & memory)\n"
+    "  books-reader --list-books <directory>     (card scanner test)\n"
+    "  books-reader --test-page-links <book.epub> (real link regression)\n"
+    "  books-reader --test-progress <book>         (go-to-percent regression)\n"
+    "  books-reader --define <word>               (dictionary lookup)\n"
+    "  books-reader --index-book <book.epub>     (OPF/cover index test)\n"
+    "  books-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
+    "  books-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
+    "  books-reader (no args)                    (Q2 card app)\n"
+    "  books-reader --render <book.epub> <page.pgm> (no framebuffer)\n"
+    "  books-reader <book.epub>                  (Q2 Pod Books handoff)\n"
     "On Q2, only run interactively after Q2 Pod yields /dev/fb0.\n",stderr);
 }
 } // namespace
 
 int main(int argc,char** argv) {
-  crosspod::httpAbortFlag=&interrupted;  // SIGTERM stops a running transfer
-  crosspodlayout::layoutAbortFlag=&interrupted;  // and an overlong word's layout
+  books::httpAbortFlag=&interrupted;  // SIGTERM stops a running transfer
+  bookslayout::layoutAbortFlag=&interrupted;  // and an overlong word's layout
+  // Bring the user's files over from the app's former folder, once, before
+  // anything reads state (not when a test points the state elsewhere).
+  const char* stateOverride=std::getenv("BOOKS_STATE_DIR");
+  const bool onCard=!(stateOverride && *stateOverride);
+  if(argc==2 && (std::strcmp(argv[1],"--version")==0 || std::strcmp(argv[1],"--about")==0)) {
+    std::printf("Books %s\n%s\n",BOOKS_VERSION,books::kAboutText);
+    return 0;
+  }
   // Card apps start with NO book argument; the on-device picker owns launch.
-  if(argc==1) return runCardApp("/mnt/mmc/Books");
+  if(argc==1) {
+    if(onCard)(void)books::migrateLegacyState();
+    return runCardApp("/mnt/mmc/Books");
+  }
   if(argc==3 && std::strcmp(argv[1],"--opds-probe")==0) {
-    const auto catalog=crosspod::fetchOpdsFeed(argv[2]);
+    const auto catalog=books::fetchOpdsFeed(argv[2]);
     if(!catalog.error.empty()) {
-      std::fprintf(stderr,"CrossPod OPDS request: %s\n",catalog.error.c_str());
+      std::fprintf(stderr,"Books OPDS request: %s\n",catalog.error.c_str());
       return 8;
     }
-    std::printf("CrossPod OPDS: %s, entries=%zu\n",
+    std::printf("Books OPDS: %s, entries=%zu\n",
                 catalog.title.c_str(),catalog.entries.size());
     for(const auto& entry:catalog.entries)
       std::printf("%s: %s\n",
-        entry.kind==crosspod::OpdsEntry::Kind::Epub?"EPUB":"CATALOG",
+        entry.kind==books::OpdsEntry::Kind::Epub?"EPUB":"CATALOG",
         entry.title.c_str());
     return 0;
   }
@@ -3467,52 +3510,52 @@ int main(int argc,char** argv) {
     // M4: follow rel="next" (at most 50 pages, no page twice), or search.
     std::string url=argv[2];
     if(argc==4) {
-      const auto root=crosspod::fetchOpdsFeed(url);
+      const auto root=books::fetchOpdsFeed(url);
       if(!root.error.empty())return 8;
       std::string error;
-      url=crosspod::opdsSearchUrl(root,argv[3],error);
-      if(url.empty()){std::fprintf(stderr,"CrossPod OPDS search: %s\n",error.c_str());return 11;}
-      std::printf("CrossPod OPDS search URL: %s\n",url.c_str());
+      url=books::opdsSearchUrl(root,argv[3],error);
+      if(url.empty()){std::fprintf(stderr,"Books OPDS search: %s\n",error.c_str());return 11;}
+      std::printf("Books OPDS search URL: %s\n",url.c_str());
     }
     std::vector<std::string> seen;
     size_t total=0;
     for(int page=0;page<50 && !url.empty();++page) {
       if(std::find(seen.begin(),seen.end(),url)!=seen.end()) {
-        std::puts("CrossPod OPDS: next link loops; stopped");break;
+        std::puts("Books OPDS: next link loops; stopped");break;
       }
       seen.push_back(url);
-      const auto feed=crosspod::fetchOpdsFeed(url);
+      const auto feed=books::fetchOpdsFeed(url);
       if(!feed.error.empty())return 8;
       total+=feed.entries.size();
-      std::printf("CrossPod OPDS page %d: %zu entries%s\n",page+1,feed.entries.size(),
+      std::printf("Books OPDS page %d: %zu entries%s\n",page+1,feed.entries.size(),
                   feed.nextHref.empty()?"":" (next)");
       for(const auto& e:feed.entries)std::printf("  %s\n",e.title.c_str());
       url=feed.nextHref;
     }
-    std::printf("CrossPod OPDS total: %zu entries in %zu pages\n",total,seen.size());
+    std::printf("Books OPDS total: %zu entries in %zu pages\n",total,seen.size());
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--opds-download")==0) {
     // As in the app: SIGTERM stops the transfer and removes its .part.
     if(!installExitHandlers())return 5;
-    auto catalog=crosspod::fetchOpdsFeed(argv[2]);
+    auto catalog=books::fetchOpdsFeed(argv[2]);
     if(!catalog.error.empty())return 8;
     for(const auto& entry:catalog.entries) {
-      if(entry.kind!=crosspod::OpdsEntry::Kind::Epub)continue;
+      if(entry.kind!=books::OpdsEntry::Kind::Epub)continue;
       std::string saved,error;
-      if(!crosspod::opdsDownloadEpub(argv[3],entry,saved,error)) {
-        std::fprintf(stderr,"CrossPod download: %s\n",error.c_str());
+      if(!books::opdsDownloadEpub(argv[3],entry,saved,error)) {
+        std::fprintf(stderr,"Books download: %s\n",error.c_str());
         return 9;
       }
-      std::printf("CrossPod OPDS downloaded: %s\n",saved.c_str());
+      std::printf("Books OPDS downloaded: %s\n",saved.c_str());
       return 0;
     }
     return 10;
   }
   if(argc==3 && std::strcmp(argv[1],"--koreader-hash")==0) {
-    const auto md5=crosspod::koReaderPartialMd5(argv[2]);
+    const auto md5=books::koReaderPartialMd5(argv[2]);
     if(md5.empty())return 9;
-    std::printf("CrossPod KOReader partial MD5: %s\n",md5.c_str());
+    std::printf("Books KOReader partial MD5: %s\n",md5.c_str());
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-koreader-sync")==0) {
@@ -3521,18 +3564,18 @@ int main(int argc,char** argv) {
     if(reader.chapterCount()>1 && !reader.goToChapter(1))return 4;
     if(!reader.pushReadingSync())return 5;
     if(!reader.pullReadingSync())return 6;
-    std::puts("CrossPod KOReader XPath progress roundtrip: PASS");
+    std::puts("Books KOReader XPath progress roundtrip: PASS");
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--index-book")==0) {
     // Host/QEMU regression: metadata and an EPUB3 cover-image must become
     // readable cached shelf files WITHOUT constructing a Reader or Section.
-    const auto result=crosspod::indexShelfBook(argv[2]);
-    crosspod::ShelfDetails details;
-    crosspod::ShelfCover cover;
-    const bool haveMetadata=crosspod::loadShelfDetails(argv[2],details);
-    const bool haveCover=crosspod::loadShelfCover(argv[2],cover);
-    std::printf("CrossPod shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\n",
+    const auto result=books::indexShelfBook(argv[2]);
+    books::ShelfDetails details;
+    books::ShelfCover cover;
+    const bool haveMetadata=books::loadShelfDetails(argv[2],details);
+    const bool haveCover=books::loadShelfCover(argv[2],cover);
+    std::printf("Books shelf index: metadata=%d cover=%d updated=%d title=%s author=%s\n",
        haveMetadata,haveCover,result.updated,
        haveMetadata?details.title.c_str():"",
        haveMetadata?details.author.c_str():"");
@@ -3552,10 +3595,10 @@ int main(int argc,char** argv) {
       if(preview.find("This footnote is a short note")==std::string::npos)
         return 8;
       reader.showFootnotePopup(link);
-      std::puts("CrossPod XHTML footnote popover: PASS");
+      std::puts("Books XHTML footnote popover: PASS");
       return 0;
     }
-    std::puts("CrossPod XHTML footnote noteref missing");
+    std::puts("Books XHTML footnote noteref missing");
     return 7;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-selection-geometry")==0) {
@@ -3570,8 +3613,8 @@ int main(int argc,char** argv) {
     const auto& w=words[0];
     std::printf("ink %d,%d-%d,%d  box %d,%d %dx%d\n",x0,y0,x1,y1,w.x,w.y,w.width,w.height);
     if(y0<w.y || y1>w.y+w.height || x0<w.x-2 || x1>w.x+w.width+2)return 10;
-    if(crosspod::hitSelectableWord(words,(x0+x1)/2,(y0+y1)/2)!=0)return 11;
-    std::puts("CrossPod selection touch boxes on glyphs: PASS");
+    if(books::hitSelectableWord(words,(x0+x1)/2,(y0+y1)/2)!=0)return 11;
+    std::puts("Books selection touch boxes on glyphs: PASS");
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-selection")==0) {
@@ -3581,22 +3624,22 @@ int main(int argc,char** argv) {
     if(selected.empty())return 8;
     if(!reader.stepSelection(1))return 9;
     if(!reader.saveSelectionHighlight())return 10;
-    const auto recorded=crosspod::loadHighlights(argv[2]);
+    const auto recorded=books::loadHighlights(argv[2]);
     if(recorded.empty() || recorded.front().begin>=recorded.front().end)
       return 11;
     reader.present(); // highlights must draw over actual Section page pixels
     if(!reader.eraseSelectionHighlight())return 12;
-    if(!crosspod::loadHighlights(argv[2]).empty())return 13;
-    std::printf("CrossPod unicode selection and persistent highlight: PASS (%s)\n",
+    if(!books::loadHighlights(argv[2]).empty())return 13;
+    std::printf("Books unicode selection and persistent highlight: PASS (%s)\n",
                 selected.c_str());
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--define")==0) {
     // DI-01: check installed dictionaries from a shell (no framebuffer).
-    for(const auto& folder:crosspod::stardictFolders())
-      for(const auto& ifo:crosspod::stardict::findDictionaries(folder))
+    for(const auto& folder:books::stardictFolders())
+      for(const auto& ifo:books::stardict::findDictionaries(folder))
         std::printf("dictionary: %s\n",ifo.c_str());
-    const auto matches=crosspod::lookupDefinitions(argv[2]);
+    const auto matches=books::lookupDefinitions(argv[2]);
     for(const auto& m:matches)
       std::printf("[%s] %s: %s\n",m.source.c_str(),m.headword.c_str(),m.text.c_str());
     return matches.empty()?1:0;
@@ -3610,7 +3653,7 @@ int main(int argc,char** argv) {
     for(int target:{0,10,25,50,75,90,100}) {
       if(!reader.goToBookPercent(target))return 4;
       const int got=reader.bookPercent();
-      std::printf("CrossPod go to %d%%: chapter %d page %zu -> %d%%\n",
+      std::printf("Books go to %d%%: chapter %d page %zu -> %d%%\n",
                   target,reader.currentChapter(),reader.currentPageIndex()+1,got);
       if(got<last)return 5;
       if(target<100 && std::abs(got-target)>6)return 6;
@@ -3624,17 +3667,17 @@ int main(int argc,char** argv) {
     if(std::abs(reader.bookPercent()-before)>3)return 9;  // re-layout keeps the place
     if(!reader.adjustPreference(16) || reader.preferences().focusReading!=focusWas)return 8;
     const int turnWas=reader.preferences().autoTurnSeconds;
-    for(size_t i=0;i<std::size(crosspod::autoTurnChoices);++i)
+    for(size_t i=0;i<std::size(books::autoTurnChoices);++i)
       if(!reader.adjustPreference(17))return 10;
     if(reader.preferences().autoTurnSeconds!=turnWas)return 10;  // cycles back
-    std::puts("CrossPod go-to-percent, progress, focus and auto turn: PASS");
+    std::puts("Books go-to-percent, progress, focus and auto turn: PASS");
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-page-links")==0) {
     Reader reader(argv[2]);
     if(!reader.open())return 3;
     const auto links=reader.pageLinks();
-    std::printf("CrossPod Page links: %zu\n",links.size());
+    std::printf("Books Page links: %zu\n",links.size());
     if(links.size()<2)return 7;
     bool followed=false;
     for(const auto& href:links) {
@@ -3645,7 +3688,7 @@ int main(int argc,char** argv) {
     }
     if(!followed || !reader.hasLinkHistory())return 9;
     if(!reader.goBackFromLink() || reader.hasLinkHistory())return 10;
-    std::puts("CrossPod page link jump and return: PASS");
+    std::puts("Books page link jump and return: PASS");
     return 0;
   }
   if(argc==3 && std::strcmp(argv[1],"--inspect-toc")==0) {
@@ -3658,7 +3701,7 @@ int main(int argc,char** argv) {
     Reader reader(argv[2]);
     if(!reader.open())return 3;
     if(reader.imageCount()==0)return 4;
-    std::printf("CrossPod rendered images: %zu\n",reader.imageCount());
+    std::printf("Books rendered images: %zu\n",reader.imageCount());
     return reader.savePgm(argv[3])?0:5;
   }
   if(argc==4 && std::strcmp(argv[1],"--inspect-styles")==0) {
@@ -3714,19 +3757,20 @@ int main(int argc,char** argv) {
   } else if (argc==2 && argv[1][0] != '-') {
     path=argv[1];
   } else { usage();return 2; }
-  if (!crosspod::isBookFilename(path)) {
-    std::fputs("CrossPod: open an .epub or .txt book\n",stderr);
+  if (!books::isBookFilename(path)) {
+    std::fputs("Books: open an .epub or .txt book\n",stderr);
     return 2;
   }
+  if(!dry && onCard)(void)books::migrateLegacyState();
   if(!dry && !installExitHandlers())return 5;
   // Destroy the reader and flush progress before releasing the input socket.
-  crosspod::Q2SocketInput input;
+  books::Q2SocketInput input;
   const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
   const bool opened=reader.open(!dry);
   if(interrupted)return 0;
   if(!opened) {
-    std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
+    std::fputs("Books: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
   if(dry) {
@@ -3757,7 +3801,7 @@ int main(int argc,char** argv) {
       const auto turnMs=std::chrono::duration_cast<std::chrono::milliseconds>(
         elapsed-repeatedEnd).count();
       std::printf(
-        "CrossPod benchmark: open_ms=%lld first_render_us=%lld "
+        "Books benchmark: open_ms=%lld first_render_us=%lld "
         "cached_render_us=%lld sample_pages=%zu walk_ms=%lld "
         "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld\n",
         static_cast<long long>(openMs),
@@ -3777,7 +3821,7 @@ int main(int argc,char** argv) {
         if(reader.move(1)) {
           reader.render();
           if(!reader.lastRenderSucceeded() || !reader.pageHasVisibleInk()) {
-            std::fprintf(stderr,"CrossPod: blank rendered page after %zu forward turns\n",
+            std::fprintf(stderr,"Books: blank rendered page after %zu forward turns\n",
                          forward+1);
             return 9;
           }
@@ -3797,7 +3841,7 @@ int main(int argc,char** argv) {
         ++backward;
       }
       if(backward!=forward)return 8;
-      std::printf("CrossPod rendered %zu pages forward and %zu backward without blank text\n",
+      std::printf("Books rendered %zu pages forward and %zu backward without blank text\n",
                   forward,backward);
       return forward>=10?0:8;
     }
@@ -3818,7 +3862,7 @@ int main(int argc,char** argv) {
       if(forward>=65536)return 7;
       while(backward<65536 && reader.move(-1))++backward;
       if(backward>=65536||forward!=backward)return 8;
-      std::printf("CrossPod walked %zu pages forward and %zu backward\n",
+      std::printf("Books walked %zu pages forward and %zu backward\n",
           forward,backward);
     }
     reader.report();
@@ -3826,7 +3870,7 @@ int main(int argc,char** argv) {
     return 0;
   }
   if(!input.open()) {
-    std::fputs("CrossPod: input socket unavailable, refusing interactive mode\n",stderr);
+    std::fputs("Books: input socket unavailable, refusing interactive mode\n",stderr);
     return 5;
   }
   reader.present();
@@ -3834,37 +3878,38 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,19};
+  bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
   bool percentDialog=false;
   int percentValue=0;
   auto nextAutoTurn=ReaderClock::time_point::max();
-  crosspod::Q2Controls controls(loadWheelSensitivity());
+  books::Q2Controls controls(loadWheelSensitivity());
   // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
   // its own step, before reading the next datagram.
-  crosspod::LogicalAction pendingAction=crosspod::LogicalAction::None;
+  books::LogicalAction pendingAction=books::LogicalAction::None;
   int pendingRepeat=0;
   while(!interrupted) {
     reader.flushPosition(false);
-    crosspod::PhysicalEvent event{};
+    books::PhysicalEvent event{};
     if (pendingRepeat==0 && !input.receive(event)) {
       const auto beforeTurn=nextAutoTurn;
       const auto turnDue=autoTurnTick(reader,!typeMenu && !percentDialog,nextAutoTurn);
       if(beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
          beforeTurn<=ReaderClock::now())continue;
       if(waitForReaderInput(input,std::min(reader.nextPositionFlush(),turnDue))<0) {
-        std::fputs("CrossPod: input socket poll failed\n",stderr);
+        std::fputs("Books: input socket poll failed\n",stderr);
         return 5;
       }
       continue;
     }
     if(interrupted)break;
-    crosspod::LogicalAction action;
+    books::LogicalAction action;
     if(pendingRepeat>0) {
       --pendingRepeat;
-      event=crosspod::PhysicalEvent{};
-      event.kind=crosspod::PhysicalKind::WheelStep;
+      event=books::PhysicalEvent{};
+      event.kind=books::PhysicalKind::WheelStep;
       action=pendingAction;
     } else {
       const auto mapped=controls.translate(event);
@@ -3881,24 +3926,37 @@ int main(int argc,char** argv) {
       else reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       continue;
     }
+    if(typeMenu && aboutShown) {
+      if(action==books::LogicalAction::Back || action==books::LogicalAction::Confirm ||
+         action==books::LogicalAction::Next || action==books::LogicalAction::Previous ||
+         event.kind==books::PhysicalKind::TouchUp) {
+        aboutShown=false;reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
+      }
+      continue;
+    }
     if(typeMenu) {
-      if(action==crosspod::LogicalAction::Back) {
+      if(action==books::LogicalAction::Back) {
         typeMenu=false;
         reader.present();
-      } else if(action==crosspod::LogicalAction::Previous ||
-                action==crosspod::LogicalAction::Next) {
+      } else if(action==books::LogicalAction::Previous ||
+                action==books::LogicalAction::Next) {
         handoffIndex=(handoffIndex+
-            (action==crosspod::LogicalAction::Next?1:kHandoffCount-1))%kHandoffCount;
+            (action==books::LogicalAction::Next?1:kHandoffCount-1))%kHandoffCount;
         typeSelection=kHandoffItems[handoffIndex];
         reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
-      } else if(action==crosspod::LogicalAction::Confirm ||
-                event.kind==crosspod::PhysicalKind::TouchUp) {
-        if(event.kind==crosspod::PhysicalKind::TouchUp) {
+      } else if(action==books::LogicalAction::Confirm ||
+                event.kind==books::PhysicalKind::TouchUp) {
+        if(event.kind==books::PhysicalKind::TouchUp) {
           // Map the touched row back to a menu item; rows this reader does
           // not offer are ignored.
           const int first=Reader::menuFirstRow(handoffIndex,kHandoffCount);
           handoffIndex=std::clamp(first+(event.y-73)/21,0,kHandoffCount-1);
           typeSelection=kHandoffItems[handoffIndex];
+        }
+        if(typeSelection==19) {
+          aboutShown=true;
+          reader.showAbout();
+          continue;
         }
         if(typeSelection==18) {
           percentDialog=true;
@@ -3910,24 +3968,24 @@ int main(int argc,char** argv) {
         else {
           auto next=reader.typography();
           if(typeSelection==0)
-            next.family=crosspod::nextInstalledTypographyFamily(next);
-          else next.size=crosspod::nextTypographySize(next.size);
+            next.family=books::nextInstalledTypographyFamily(next);
+          else next.size=books::nextTypographySize(next.size);
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       }
       continue;
     }
-    if(action==crosspod::LogicalAction::Confirm ||
-       (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
+    if(action==books::LogicalAction::Confirm ||
+       (event.kind==books::PhysicalKind::TouchUp && event.y<45)) {
       typeMenu=true;
       reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       continue;
     }
-    if(action==crosspod::LogicalAction::Back)break;
-    if(action==crosspod::LogicalAction::Next)changed=reader.move(1);
-    if(action==crosspod::LogicalAction::Previous)changed=reader.move(-1);
-    if(event.kind==crosspod::PhysicalKind::TouchUp) {
+    if(action==books::LogicalAction::Back)break;
+    if(action==books::LogicalAction::Next)changed=reader.move(1);
+    if(action==books::LogicalAction::Previous)changed=reader.move(-1);
+    if(event.kind==books::PhysicalKind::TouchUp) {
       changed=reader.move(event.x>=187?1:-1);
     }
     if(changed)reader.present();

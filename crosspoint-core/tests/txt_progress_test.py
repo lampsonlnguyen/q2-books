@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RD-04 TXT reading and RD-01/06 progress, end to end through crosspod-reader.
+"""RD-04 TXT reading and RD-01/06 progress, end to end through books-reader.
 
 Writes a ~300 KB UTF-8 .txt (about ten 32 KiB parts) and a Latin-1 .txt, then
 runs --test-progress (go-to-percent at 0..100 %, monotonic book percentage,
@@ -22,8 +22,8 @@ def run(args, env):
     return p.stdout
 
 with tempfile.TemporaryDirectory() as tmp:
-    env = dict(os.environ, CROSSPOD_STATE_DIR=os.path.join(tmp, "state"))
-    os.makedirs(env["CROSSPOD_STATE_DIR"])
+    env = dict(os.environ, BOOKS_STATE_DIR=os.path.join(tmp, "state"))
+    os.makedirs(env["BOOKS_STATE_DIR"])
     utf8 = os.path.join(tmp, "Long Story.txt")
     with open(utf8, "w", encoding="utf-8") as f:
         for i in range(3000):

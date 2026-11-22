@@ -1,6 +1,6 @@
 # Integrating CrossPoint's reader with Q2 Pod Books
 
-Reviewed Q2 Pod: [DiamondBond/q2-pod `patch/books.c`](https://github.com/DiamondBond/q2-pod/blob/main/patch/books.c) and `patch/navigation.c`, plus `patch/addon.c`. CrossPod is a **separate Linux/MIPS reader application**, not a Q2 Pod game or its old book renderer. The existing Q2 Pod Books shelf is the entry point.
+Reviewed Q2 Pod: [DiamondBond/q2-pod `patch/books.c`](https://github.com/DiamondBond/q2-pod/blob/main/patch/books.c) and `patch/navigation.c`, plus `patch/addon.c`. Books is a **separate Linux/MIPS reader application**, not a Q2 Pod game or its old book renderer. The existing Q2 Pod Books shelf is the entry point.
 
 ## Existing Q2 Pod implementation
 
@@ -19,7 +19,7 @@ Q2 Pod Library > Books (KEEP)
        └── user selects /mnt/mmc/Books/<file>.epub or .txt
                      │ absolute path (UTF-8)
                      v
-           Standalone CrossPod Linux/MIPS process
+           Standalone Books Linux/MIPS process
                      │
                      ├── ORIGINAL CrossPoint Epub + OPF spine + TOC + CSS
                      ├── ORIGINAL CrossPoint ParsedText + Page + fonts + caches
@@ -31,15 +31,15 @@ Q2 Pod Library > Books (KEEP)
 
 **Contract:** Pass selected book's complete UTF-8 absolute path as `argv[1]`; paths accepted by the reader must be under `/mnt/mmc/Books/`, with `.epub` or `.txt` suffix. `crosspoint-core/platform/q2/Q2BookHandoff.hpp` validates this launch format. Before opening files, resolve symlinks and confirm the resolved path remains in `/mnt/mmc/Books/`; the current helper only checks lexical traversal.
 
-**Ownership:** While the CrossPod process is active, Q2 Pod suspends painting and forwards click-wheel, buttons and touch to the process via a dedicated IPC socket. CrossPod owns pagination, drawing and reading settings. On Back/exit, Q2 Pod resumes the Books shelf with the selected entry highlighted. No UI redraw by two processes at once.
+**Ownership:** While the Books process is active, Q2 Pod suspends painting and forwards click-wheel, buttons and touch to the process via a dedicated IPC socket. Books owns pagination, drawing and reading settings. On Back/exit, Q2 Pod resumes the Books shelf with the selected entry highlighted. No UI redraw by two processes at once.
 
-**Power:** Q2 Pod firmware owns device power, display dimming, sleep and wake. CrossPod checkpoints reading progress and saves pending state on graceful termination. When relaunched, it restores the saved reading position.
+**Power:** Q2 Pod firmware owns device power, display dimming, sleep and wake. Books checkpoints reading progress and saves pending state on graceful termination. When relaunched, it restores the saved reading position.
 
 **Fallback:** Until the complete CrossPoint-based MIPS reader is present and verified, Q2 Pod's `to_reader` must continue opening the current built-in reader. Do not route real books to a development-only host library or an unimplemented executable.
 
 ## Status and next tasks
 
-Already done in CrossPod:
+Already done in Books:
 - Original CrossPoint `Utf8`, `TxtToHtml` and now `ContainerParser` (with system Expat) compile as distinct Linux host components; Q2 path validation and wheel/touch/LCD adapters have host tests.
 - No CrossPoint ESP32 firmware, bootloader, FreeRTOS application or e-ink driver is part of the compiled deliverable.
 
@@ -49,4 +49,4 @@ Still needed before enabling the shelf handoff:
 3. Implement native Linux executable, Q2 input socket/display ownership and storage/cache layer; cross-compile and run on device.
 4. Hook the existing Q2 Pod Books row to the executable **with a safe fallback**, and add integration tests covering opening, returning, position saving and sleep behavior.
 
-**Do not port the stock Q2 Pod reading algorithm:** `books.c` is an integration reference only. **Do not port ESP32 firmware:** only CrossPoint reader source and its portable dependencies belong in CrossPod.
+**Do not port the stock Q2 Pod reading algorithm:** `books.c` is an integration reference only. **Do not port ESP32 firmware:** only CrossPoint reader source and its portable dependencies belong in Books.

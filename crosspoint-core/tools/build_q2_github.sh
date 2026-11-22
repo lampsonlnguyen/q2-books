@@ -88,27 +88,27 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release \
   "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
   "-DCMAKE_EXE_LINKER_FLAGS=$link" \
-  "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -DCROSSPOD_Q2_RUNTIME=1" \
+  "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -DBOOKS_Q2_RUNTIME=1" \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
   "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include" \
   "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include"
-cmake --build "$work/reader" --target crosspod-reader --parallel 2
-cmake --build "$work/reader" --target crosspod_png_formats_tests --parallel 2
-timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_png_formats_tests"
-elf="$work/reader/crosspod-reader"
+cmake --build "$work/reader" --target books-reader --parallel 2
+cmake --build "$work/reader" --target books_png_formats_tests --parallel 2
+timeout 30s qemu-mipsel -L "$root" "$work/reader/books_png_formats_tests"
+elf="$work/reader/books-reader"
 python3 crosspoint-core/tools/check_q2_elf.py "$elf" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
 # Exercise the same Q2 socket and controls used by the interactive reader.
-cmake --build "$work/reader" --target crosspod_q2_input_tests crosspoint_controls_tests --parallel 2
-timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_q2_input_tests"
+cmake --build "$work/reader" --target books_q2_input_tests crosspoint_controls_tests --parallel 2
+timeout 30s qemu-mipsel -L "$root" "$work/reader/books_q2_input_tests"
 timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspoint_controls_tests"
-CROSSPOD_PROFILE_SESSION=1 python3 - "$root" "$elf" <<'PYTEST'
+BOOKS_PROFILE_SESSION=1 python3 - "$root" "$elf" <<'PYTEST'
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-endpoint = Path("/tmp/q2-crosspod.input.sock")
-assert not endpoint.exists(), "Another process owns the CrossPod input endpoint"
+endpoint = Path("/tmp/q2-books.input.sock")
+assert not endpoint.exists(), "Another process owns the Books input endpoint"
 with subprocess.Popen(
     ["qemu-mipsel", "-L", sys.argv[1], sys.argv[2]],
     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
@@ -123,7 +123,7 @@ with subprocess.Popen(
         reader.terminate()
         _, stderr = reader.communicate(timeout=3)
         assert reader.returncode == 0 and not endpoint.exists(), stderr
-        assert "CrossPod session: elapsed_ms=" in stderr, stderr
+        assert "Books session: elapsed_ms=" in stderr, stderr
         print(stderr.strip())
     finally:
         if reader.poll() is None:
@@ -134,7 +134,7 @@ PYTEST
 python3 crosspoint-core/tests/make_shelf_index_epub.py "$work/reader/shelf-cover.epub"
 mkdir -p "$work/idle-index-state"
 for pass in fresh cached; do
-  CROSSPOD_STATE_DIR="$work/idle-index-state" timeout 60s \
+  BOOKS_STATE_DIR="$work/idle-index-state" timeout 60s \
     qemu-mipsel -L "$root" "$elf" --index-book "$work/reader/shelf-cover.epub" \
     | tee "$work/shelf-index-$pass.log"
   grep -q 'metadata=1 cover=1' "$work/shelf-index-$pass.log"
@@ -146,11 +146,11 @@ echo "Q2 unattended OPF/cover index: PASS"
 echo "C++ ABI requirements:"
 mipsel-linux-gnu-readelf -Ws "$elf" | grep 'GLIBCXX_' | sort -u | tail -25 || true
 timeout 60s qemu-mipsel -L "$root" "$elf" --validate "$work/reader/multilingual.epub" | tee "$work/upstream-validation.log"
-grep -q "CrossPod original Section:" "$work/upstream-validation.log"
+grep -q "Books original Section:" "$work/upstream-validation.log"
 # The prior collector stays as a rescue mode for incompatible EPUBs.
-CROSSPOD_ENGINE=legacy timeout 60s qemu-mipsel -L "$root" "$elf" \
+BOOKS_ENGINE=legacy timeout 60s qemu-mipsel -L "$root" "$elf" \
   --validate "$work/reader/multilingual.epub" | tee "$work/legacy-validation.log"
-grep -q "CrossPod legacy fallback:" "$work/legacy-validation.log"
+grep -q "Books legacy fallback:" "$work/legacy-validation.log"
 timeout 60s qemu-mipsel -L "$root" "$elf" --walk "$work/reader/multilingual.epub"
 
 # Real MIPS regression: show the first page before finishing a long chapter;
@@ -170,7 +170,7 @@ grep -q 'without blank text' "$work/long-scroll-render.log"
 python3 - "$work/incremental-walk.log" <<'PY'
 from pathlib import Path
 import re, sys
-match = re.search(r"CrossPod walked (\d+) pages forward and (\d+) backward",
+match = re.search(r"Books walked (\d+) pages forward and (\d+) backward",
                   Path(sys.argv[1]).read_text())
 assert match, "No complete navigation trace"
 forward, backward = map(int, match.groups())
@@ -193,7 +193,7 @@ timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-pros
 # cache and retain both measurements (cold versus warmed SD layout).
 mkdir -p "$work/benchmark-state"
 for phase in cold warm; do
-  CROSSPOD_STATE_DIR="$work/benchmark-state" timeout 90s \
+  BOOKS_STATE_DIR="$work/benchmark-state" timeout 90s \
     qemu-mipsel -L "$root" "$elf" --bench "$work/reader/vietnamese-prose.epub" \
     | tee "$work/bench-$phase.log"
   grep -q 'first_render_us=' "$work/bench-$phase.log"
@@ -201,14 +201,14 @@ for phase in cold warm; do
   grep -q 'read_blocks=' "$work/bench-$phase.log"
 done
 # Check that EPUB layout settings really affect the *upstream* page raster.
-# Older CrossPod silently overwrote the saved CSS/hyphenation/spacing settings.
+# Older Books silently overwrote the saved CSS/hyphenation/spacing settings.
 mkdir -p "$work/layout-settings"
-printf 'CROSSPOD-SETTINGS2 14 100 0 0 1 0\\n' > "$work/layout-settings/reading-settings.conf"
-CROSSPOD_STATE_DIR="$work/layout-settings" timeout 90s \
+printf 'BOOKS-SETTINGS2 14 100 0 0 1 0\\n' > "$work/layout-settings/reading-settings.conf"
+BOOKS_STATE_DIR="$work/layout-settings" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" \
     "$work/default-settings.pgm"
-printf 'CROSSPOD-SETTINGS2 14 140 1 1 0 0\\n' > "$work/layout-settings/reading-settings.conf"
-CROSSPOD_STATE_DIR="$work/layout-settings" timeout 90s \
+printf 'BOOKS-SETTINGS2 14 140 1 1 0 0\\n' > "$work/layout-settings/reading-settings.conf"
+BOOKS_STATE_DIR="$work/layout-settings" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" \
     "$work/changed-settings.pgm"
 python3 - "$work/default-settings.pgm" "$work/changed-settings.pgm" <<'PY'
@@ -221,8 +221,8 @@ assert changed>50, f"Layout settings ignored: only {changed} changed pixels"
 print(f"MIPS EPUB CSS/layout preferences: PASS ({changed} pixel changes)")
 PY
 timeout 60s qemu-mipsel -L "$root" "$elf" --render-images "$work/reader/illustrated.epub" "$work/illustrated.pgm" | tee "$work/images.log"
-grep -q "CrossPod original Section:" "$work/images.log"
-grep -q "CrossPod rendered images: 2" "$work/images.log"
+grep -q "Books original Section:" "$work/images.log"
+grep -q "Books rendered images: 2" "$work/images.log"
 python3 - "$work/vietnamese.pgm" "$work/illustrated.pgm" <<'PY'
 from pathlib import Path
 import sys
@@ -255,32 +255,32 @@ assert sum(a!=b for a,b in zip(home[15:],search[15:]))>500
 print("Q2 searchable library screen: PASS")
 PY
 card="$base/dist/card"
-mkdir -p "$card/.crosspod" "$card/Books"
-cp "$elf" "$card/.crosspod/crosspod-engine"
-cp crosspoint-core/platform/q2/crosspod-launcher.sh "$card/.crosspod/q2-crosspod"
-printf 'name=CrossPod\ngame=1\nrow=library\n' > "$card/.crosspod/q2app"
-cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
+mkdir -p "$card/.books" "$card/Books"
+cp "$elf" "$card/.books/books-engine"
+cp crosspoint-core/platform/q2/books-launcher.sh "$card/.books/q2-books"
+printf 'name=Books\ngame=1\nrow=library\n' > "$card/.books/q2app"
+cp docs/q2-books-card-app.md "$card/.books/README.txt"
 # Optional user-editable offline word definitions (UTF-8 TSV). Do not
 # overwrite an existing personal dictionary when copying over an SD card.
-cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
-cp crosspoint-core/assets/connected.conf.example "$card/.crosspod/connected.conf.example"
+cp crosspoint-core/assets/dictionary-starter.tsv "$card/.books/dictionary-starter.tsv"
+cp crosspoint-core/assets/connected.conf.example "$card/.books/connected.conf.example"
 # HTTPS trust: Mozilla's root list (the runner's ca-certificates). Q2 Pod's
 # /etc/scrobble-ca.pem has only the 8 roots its scrobbler needs, so many Kavita
 # hosts (Sectigo/ZeroSSL RSA, SSL.com, Amazon) would fail on the device.
 python3 crosspoint-core/tools/check_ca_bundle.py /etc/ssl/certs/ca-certificates.crt
-cp /etc/ssl/certs/ca-certificates.crt "$card/.crosspod/ca-bundle.pem"
+cp /etc/ssl/certs/ca-certificates.crt "$card/.books/ca-bundle.pem"
 
 
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
 # Mandatory font-visibility book in EVERY Q2 test-build ZIP. Do not put it
-# inside .crosspod, which the library scanner deliberately treats as hidden.
+# inside .books, which the library scanner deliberately treats as hidden.
 # One compact XHTML paragraph per language; no external web fonts required.
 python3 crosspoint-core/tests/make_language_visibility_epub.py \
-  "$card/Books/CrossPod-Multilingual-Visibility-Test.epub"
+  "$card/Books/Books-Multilingual-Visibility-Test.epub"
 python3 crosspoint-core/tests/make_language_visibility_epub.py \
-  "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" --check
+  "$card/Books/Books-Multilingual-Visibility-Test.epub" --check
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
-python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
+python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.books/fonts"
 # Build authentic CrossPoint glyphs at 10/11pt from its pinned source,
 # including all 14 fallback scripts. Do not scale the 12pt bitmap or silently
 # ship missing fonts. The font build stays entirely on the CI host.
@@ -288,42 +288,42 @@ python3 -m venv "$work/font-build-venv"
 "$work/font-build-venv/bin/python" -m pip install --quiet --disable-pip-version-check \
   freetype-py fonttools PyYAML
 "$work/font-build-venv/bin/python" \
-  crosspoint-core/tools/build_q2_small_font_assets.py "$card/.crosspod/fonts"
-(cd "$card/.crosspod/fonts" && sha256sum -c crosspod-fonts-10-11.sha256)
+  crosspoint-core/tools/build_q2_small_font_assets.py "$card/.books/fonts"
+(cd "$card/.books/fonts" && sha256sum -c books-fonts-10-11.sha256)
 # All seven CrossInk named families have genuine 10/11/12pt glyph metrics.
 for name in bitter lexenddeca chareink literata merriweather inter atkinson; do
   for point in 10 11 12; do
-    test -s "$card/.crosspod/fonts/$name-$point.cpfont" ||
+    test -s "$card/.books/fonts/$name-$point.cpfont" ||
       { echo "::error::Missing $name ${point}pt CrossInk font"; exit 1; }
   done
 done
-cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
+cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.books/NotoSans-OFL.txt"
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.
 python3 crosspoint-core/tests/make_reader_links_epub.py "$work/reader/page-links.epub"
-cp "$work/reader/page-links.epub" "$card/Books/CrossPod-Links-and-Footnotes-Test.epub"
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+cp "$work/reader/page-links.epub" "$card/Books/Books-Links-and-Footnotes-Test.epub"
+BOOKS_STATE_DIR="$card/.books" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-page-links "$work/reader/page-links.epub" \
   | tee "$work/page-links.log"
 grep -q 'page link jump and return: PASS' "$work/page-links.log"
 # Selection must use the original rendered TextBlock source ranges, write
 # and re-read highlight records, then remove them without changing the EPUB.
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+BOOKS_STATE_DIR="$card/.books" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-selection "$work/reader/page-links.epub" \
   | tee "$work/selection.log"
 grep -q 'unicode selection and persistent highlight: PASS' "$work/selection.log"
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+BOOKS_STATE_DIR="$card/.books" timeout 90s \
   qemu-mipsel -L "$root" "$elf" --test-footnote-popup "$work/reader/page-links.epub" \
   | tee "$work/footnote-popup.log"
 grep -q 'XHTML footnote popover: PASS' "$work/footnote-popup.log"
 # Connected-library integration under the exact MIPS Q2 ABI. The local
 # Python mock serves OPDS Atom, chunked XML, EPUB ZIP and KOReader API.
 # Never ship mock credentials or network test progress state on the SD ZIP.
-CROSSPOD_Q2_FONTS="$card/.crosspod/fonts" timeout 180s \
+BOOKS_Q2_FONTS="$card/.books/fonts" timeout 180s \
   python3 crosspoint-core/tests/test_connected_network.py \
     "$elf" "$work/reader/page-links.epub" "$root" \
   | tee "$work/connected-library.log"
-grep -q 'CrossPod OPDS, download, partial-MD5 and KOSync: PASS' \
+grep -q 'Books OPDS, download, partial-MD5 and KOSync: PASS' \
   "$work/connected-library.log"
 
 
@@ -332,27 +332,27 @@ grep -q 'CrossPod OPDS, download, partial-MD5 and KOSync: PASS' \
 # Validate the generated EPUB on the actual Q2 MIPS application, with the
 # full SD cpfont bundle present. This checks structure/openability; visual
 # correctness is still assessed by eye on the real Shanling LCD.
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
-  --validate "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" \
+BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  --validate "$card/Books/Books-Multilingual-Visibility-Test.epub" \
   | tee "$work/language-visibility.log"
-grep -q 'CrossPod original Section:' "$work/language-visibility.log"
+grep -q 'Books original Section:' "$work/language-visibility.log"
 
 
 
 # Full script pack must load on MIPS, not just be copied into the ZIP.
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
   --validate "$work/reader/script-korean.epub" | tee "$work/korean-validate.log"
-grep -q 'CrossPod multilingual fonts: 14/14 scripts loaded (12pt)' "$work/korean-validate.log"
-grep -q 'CrossPod original Section:' "$work/korean-validate.log"
+grep -q 'Books multilingual fonts: 14/14 scripts loaded (12pt)' "$work/korean-validate.log"
+grep -q 'Books original Section:' "$work/korean-validate.log"
 
 for script in korean devanagari; do
   file="$work/reader/script-$script.epub"
-  CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+  BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
     --render "$file" "$work/$script-enabled.pgm" | tee "$work/$script-enabled.log"
-  CROSSPOD_DISABLE_SCRIPTS="$script" CROSSPOD_STATE_DIR="$card/.crosspod" \
+  BOOKS_DISABLE_SCRIPTS="$script" BOOKS_STATE_DIR="$card/.books" \
     timeout 90s qemu-mipsel -L "$root" "$elf" \
     --render "$file" "$work/$script-disabled.pgm" | tee "$work/$script-disabled.log"
-  grep -q 'CrossPod original Section:' "$work/$script-enabled.log"
+  grep -q 'Books original Section:' "$work/$script-enabled.log"
   python3 - "$work/$script-enabled.pgm" "$work/$script-disabled.pgm" "$script" <<'PY'
 from pathlib import Path
 import sys
@@ -369,16 +369,16 @@ done
 # Genuine Chinese/Japanese regression: the pinned CrossPoint CJK font must be
 # loaded under the real Q2 MIPS ABI. Compare exact rasters against the
 # explicitly disabled-fallback control, not just the process exit code.
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
   --render "$work/reader/cjk-script.epub" "$work/cjk-active.pgm" \
   | tee "$work/cjk-active.log"
-grep -q 'CrossPod original Section:' "$work/cjk-active.log"
-grep -q 'CrossPod CJK fallback: original CrossPoint NotoSansCJKJP cpfont 12pt' "$work/cjk-active.log"
-CROSSPOD_DISABLE_CJK=1 CROSSPOD_STATE_DIR="$card/.crosspod" \
+grep -q 'Books original Section:' "$work/cjk-active.log"
+grep -q 'Books CJK fallback: original CrossPoint NotoSansCJKJP cpfont 12pt' "$work/cjk-active.log"
+BOOKS_DISABLE_CJK=1 BOOKS_STATE_DIR="$card/.books" \
   timeout 90s qemu-mipsel -L "$root" "$elf" \
   --render "$work/reader/cjk-script.epub" "$work/cjk-disabled.pgm" \
   | tee "$work/cjk-disabled.log"
-grep -q 'CrossPod CJK fallback: unavailable 12pt' "$work/cjk-disabled.log"
+grep -q 'Books CJK fallback: unavailable 12pt' "$work/cjk-disabled.log"
 python3 - "$work/cjk-active.pgm" "$work/cjk-disabled.pgm" <<'PY'
 from pathlib import Path
 import sys
@@ -394,26 +394,26 @@ PY
 
 # The default must now use the extended multilingual Sans 12 pack, not just
 # the much smaller built-in UI glyph set.
-CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s qemu-mipsel -L "$root" "$elf" \
+BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
   --render "$work/reader/vietnamese-prose.epub" "$work/default-extended.pgm" \
   | tee "$work/default-extended.log"
-grep -q 'CrossPod font source: original CrossPoint extended cpfont' "$work/default-extended.log"
+grep -q 'Books font source: original CrossPoint extended cpfont' "$work/default-extended.log"
 # Render *every* allowed point size using the actual Q2 MIPS ELF and
 # original CrossPoint font files. Each size must retain all 14 scripts,
 # produce distinct paginated pixels, and never fall back to the 12pt bitmap.
 for family in sans serif; do
   for point in 10 11 12; do
     setting="$family $point"
-    echo "CROSSPOD-TYPE1 $setting" > "$card/.crosspod/typography.conf"
+    echo "BOOKS-TYPE1 $setting" > "$card/.books/typography.conf"
     slug="$family-$point"
-    CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+    BOOKS_STATE_DIR="$card/.books" timeout 90s \
       qemu-mipsel -L "$root" "$elf" \
       --render "$work/reader/vietnamese-prose.epub" "$work/$slug.pgm" \
       | tee "$work/$slug.log"
-    grep -q "CrossPod multilingual fonts: 14/14 scripts loaded (${point}pt)" \
+    grep -q "Books multilingual fonts: 14/14 scripts loaded (${point}pt)" \
       "$work/$slug.log"
     if [[ "$family" == "sans" ]]; then label="Noto Sans"; else label="Noto Serif"; fi
-    grep -q "CrossPod typeface: $label ${point}pt" "$work/$slug.log"
+    grep -q "Books typeface: $label ${point}pt" "$work/$slug.log"
   done
 done
 # CrossInk font choices are real cpfont files, not UI-only labels.
@@ -424,15 +424,15 @@ for pair in "bitter:Bitter" "lexenddeca:Lexend Deca" \
   slug="${pair%%:*}"
   family_name="${pair#*:}"
   for point in 10 11 12; do
-    test -s "$card/.crosspod/fonts/$slug-$point.cpfont"
-    echo "CROSSPOD-TYPE1 $slug $point" > "$card/.crosspod/typography.conf"
-    CROSSPOD_STATE_DIR="$card/.crosspod" timeout 90s \
+    test -s "$card/.books/fonts/$slug-$point.cpfont"
+    echo "BOOKS-TYPE1 $slug $point" > "$card/.books/typography.conf"
+    BOOKS_STATE_DIR="$card/.books" timeout 90s \
       qemu-mipsel -L "$root" "$elf" \
       --render "$work/reader/vietnamese-prose.epub" "$work/$slug-$point.pgm" \
       | tee "$work/$slug-$point.log"
-    grep -q "CrossPod typeface: $family_name ${point}pt" \
+    grep -q "Books typeface: $family_name ${point}pt" \
       "$work/$slug-$point.log"
-    grep -q "CrossPod multilingual fonts: 14/14 scripts loaded (${point}pt)" \
+    grep -q "Books multilingual fonts: 14/14 scripts loaded (${point}pt)" \
       "$work/$slug-$point.log"
   done
 done
@@ -468,32 +468,32 @@ for size in range(10, 13):
            (work/f"serif-{size}.pgm").read_bytes(), size
 print("MIPS Q2 10-12pt 3-size font switching and multilingual rendering: PASS")
 PY
-rm -f "$card/.crosspod/typography.conf"
+rm -f "$card/.books/typography.conf"
 # Stress-regression for v0.8: validate EPUB3 HTML entities and the actual
 # bundled italic/bold cpfont raster on the MIPS binary (not a host skip).
-CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
+BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
   python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" entities
-CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
+BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
   python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" italic
 
 # Ship only the app's own files: the QEMU tests above ran with this folder as
 # their state directory and leave caches, positions, highlights, settings and
 # logs (v0.8.0-beta shipped a test's progress-*.highlights). Allow-list, so a
 # new kind of state can never leak into a release.
-find "$card/.crosspod" -mindepth 1 -maxdepth 1 ! -name crosspod-engine ! -name q2-crosspod \
+find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
   ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
-find "$card/.crosspod/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
-chmod +x "$card/.crosspod/q2-crosspod" "$card/.crosspod/crosspod-engine"
-(cd "$card" && zip -q -r "$base/dist/crosspod-q2-reader-alpha.zip" .crosspod Books)
-sha256sum "$base/dist/crosspod-q2-reader-alpha.zip" > "$base/dist/crosspod-q2-reader-alpha.zip.sha256"
-unzip -t "$base/dist/crosspod-q2-reader-alpha.zip"
+find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
+chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
+(cd "$card" && zip -q -r "$base/dist/books-q2-reader-alpha.zip" .books Books)
+sha256sum "$base/dist/books-q2-reader-alpha.zip" > "$base/dist/books-q2-reader-alpha.zip.sha256"
+unzip -t "$base/dist/books-q2-reader-alpha.zip"
 # Verify the allow-list held: nothing but the app's files and the sample books.
-unzip -Z1 "$base/dist/crosspod-q2-reader-alpha.zip" | python3 -c '
+unzip -Z1 "$base/dist/books-q2-reader-alpha.zip" | python3 -c '
 import re,sys
 bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
-  r"(\.crosspod/|Books/|\.crosspod/fonts/|Books/[^/]+\.epub|\.crosspod/fonts/[^/]+\.(cpfont|txt)|"
-  r"\.crosspod/(crosspod-engine|q2-crosspod|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
+  r"(\.books/|Books/|\.books/fonts/|Books/[^/]+\.epub|\.books/fonts/[^/]+\.(cpfont|txt)|"
+  r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
 print("Release ZIP contents: PASS")'

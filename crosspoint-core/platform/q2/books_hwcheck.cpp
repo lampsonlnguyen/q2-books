@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// CrossPod hardware diagnostic ONLY. Does not open or render EPUB files.
+// Books hardware diagnostic ONLY. Does not open or render EPUB files.
 // Run via q2remote/SSH while Q2 Pod isn't drawing; wait for clean exit.
 #include "Q2Framebuffer.hpp"
 #include "Q2SocketInput.hpp"
@@ -19,8 +19,8 @@
 namespace {
 volatile std::sig_atomic_t stopped = 0;
 void stop_handler(int) { stopped = 1; }
-constexpr unsigned W = crosspod::Q2Framebuffer::LogicalWidth;
-constexpr unsigned H = crosspod::Q2Framebuffer::LogicalHeight;
+constexpr unsigned W = books::Q2Framebuffer::LogicalWidth;
+constexpr unsigned H = books::Q2Framebuffer::LogicalHeight;
 constexpr unsigned MaxSeconds = 30;
 struct Metrics {
   struct rusage usage{};
@@ -61,16 +61,16 @@ double cpuSeconds(const timeval& value) {
 
 int main(int argc, char** argv) {
   if (argc > 2 || (argc == 2 && std::string_view(argv[1]) != "--display" && std::string_view(argv[1]) != "--card")) {
-    std::fprintf(stderr, "Usage: crosspod-hwcheck [--display|--card]\n"
+    std::fprintf(stderr, "Usage: books-hwcheck [--display|--card]\n"
             "Default: check input socket only. --display briefly uses /dev/fb0.\n");
     return 2;
   }
   const bool card = (argc == 2 && std::string_view(argv[1]) == "--card") ||
-                    (argc == 1 && std::string_view(argv[0]).find("q2-crosspod-test") != std::string_view::npos);
+                    (argc == 1 && std::string_view(argv[0]).find("q2-books-test") != std::string_view::npos);
   const bool show = argc == 2 || card;
   // Avoid drawing over Q2 Pod by default. Only use --display with Q2 Pod
   // screen painting deliberately suspended by the hardware test operator.
-  crosspod::Q2Framebuffer framebuffer;
+  books::Q2Framebuffer framebuffer;
   std::array<uint32_t, W*H> image{};
   if (show) {
     if (!framebuffer.open()) {
@@ -89,32 +89,32 @@ int main(int argc, char** argv) {
       return 4;
     }
   }
-  crosspod::Q2SocketInput input;
-  if (!input.open(card ? "/tmp/q2-crosspod-test.input.sock" : "/tmp/q2-crosspod.input.sock")) {
+  books::Q2SocketInput input;
+  if (!input.open(card ? "/tmp/q2-books-test.input.sock" : "/tmp/q2-books.input.sock")) {
     std::fprintf(stderr, "Input socket creation failed\n");
     return 5;
   }
   std::signal(SIGINT, stop_handler);
   std::signal(SIGTERM, stop_handler);
-  std::fprintf(stderr, "CrossPod Q2 hardware diagnostic: socket ready; "
+  std::fprintf(stderr, "Books Q2 hardware diagnostic: socket ready; "
            "timeout %u s; exit on Return key up (170).\n", MaxSeconds);
   const Metrics startMetric = snapshot();
   const auto start = startMetric.time;
-  if (card) std::fprintf(stderr, "CrossPod card diagnostic: press Return to exit, or wait 30 seconds.\\n");
+  if (card) std::fprintf(stderr, "Books card diagnostic: press Return to exit, or wait 30 seconds.\\n");
   unsigned events = 0;
   unsigned wheelEvents=0, keyEvents=0, touchEvents=0;
   while (!stopped && std::chrono::steady_clock::now()-start < std::chrono::seconds(MaxSeconds)) {
-    crosspod::PhysicalEvent event;
+    books::PhysicalEvent event;
     if (input.receive(event)) {
       ++events;
-      if (event.kind == crosspod::PhysicalKind::WheelStep) ++wheelEvents;
-      else if (event.kind == crosspod::PhysicalKind::KeyDown ||
-               event.kind == crosspod::PhysicalKind::KeyUp) ++keyEvents;
+      if (event.kind == books::PhysicalKind::WheelStep) ++wheelEvents;
+      else if (event.kind == books::PhysicalKind::KeyDown ||
+               event.kind == books::PhysicalKind::KeyUp) ++keyEvents;
       else ++touchEvents;
       std::fprintf(stderr, "event %u kind=%u code=%d x=%d y=%d\n",
                    events, static_cast<unsigned>(event.kind),
                    event.value, event.x, event.y);
-      if (event.kind == crosspod::PhysicalKind::KeyUp && event.value == 170) break;
+      if (event.kind == books::PhysicalKind::KeyUp && event.value == 170) break;
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -128,11 +128,11 @@ int main(int argc, char** argv) {
                      cpuSeconds(startMetric.usage.ru_utime) -
                      cpuSeconds(startMetric.usage.ru_stime);
   const double cpuPct = wall > 0 ? 100.0 * cpu / wall : 0.0;
-  std::fprintf(stderr, "CrossPod diagnostic closed normally; events=%u\n", events);
+  std::fprintf(stderr, "Books diagnostic closed normally; events=%u\n", events);
   // Machine-readable telemetry for later physical Q2 validation. Power
   // capacity is best effort: -1 denotes unavailable, not a failed battery.
   std::fprintf(stderr,
-      "CROSSPOD_METRICS {\"wall_s\":%.3f,\"cpu_s\":%.3f,"
+      "BOOKS_METRICS {\"wall_s\":%.3f,\"cpu_s\":%.3f,"
       "\"cpu_pct\":%.2f,\"peak_rss_kib\":%ld,"
       "\"input_events\":%u,\"wheel_events\":%u,"
       "\"key_events\":%u,\"touch_events\":%u,"

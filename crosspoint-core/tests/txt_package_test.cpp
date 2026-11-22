@@ -27,24 +27,24 @@ int main() {
   std::string text;
   for(int i=0;i<4000;++i)
     text+="Dòng thứ "+std::to_string(i)+" — tiếng Việt và 中文 text.\n"+(i%7==0?"\n":"");
-  const auto parts=crosspod::txtpkg::splitParts(text);
+  const auto parts=books::txtpkg::splitParts(text);
   assert(parts.size()>4);
   std::string joined;
   for(auto p:parts) {
-    assert(p.size()<=crosspod::kTxtPartBytes+crosspod::kTxtPartBytes/4);
-    assert(crosspod::txtpkg::validUtf8(p));
+    assert(p.size()<=books::kTxtPartBytes+books::kTxtPartBytes/4);
+    assert(books::txtpkg::validUtf8(p));
     joined+=p;
   }
   assert(joined==text);
   // One long line with no newline still splits on character boundaries.
   std::string line;
   while(line.size()<200000)line+="ộ";
-  for(auto p:crosspod::txtpkg::splitParts(line))assert(crosspod::txtpkg::validUtf8(p));
+  for(auto p:books::txtpkg::splitParts(line))assert(books::txtpkg::validUtf8(p));
   // Legacy Latin-1 bytes become UTF-8 instead of invalid markup.
-  assert(crosspod::txtpkg::latin1ToUtf8("caf\xe9")=="caf\xc3\xa9");
-  assert(crosspod::txtpkg::crc32("123456789")==0xCBF43926u);
+  assert(books::txtpkg::latin1ToUtf8("caf\xe9")=="caf\xc3\xa9");
+  assert(books::txtpkg::crc32("123456789")==0xCBF43926u);
 
-  char dir[]="/tmp/crosspod-txt-XXXXXX";
+  char dir[]="/tmp/books-txt-XXXXXX";
   assert(mkdtemp(dir));
   const std::string book=std::string(dir)+"/A <Story> & more.TXT";
   {
@@ -56,16 +56,16 @@ int main() {
   std::string error;
   const std::string cache=std::string(dir)+"/cache";
   // A killed build's leftovers for this book are removed by the next build.
-  std::string package=crosspod::packageTxtBook(book,cache,error);
+  std::string package=books::packageTxtBook(book,cache,error);
   assert(!package.empty());
   std::remove(package.c_str());
   const std::string stale=package+".part424242";
   {FILE* f=std::fopen(stale.c_str(),"wb");assert(f);std::fputs("half",f);std::fclose(f);}
-  package=crosspod::packageTxtBook(book,cache,error);
+  package=books::packageTxtBook(book,cache,error);
   assert(!package.empty() && ::access(stale.c_str(),F_OK)!=0);
   struct stat first{};
   assert(::stat(package.c_str(),&first)==0);
-  assert(crosspod::packageTxtBook(book,cache,error)==package);  // reused, not rebuilt
+  assert(books::packageTxtBook(book,cache,error)==package);  // reused, not rebuilt
 
   ZipFile zip(package);
   assert(zip.loadAllFileStatSlims());
@@ -83,19 +83,19 @@ int main() {
   {
     FILE* f=std::fopen(big.c_str(),"wb");
     assert(f);
-    assert(std::fseek(f,static_cast<long>(crosspod::kTxtMaxBytes),SEEK_SET)==0);
+    assert(std::fseek(f,static_cast<long>(books::kTxtMaxBytes),SEEK_SET)==0);
     assert(std::fputc('x',f)=='x');
     assert(std::fclose(f)==0);
   }
-  assert(crosspod::packageTxtBook(big,cache,error).empty());
-  assert(crosspod::isTxtFilename("x.TxT") && !crosspod::isTxtFilename("x.txt.bak"));
-  assert(crosspod::isBookFilename("x.epub") && crosspod::isBookFilename("y.txt"));
+  assert(books::packageTxtBook(big,cache,error).empty());
+  assert(books::isTxtFilename("x.TxT") && !books::isTxtFilename("x.txt.bak"));
+  assert(books::isBookFilename("x.epub") && books::isBookFilename("y.txt"));
 
   std::remove(package.c_str());
   std::remove(book.c_str());
   std::remove(big.c_str());
   rmdir(cache.c_str());
   assert(rmdir(dir)==0);
-  std::puts("CrossPod TXT package: PASS");
+  std::puts("Books TXT package: PASS");
   return 0;
 }

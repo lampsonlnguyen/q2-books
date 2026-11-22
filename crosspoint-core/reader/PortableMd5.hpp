@@ -11,7 +11,7 @@
 #include <string>
 #include <sys/stat.h>
 
-namespace crosspod {
+namespace books {
 class PortableMd5 {
   uint32_t state_[4]={0x67452301u,0xefcdab89u,0x98badcfeu,0x10325476u};
   uint64_t bytes_=0;
@@ -124,4 +124,4 @@ inline std::string koReaderPartialMd5(const std::string& book) {
   std::fclose(input);
   return digest.finish();
 }
-} // namespace crosspod
+} // namespace books

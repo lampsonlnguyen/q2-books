@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace crosspod {
+namespace books {
 inline std::string foldShelfSearch(std::string_view raw) {
   std::string normalized=utf8ComposeNfc(std::string(raw));
   for(char& ch:normalized)
@@ -27,4 +27,4 @@ inline bool shelfSearchMatches(const std::string& query,
          foldShelfSearch(title).find(needle)!=std::string::npos ||
          foldShelfSearch(author).find(needle)!=std::string::npos;
 }
-} // namespace crosspod
+} // namespace books

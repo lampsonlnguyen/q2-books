@@ -1,4 +1,4 @@
-# The genuine CrossPoint port is built separately from the old CrossPod prototype.
+# The genuine CrossPoint port is built separately from the old Books prototype.
 # Do not ship a legacy reader ZIP when this target is requested.
 .PHONY: all test upstream clean
 all: test

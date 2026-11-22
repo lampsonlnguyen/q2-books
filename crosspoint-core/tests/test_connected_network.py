@@ -74,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
   <entry><title>Series Folder</title><link rel="subsection"
       type="application/atom+xml;profile=opds-catalog"
       href="/api/opds/key/series"/></entry>
-  <entry><title>CrossPod Links and Footnotes</title>
+  <entry><title>Books Links and Footnotes</title>
   <author><name>Mock Author</name></author><link
      rel="http://opds-spec.org/acquisition"
      type="application/epub+zip"
@@ -112,16 +112,16 @@ class Handler(BaseHTTPRequestHandler):
         received.append(payload)
         self.respond(200, b"{}")
 
-with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
+with tempfile.TemporaryDirectory(prefix="books-network-test-") as tmp:
     temp = Path(tmp)
     (temp / "Books").mkdir()
     (temp / "state").mkdir()
     if QEMU_ROOT:
-        fonts = Path(os.environ.get("CROSSPOD_Q2_FONTS", ""))
+        fonts = Path(os.environ.get("BOOKS_Q2_FONTS", ""))
         if fonts.is_dir():
             (temp / "state" / "fonts").symlink_to(fonts)
     listener = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    tls = os.environ.get("CROSSPOD_TEST_HTTPS") == "1"
+    tls = os.environ.get("BOOKS_TEST_HTTPS") == "1"
     ca = temp / "local-ca.pem"
     if tls:
         key = temp / "local-ca.key"
@@ -146,9 +146,9 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
             "sync_username=testreader\nsync_password=secret\n"
             "enable_sync=1\n", encoding="utf-8"
         )
-        env = dict(os.environ, CROSSPOD_STATE_DIR=str(temp / "state"))
+        env = dict(os.environ, BOOKS_STATE_DIR=str(temp / "state"))
         if tls:
-            env["CROSSPOD_TEST_CA_BUNDLE"] = str(ca)
+            env["BOOKS_TEST_CA_BUNDLE"] = str(ca)
         prefix = (["qemu-mipsel", "-L", str(QEMU_ROOT), str(READER)]
                   if QEMU_ROOT else [str(READER)])
         def call(*args):
@@ -166,7 +166,7 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
             # No CA trust and wrong hostname MUST fail. Never weaken TLS
             # verification to make a development server appear to work.
             untrusted = dict(env)
-            untrusted.pop("CROSSPOD_TEST_CA_BUNDLE", None)
+            untrusted.pop("BOOKS_TEST_CA_BUNDLE", None)
             attempt = subprocess.run(
                 [*prefix, "--opds-probe", f"{base}/api/opds/key"],
                 capture_output=True, text=True, timeout=30, env=untrusted)
@@ -190,7 +190,7 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
         assert "Subcatalog" in output, output
         output = call("--opds-download", f"{base}/api/opds/key",
                       str(temp / "Books"))
-        assert "CrossPod OPDS downloaded:" in output, output
+        assert "Books OPDS downloaded:" in output, output
         downloads = list((temp / "Books" / "Online").glob("*.epub"))
         assert len(downloads) == 1, downloads
         assert downloads[0].read_bytes() == book_data
@@ -206,13 +206,13 @@ with tempfile.TemporaryDirectory(prefix="crosspod-network-test-") as tmp:
                 expected.update(book_data[offset:offset + 1024])
         assert digest == expected.hexdigest(), (digest, expected.hexdigest())
         output = call("--test-koreader-sync", str(downloads[0]))
-        assert "CrossPod KOReader XPath progress roundtrip: PASS" in output
+        assert "Books KOReader XPath progress roundtrip: PASS" in output
         assert received and received[-1]["document"] == digest
         assert "DocFragment[" in received[-1]["progress"]
         if tls:
-            print("CrossPod HTTPS OPDS, download, partial-MD5 and KOSync: PASS")
+            print("Books HTTPS OPDS, download, partial-MD5 and KOSync: PASS")
         else:
-            print("CrossPod OPDS, download, partial-MD5 and KOSync: PASS")
+            print("Books OPDS, download, partial-MD5 and KOSync: PASS")
     finally:
         listener.shutdown()
         listener.server_close()

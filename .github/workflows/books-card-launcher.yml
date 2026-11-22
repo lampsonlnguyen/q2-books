@@ -1,0 +1,34 @@
+name: Books card launcher diagnostics CI
+on:
+  push:
+    branches: [books-renderer-linux-link]
+    paths:
+      - "crosspoint-core/platform/q2/books-launcher.sh"
+      - "crosspoint-core/tests/card_launcher_test.py"
+      - ".github/workflows/books-card-launcher.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  card-launcher:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax and execution semantics
+        run: |
+          set -euo pipefail
+          /bin/sh -n crosspoint-core/platform/q2/books-launcher.sh
+          python3 crosspoint-core/tests/card_launcher_test.py \
+            crosspoint-core/platform/q2/books-launcher.sh
+      - name: Enforce Q2 Pod game-card entrypoint and manifest
+        run: |
+          set -euo pipefail
+          grep -F 'ROOT=${BOOKS_APP_DIR:-/mnt/mmc/.books}' \
+            crosspoint-core/platform/q2/books-launcher.sh
+          grep -F 'BIN="$ROOT/books-engine"' \
+            crosspoint-core/platform/q2/books-launcher.sh
+          grep -F 'exec "$BIN"' \
+            crosspoint-core/platform/q2/books-launcher.sh

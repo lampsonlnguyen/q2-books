@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 enum class ShelfSortMode { Title, Recent, RecentlyAdded };
 inline const char* shelfSortLabel(ShelfSortMode sort) {
   switch(sort) {
@@ -52,4 +52,4 @@ inline size_t lastOpenedIndex(const std::vector<Entry>& books,
       if(books[i].path==path)return i;
   return 0; // no history: retain alphabetically-selected fallback
 }
-} // namespace crosspod
+} // namespace books

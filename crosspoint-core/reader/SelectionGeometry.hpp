@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct SelectedWord {
   uint32_t begin=0,end=0;
   int x=0,y=0,width=0,height=0;
@@ -64,4 +64,4 @@ inline bool overlapsVisibleWord(const SelectedWord& word,
                                uint32_t begin,uint32_t end) {
   return word.begin<end && begin<word.end;
 }
-} // namespace crosspod
+} // namespace books

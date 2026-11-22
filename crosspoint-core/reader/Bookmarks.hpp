@@ -11,7 +11,7 @@
 #include <vector>
 #include <sys/stat.h>
 #include <unistd.h>
-namespace crosspod {
+namespace books {
 struct Bookmark {
   int spine=0;
   size_t page=0;
@@ -39,7 +39,7 @@ inline std::vector<Bookmark> loadBookmarks(const std::string& book) {
   unsigned count=0;
   const int head=std::fscanf(f,"%31s %llu %llu %u",magic,
                               &storedSize,&storedTime,&count);
-  if(head!=4 || std::string(magic)!="CROSSPOD-BOOKMARKS1" ||
+  if(head!=4 || std::string(magic)!="BOOKS-BOOKMARKS1" ||
      storedSize!=size||storedTime!=mtime||count>32) {
     std::fclose(f);return result;
   }
@@ -65,7 +65,7 @@ inline bool saveBookmarks(const std::string& book,
   const auto tmp=path+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"CROSSPOD-BOOKMARKS1 %llu %llu %zu\n",
+  bool ok=std::fprintf(f,"BOOKS-BOOKMARKS1 %llu %llu %zu\n",
      size,mtime,marks.size())>0;
   for(const auto& mark:marks) {
     if(mark.spine<0||mark.spine>100000||mark.page>1000000) {ok=false;break;}
@@ -90,4 +90,4 @@ inline bool addBookmark(const std::string& book,Bookmark mark) {
   marks.push_back(mark);
   return saveBookmarks(book,marks);
 }
-} // namespace crosspod
+} // namespace books

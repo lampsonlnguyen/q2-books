@@ -12,7 +12,7 @@ import tempfile
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
 
 reader, source = sys.argv[1:]
-with tempfile.TemporaryDirectory(prefix="crosspod-stream-") as td:
+with tempfile.TemporaryDirectory(prefix="books-stream-") as td:
     root = Path(td)
     with ZipFile(source) as original:
         members = [(item.filename, original.read(item.filename),

@@ -25,7 +25,7 @@ def main(path: str):
     opf='''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier>crosspod-index-cover-fixture</dc:identifier>
+<dc:identifier>books-index-cover-fixture</dc:identifier>
 <dc:title>Unopened Vietnamese Book</dc:title>
 <dc:creator>Nguyễn Thị Mai</dc:creator><dc:language>vi</dc:language>
 </metadata>

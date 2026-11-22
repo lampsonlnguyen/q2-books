@@ -10,7 +10,7 @@ media-type="application/oebps-package+xml"/></rootfiles></container>'''
 opf = '''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier>crosspod-cjk-regression</dc:identifier>
+<dc:identifier>books-cjk-regression</dc:identifier>
 <dc:title>中文・日本語 CJK reader sample</dc:title>
 <dc:language>mul</dc:language></metadata>
 <manifest><item id="chapter" href="chapter.xhtml"

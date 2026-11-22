@@ -1,4 +1,4 @@
-// CrossPod EPUB validation utility: real CrossPoint ZIP and container parser.
+// Books EPUB validation utility: real CrossPoint ZIP and container parser.
 // This is an engine diagnostic, NOT the Q2 reading user interface.
 #include <ContainerParser.h>
 #include <ZipFile.h>
@@ -9,7 +9,7 @@
 
 int main(int argc, char** argv) {
   if (argc != 2) {
-    std::cerr << "usage: crosspod-epub-check <book.epub>\n";
+    std::cerr << "usage: books-epub-check <book.epub>\n";
     return 2;
   }
   const std::string path = argv[1];

@@ -18,7 +18,7 @@
 #include "ShelfLibrary.hpp"
 #include "TxtToHtml.h"
 
-namespace crosspod {
+namespace books {
 
 inline constexpr size_t kTxtMaxBytes=32u*1024u*1024u;  // larger TXT is refused
 inline constexpr size_t kTxtPartBytes=32u*1024u;       // source bytes per XHTML part
@@ -163,7 +163,7 @@ inline std::string buildTxtEpub(std::string_view name,std::string_view text) {
   zip.add("OEBPS/content.opf",
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" "
       "version=\"2.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
-      "<dc:title>"+t+"</dc:title><dc:identifier id=\"id\">crosspod-txt</dc:identifier>"
+      "<dc:title>"+t+"</dc:title><dc:identifier id=\"id\">books-txt</dc:identifier>"
       "<dc:language>und</dc:language></metadata><manifest>"
       "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>"+manifest+
       "</manifest><spine toc=\"ncx\">"+spine+"</spine></package>\n");
@@ -219,4 +219,4 @@ inline std::string packageTxtBook(const std::string& txtPath,const std::string& 
   return out;
 }
 
-}  // namespace crosspod
+}  // namespace books

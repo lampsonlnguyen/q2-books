@@ -9,7 +9,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
-namespace crosspod {
+namespace books {
 struct Typography {
   // Append only: family IDs are embedded in CrossPoint Section render specs.
   enum class Family { Sans, Serif, Bitter, LexendDeca, ChareInk,
@@ -48,8 +48,8 @@ inline Typography::Family nextTypographyFamily(Typography::Family current) {
       (value+1)%static_cast<unsigned>(Typography::Family::Count));
 }
 inline std::string typographyRoot() {
-  const char* env=std::getenv("CROSSPOD_STATE_DIR");
-  return env && *env ? env : "/mnt/mmc/.crosspod";
+  const char* env=std::getenv("BOOKS_STATE_DIR");
+  return env && *env ? env : "/mnt/mmc/.books";
 }
 inline std::string typographyFontPath(Typography t) {
   if(!validTypography(t))return {};
@@ -79,7 +79,7 @@ inline bool loadTypography(Typography& value) {
   if(!f)return false;
   char family[32]={};
   int size=0;
-  const int count=std::fscanf(f,"CROSSPOD-TYPE1 %31s %d",family,&size);
+  const int count=std::fscanf(f,"BOOKS-TYPE1 %31s %d",family,&size);
   std::fclose(f);
   if(count!=2)return false;
   Typography read{};
@@ -109,7 +109,7 @@ inline bool saveTypography(Typography t) {
   const std::string temp=filename+".tmp";
   std::FILE* f=std::fopen(temp.c_str(),"wb");
   if(!f)return false;
-  const bool wrote=std::fprintf(f,"CROSSPOD-TYPE1 %s %d\n",
+  const bool wrote=std::fprintf(f,"BOOKS-TYPE1 %s %d\n",
       typographyFamilySlug(t.family),t.size)>0;
   bool ok=wrote;
   if(std::fflush(f)!=0)ok=false;
@@ -119,4 +119,4 @@ inline bool saveTypography(Typography t) {
   std::remove(temp.c_str());
   return false;
 }
-} // namespace crosspod
+} // namespace books

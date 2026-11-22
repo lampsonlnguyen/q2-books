@@ -52,25 +52,25 @@ jobs:
       - name: Convert EPUB preview to PNG
         if: matrix.compiler == 'gcc'
         run: |
-          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-epub-preview.pgm build/crosspoint-core/crosspod-epub-preview.png
-          sha256sum build/crosspoint-core/crosspod-epub-preview.{pgm,png}
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/books-epub-preview.pgm build/crosspoint-core/books-epub-preview.png
+          sha256sum build/crosspoint-core/books-epub-preview.{pgm,png}
 
       - name: Render Vietnamese book sample to PNG
         if: matrix.compiler == 'gcc'
         run: |
-          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/crosspod-vietnamese-preview.pgm build/crosspoint-core/crosspod-vietnamese-preview.png
-          sha256sum build/crosspoint-core/crosspod-vietnamese-preview.{pgm,png}
+          python3 crosspoint-core/tools/pgm_to_png.py build/crosspoint-core/books-vietnamese-preview.pgm build/crosspoint-core/books-vietnamese-preview.png
+          sha256sum build/crosspoint-core/books-vietnamese-preview.{pgm,png}
 
       - name: Upload rendered EPUB page
         if: matrix.compiler == 'gcc'
         uses: actions/upload-artifact@v4
         with:
-          name: crosspod-epub-page-preview-${{ github.sha }}
+          name: books-epub-page-preview-${{ github.sha }}
           path: |
-            build/crosspoint-core/crosspod-epub-preview.pgm
-            build/crosspoint-core/crosspod-epub-preview.png
-            build/crosspoint-core/crosspod-vietnamese-preview.pgm
-            build/crosspoint-core/crosspod-vietnamese-preview.png
+            build/crosspoint-core/books-epub-preview.pgm
+            build/crosspoint-core/books-epub-preview.png
+            build/crosspoint-core/books-vietnamese-preview.pgm
+            build/crosspoint-core/books-vietnamese-preview.png
           if-no-files-found: error
           retention-days: 30
 
@@ -79,21 +79,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/core-devkit/lib dist/core-devkit/include dist/core-devkit/platform
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libcrosspod_q2_input.a build/crosspoint-core/libcrosspod_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a dist/core-devkit/lib/
+          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libbooks_q2_input.a build/crosspoint-core/libbooks_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a dist/core-devkit/lib/
           cp crosspoint-core/lib/Utf8/Utf8.h crosspoint-core/lib/Txt/TxtToHtml.h crosspoint-core/lib/Epub/parsers/ContainerParser.h crosspoint-core/lib/ZipFile/ZipFile.h crosspoint-core/lib/Epub/parsers/ContentOpfParser.h crosspoint-core/lib/Epub/Epub/BookMetadataCache.h crosspoint-core/lib/Serialization/BufferedFile.h crosspoint-core/lib/Serialization/Serialization.h crosspoint-core/lib/Epub/css/CssParser.h crosspoint-core/lib/Epub/css/CssStyle.h crosspoint-core/lib/Epub/WordStore.h crosspoint-core/lib/EpdFont/EpdFont.h crosspoint-core/lib/EpdFont/EpdFontData.h crosspoint-core/lib/EpdFont/EpdFontFamily.h crosspoint-core/lib/Epub/CjkBreaks.h crosspoint-core/lib/Epub/TokenBoundary.h crosspoint-core/lib/Epub/hyphenation/HyphenationCommon.h dist/core-devkit/include/
           cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp dist/core-devkit/platform/
           cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE dist/core-devkit/
           cp -R crosspoint-core/platform/posix dist/core-devkit/posix
-          cp build/crosspoint-core/crosspod-epub-check dist/core-devkit/
+          cp build/crosspoint-core/books-epub-check dist/core-devkit/
           printf '%s\n' 'DEVELOPMENT CORE ONLY — Linux x86_64 host static libraries, NOT Q2 firmware.' > dist/core-devkit/NOT-FLASHABLE.txt
           cd dist
-          zip -qr crosspod-crosspoint-core-devkit.zip core-devkit
+          zip -qr books-crosspoint-core-devkit.zip core-devkit
 
       - name: Upload development build
         if: matrix.compiler == 'gcc'
         uses: actions/upload-artifact@v4
         with:
-          name: crosspod-crosspoint-core-devkit-${{ github.sha }}
-          path: dist/crosspod-crosspoint-core-devkit.zip
+          name: books-crosspoint-core-devkit-${{ github.sha }}
+          path: dist/books-crosspoint-core-devkit.zip
           if-no-files-found: error
           retention-days: 30

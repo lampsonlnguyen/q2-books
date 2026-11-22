@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 int main() {
-  char temp[]="/tmp/crosspod-search-XXXXXX";
+  char temp[]="/tmp/books-search-XXXXXX";
   assert(mkdtemp(temp));
   const std::string root=temp;
   const std::string a=root+"/Classics", b=a+"/Vietnam", c=b+"/Translations";
@@ -31,23 +31,23 @@ int main() {
   put(root+"/notes.pdf");   // other types are not
   put(root+"/sixth.txt.bak");
   assert(symlink(c.c_str(),(root+"/linked").c_str())==0);
-  const auto books=crosspod::scanCardBooks(root);
+  const auto books=books::scanCardBooks(root);
   assert(books.size()==5);
-  const auto limited=crosspod::scanCardBooks(
-      root,crosspod::ShelfScanLimits{512,256,1});
+  const auto limited=books::scanCardBooks(
+      root,books::ShelfScanLimits{512,256,1});
   assert(limited.size()==3);
-  const auto capped=crosspod::scanCardBooks(
-      root,crosspod::ShelfScanLimits{1,256,5});
+  const auto capped=books::scanCardBooks(
+      root,books::ShelfScanLimits{1,256,5});
   assert(capped.size()==1);
-  assert(crosspod::isEpubFilename("test.ePuB"));
-  assert(!crosspod::isEpubFilename("test.epub.bak"));
-  assert(crosspod::shelfSearchMatches(
+  assert(books::isEpubFilename("test.ePuB"));
+  assert(!books::isEpubFilename("test.epub.bak"));
+  assert(books::shelfSearchMatches(
       "alpha","ALPHA","",""));
-  assert(crosspod::shelfSearchMatches(
+  assert(books::shelfSearchMatches(
       u8"Tiếng",u8"Tie\u0302\u0301ng Việt.epub","",""));
-  assert(crosspod::shelfSearchMatches(
+  assert(books::shelfSearchMatches(
       "tolkien","","The Hobbit","J.R.R. Tolkien"));
-  assert(!crosspod::shelfSearchMatches(
+  assert(!books::shelfSearchMatches(
       "tolkien","Alpha","Chapter 1","Unknown"));
   return 0;
 }

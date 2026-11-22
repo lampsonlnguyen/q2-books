@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-using namespace crosspod;
+using namespace books;
 int main() {
   PhysicalEvent event{};
   assert(parse_q2_input("w -60", event));
@@ -25,7 +25,7 @@ int main() {
                         "t u -1 20", "w 5 extra", "k u 170 extra", "q"}) {
     assert(!parse_q2_input(invalid, event));
   }
-  const std::string path = "/tmp/crosspod-input-test-" + std::to_string(getpid()) + ".sock";
+  const std::string path = "/tmp/books-input-test-" + std::to_string(getpid()) + ".sock";
   Q2SocketInput receiver;
   assert(receiver.open(path));
   // A second reader must never unlink the first reader's live endpoint.

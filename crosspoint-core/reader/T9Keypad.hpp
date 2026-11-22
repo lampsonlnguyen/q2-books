@@ -15,7 +15,7 @@
 #include <cstddef>
 #include <string>
 
-namespace crosspod {
+namespace books {
 
 inline constexpr int kT9Keys = 16;
 inline constexpr int kT9RepeatMs = 1200;
@@ -117,4 +117,4 @@ class T9Keypad {
   Clock::time_point lastAt_{};
 };
 
-}  // namespace crosspod
+}  // namespace books

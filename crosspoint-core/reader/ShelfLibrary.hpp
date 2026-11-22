@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct ShelfEntry {
   std::string path;
   std::string label;
@@ -105,4 +105,4 @@ inline std::vector<ShelfEntry> scanCardBooks(
     });
   return books;
 }
-} // namespace crosspod
+} // namespace books

@@ -1,21 +1,21 @@
-CrossPod Q2 Pod CARD APP (illustrated EPUB, Q2 ABI diagnostics)
+Books Q2 Pod CARD APP (illustrated EPUB, Q2 ABI diagnostics)
 
-INSTALLATION: Unzip crosspod-card-app.zip to the root of the Q2 SD card.
+INSTALLATION: Unzip books-card-app.zip to the root of the Q2 SD card.
 The exact file paths must be:
- /mnt/mmc/.crosspod/q2app
- /mnt/mmc/.crosspod/q2-crosspod    (POSIX shell launcher)
- /mnt/mmc/.crosspod/crosspod-engine (MIPS reader ELF)
+ /mnt/mmc/.books/q2app
+ /mnt/mmc/.books/q2-books    (POSIX shell launcher)
+ /mnt/mmc/.books/books-engine (MIPS reader ELF)
  /mnt/mmc/Books/YourBook.epub
 
-On supported Q2 Pod firmware, choose Library > CrossPod.
+On supported Q2 Pod firmware, choose Library > Books.
 If your Q2 Pod version does not support manifest row=library, look under Games.
 This is a standalone card-app launcher. DO NOT flash any firmware.
-Q2 Pod does not need the optional CrossPod Books hook for this card app.
+Q2 Pod does not need the optional Books hook for this card app.
 
 Opening the app without arguments shows a book selector. Turn the wheel,
 press Centre to open, use wheel or left/right touchscreen to turn pages.
-Back from reading returns to the CrossPod shelf; Back on the shelf exits.
-CrossPod reads Q2 Pod's Controls > Wheel Sensitivity setting at launch.
+Back from reading returns to the Books shelf; Back on the shelf exits.
+Books reads Q2 Pod's Controls > Wheel Sensitivity setting at launch.
 If the value is missing or invalid, turn distance defaults to 50%.
 
 Only EPUB files are currently handled. It lists the SD root Books folder and
@@ -28,22 +28,22 @@ pre-release check and static MIPS QEMU tests. Generic MIPS QEMU does not prove
 physical device compatibility. Do NOT flash firmware or replace system libraries.
 
 STARTUP DIAGNOSTICS:
-Q2 Pod's game card executes .crosspod/q2-crosspod, a #!/bin/sh wrapper. The
-wrapper logs to .crosspod/startup.log before attempting to exec crosspod-engine.
+Q2 Pod's game card executes .books/q2-books, a #!/bin/sh wrapper. The
+wrapper logs to .books/startup.log before attempting to exec books-engine.
 This log records kernel details, binary presence, free memory and reader stderr.
 If the engine ELF fails to start, the shell's error is captured here.
 The log is capped at approximately 64 KiB per attempt by rotating the previous
 file to startup.previous.log. Logging failures do not prevent starting the app.
 After testing on Q2, power off before removing the SD card, then send
-.crosspod/startup.log and (if present) startup.previous.log. If no log exists,
+.books/startup.log and (if present) startup.previous.log. If no log exists,
 then Q2 Pod did not reach the launcher (or the card was not writable); that
 narrows the cause to the Q2 Pod fork/exec, script permission, or SD mount.
-For direct terminal tests the reader is .crosspod/crosspod-engine, not the launcher.
+For direct terminal tests the reader is .books/books-engine, not the launcher.
 
 SESSION PROFILING (v0.8 development):
-Create an empty .crosspod/profile-session file on the SD card, then launch
-CrossPod from Q2 Pod and exit with Back. Look for the "CrossPod session" line
-in .crosspod/startup.log. Remove the marker to disable profiling. The line
+Create an empty .books/profile-session file on the SD card, then launch
+Books from Q2 Pod and exit with Back. Look for the "Books session" line
+in .books/startup.log. Remove the marker to disable profiling. The line
 reports elapsed time, user and system CPU time, peak resident memory, Linux
 block I/O counts and context switches for the reader process. Block counts
 can include any filesystem the reader touched. They are not SD byte counts.
@@ -56,7 +56,7 @@ This build uses CrossPoint's original EPUB ZIP/OPF/spine, ParsedText, TextBlock
 and GfxRenderer; XHTML collection is provisional and can lose styling.
 
 DEVICE POWER AND READING PROGRESS:
-Q2 Pod firmware owns power on, shutdown, sleep and wake. CrossPod checkpoints
+Q2 Pod firmware owns power on, shutdown, sleep and wake. Books checkpoints
 changed reading progress on the SD card at most once every five seconds during
 reading. Leaving a book or receiving SIGTERM/SIGINT flushes pending progress
 before the app releases its input socket and exits. If power is cut or the app
@@ -67,7 +67,7 @@ chapter and page. Progress is ignored if the EPUB size or modification time
 changes. The CLI --validate, --render and --walk modes do not save progress.
 
 On a physical Q2, turn a few pages, exit with Back or Q2 Pod's Hold Return,
-then reopen CrossPod and use Continue Reading. Repeat with a firmware
+then reopen Books and use Continue Reading. Repeat with a firmware
 shutdown and restart. Check how much progress Q2 Pod preserves during shutdown
 on your firmware version.
 
@@ -81,8 +81,8 @@ Merriweather, Inter and Atkinson Hyperlegible Next. Size cycles through
 Fonts not installed at the currently selected size are skipped, so copies of
 older card packages do not show unusable choices.
 Each family is loaded individually from SD, not kept fully in RAM.
-CrossPod repaginates the current chapter and saves your choices in
-/mnt/mmc/.crosspod/typography.conf. The book's page number may shift when
+Books repaginates the current chapter and saves your choices in
+/mnt/mmc/.books/typography.conf. The book's page number may shift when
 font size changes; location anchoring is still a follow-up.
 
 The card app CI installs original CrossPoint NotoSansExtended and
@@ -113,14 +113,14 @@ Han forms; distinct Simplified Chinese glyph shapes are not guaranteed.
 Font files do not imply support for every language or every ligature.
 
 The expanded font assets increase the ZIP substantially. Install to SD root
-with adequate space and retain the complete .crosspod/fonts folder.
+with adequate space and retain the complete .books/fonts folder.
 An older ZIP with missing script files still opens using available fonts;
 startup logs report the count of loaded script families. See the upstream
 catalog at https://github.com/crosspoint-reader/crosspoint-fonts
 
 ## Online library (OPDS / Kavita) over HTTPS
 
-`.crosspod/ca-bundle.pem` is the list of certificate authorities CrossPod
+`.books/ca-bundle.pem` is the list of certificate authorities Books
 trusts for HTTPS (Mozilla's roots). Keep it with the app when updating the
 card. Certificates are always verified; if a server fails with "certificate
 not trusted", check the Q2's date and time first. Holding Return during a

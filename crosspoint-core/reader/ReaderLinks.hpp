@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct InternalLink {std::string path;std::string anchor;bool valid=false;};
 inline InternalLink resolveInternalLink(std::string_view chapter,
                                         std::string_view href) {
@@ -55,4 +55,4 @@ inline InternalLink resolveInternalLink(std::string_view chapter,
   result.valid=true;
   return result;
 }
-} // namespace crosspod
+} // namespace books

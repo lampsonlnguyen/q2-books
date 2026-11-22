@@ -28,7 +28,7 @@
 #include <string_view>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 namespace stardict {
 
 inline constexpr uint64_t kMaxWords=8u*1000u*1000u;        // per dictionary
@@ -588,4 +588,4 @@ inline std::vector<std::string> findDictionaries(const std::string& folder,size_
 }
 
 }  // namespace stardict
-}  // namespace crosspod
+}  // namespace books

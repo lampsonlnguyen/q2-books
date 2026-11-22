@@ -12,7 +12,7 @@ The interface compiler regression target is
 
 ## Current boundary
 
-The Q2 `crosspod-reader` still uses its temporary Expat-based
+The Q2 `books-reader` still uses its temporary Expat-based
 `HtmlCollector` and only preserves paragraph text. Importing the
 original parser is **not** equivalent to connecting it to the reader.
 
@@ -28,7 +28,7 @@ stand in for the upstream `Epub` implementation.
 1. Import only the upstream reader-domain dependencies (not ESP32 firmware).
 2. Compile and **link** the original `ChapterHtmlSlimParser.cpp` with
    `Section`/`Page`, font/render, CSS, ZIP and Q2 POSIX HAL.
-3. Replace `HtmlCollector` in `reader/crosspod_reader.cpp` only when that
+3. Replace `HtmlCollector` in `reader/books_reader.cpp` only when that
    linked path can open a real EPUB and emit its pages.
 4. Compare pages from a Vietnamese and a styled EPUB against upstream
    reference renders, covering headings, emphasis, margins, images, and
@@ -42,12 +42,12 @@ layout algorithms, are part of this work.
 
 ## Transitional stylesheet rendering slice (November 2026)
 
-The standalone `crosspod-reader` now resolves external XHTML `<link rel="stylesheet">`
+The standalone `books-reader` now resolves external XHTML `<link rel="stylesheet">`
 CSS (bounded to 256 KiB per stylesheet) and inline `style` attributes
 through the original `CssParser` implementation. It carries paragraph
 alignment/direction and bold/italic runs into `ParsedText`. The reader also
 honors `display:none` for omitted paragraphs. The new
-`crosspod_reader_original_css_cascade` test exercises this **active** reader
+`books_reader_original_css_cascade` test exercises this **active** reader
 path with a multilingual EPUB fixture, rather than only the CSS unit library.
 
 This improves rendered text and validates a reusable CSS integration seam;

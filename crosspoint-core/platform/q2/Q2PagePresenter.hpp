@@ -7,7 +7,7 @@
 #include <memory>
 #include <new>
 
-namespace crosspod {
+namespace books {
 // A bounded ~480 KiB scratch buffer bridges CrossPoint's grayscale/monochrome
 // rendering output to the native 320x375 rotated Q2 framebuffer. Page writes
 // are explicit: no render thread or per-frame timer is required.
@@ -42,4 +42,4 @@ class Q2PagePresenter {
   Q2Framebuffer fb_;
   std::unique_ptr<uint32_t[]> pixels_;
 };
-} // namespace crosspod
+} // namespace books

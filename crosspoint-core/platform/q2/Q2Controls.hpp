@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace crosspod {
+namespace books {
 enum class PhysicalKind { WheelStep, KeyDown, KeyUp, TouchDown, TouchMove, TouchUp };
 enum class LogicalAction {
     None, Previous, Next, Confirm, Back, Menu,

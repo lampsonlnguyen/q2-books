@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic, short visual glyph atlas for the CrossPod Q2 EPUB reader.
+"""Deterministic, short visual glyph atlas for the Books Q2 EPUB reader.
 
 The 14 additional font scripts correspond to reader/ScriptFonts.hpp.
 Latin/Cyrillic/Greek/Thai probes are included for visibility testing, NOT
@@ -17,8 +17,8 @@ import unicodedata
 import xml.etree.ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
-TITLE = "CrossPod — Multilingual Glyph Visibility Test"
-EPUB_NAME = "CrossPod-Multilingual-Visibility-Test.epub"
+TITLE = "Books — Multilingual Glyph Visibility Test"
+EPUB_NAME = "Books-Multilingual-Visibility-Test.epub"
 # One short paragraph per language, with both cases where they exist.
 # Unicase scripts show the available letters, vowel signs and combinations.
 # These are visibility specimens, not exhaustive Unicode repertoire dumps.
@@ -66,7 +66,7 @@ CONTAINER = """<?xml version="1.0" encoding="utf-8"?>
 </container>"""
 def build_chapter() -> str:
     paragraphs = [
-        '<h1>CrossPod Multilingual Visibility Test</h1>',
+        '<h1>Books Multilingual Visibility Test</h1>',
         '<p>This is a visual font check, not a guarantee of correct shaping or coverage. '
         'A missing letter may appear as a blank space, square, or replacement glyph. '
         'Scripts without letter case are shown once.</p>',
@@ -92,9 +92,9 @@ def make_epub(dest: Path) -> None:
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0"
  unique-identifier="bookid">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier id="bookid">urn:crosspod:multilingual-visibility:1</dc:identifier>
-<dc:title>CrossPod Multilingual Visibility Test</dc:title>
-<dc:creator>CrossPod contributors</dc:creator>
+<dc:identifier id="bookid">urn:books:multilingual-visibility:1</dc:identifier>
+<dc:title>Books Multilingual Visibility Test</dc:title>
+<dc:creator>Books contributors</dc:creator>
 <dc:language>mul</dc:language></metadata>
 <manifest><item id="chapter" href="chapter.xhtml"
  media-type="application/xhtml+xml"/></manifest>
@@ -141,7 +141,7 @@ def main() -> int:
     if not args.check:
         make_epub(args.path)
     check_epub(args.path)
-    print(f"CrossPod multilingual visibility: {len(SAMPLES)} language rows, "
+    print(f"Books multilingual visibility: {len(SAMPLES)} language rows, "
           f"{len(FALLBACK_SCRIPTS)} configured fallback scripts: {args.path}")
     return 0
 if __name__ == "__main__":

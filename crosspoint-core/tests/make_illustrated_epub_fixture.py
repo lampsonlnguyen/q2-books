@@ -25,8 +25,8 @@ def png():
 def main(out):
     opf = """<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
-<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Illustrated CrossPod test</dc:title>
-<dc:identifier>crosspod-images</dc:identifier><dc:language>en</dc:language></metadata>
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Illustrated Books test</dc:title>
+<dc:identifier>books-images</dc:identifier><dc:language>en</dc:language></metadata>
 <manifest><item id="chapter" href="text/chapter.xhtml" media-type="application/xhtml+xml"/>
 <item id="image" href="images/test.png" media-type="image/png"/>
 <item id="toc" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>

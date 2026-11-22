@@ -10,9 +10,9 @@ container = """<?xml version="1.0" encoding="utf-8"?>
 opf = """<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier id="bookid">crosspod-vietnamese-original-demo</dc:identifier>
+<dc:identifier id="bookid">books-vietnamese-original-demo</dc:identifier>
 <dc:title>Sương sớm trên đồi thông</dc:title>
-<dc:creator>CrossPod — nguyên tác thử nghiệm</dc:creator>
+<dc:creator>Books — nguyên tác thử nghiệm</dc:creator>
 <dc:language>vi</dc:language></metadata>
 <manifest><item id="chapter" href="chapter1.xhtml" media-type="application/xhtml+xml"/>
 <item id="css" href="book.css" media-type="text/css"/></manifest>

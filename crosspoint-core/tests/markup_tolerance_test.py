@@ -3,7 +3,7 @@
 drawn in their own faces with intact word spaces.
 
 Usage: markup_tolerance_test.py READER entities|italic
-CROSSPOD_TEST_FONTS: a folder of the card's .cpfont files (tools/fetch_q2_fonts.py). Without
+BOOKS_TEST_FONTS: a folder of the card's .cpfont files (tools/fetch_q2_fonts.py). Without
 it, the italic check is skipped (exit 77): the built-in emergency font has no italic face."""
 import io
 import os
@@ -49,7 +49,7 @@ def epub(path, doctype, body):
 def render(book, state):
     out = book.with_suffix('.pgm')
     result = subprocess.run([reader, '--render', str(book), str(out)], capture_output=True, text=True,
-                            timeout=60, env=dict(os.environ, CROSSPOD_STATE_DIR=str(state)))
+                            timeout=60, env=dict(os.environ, BOOKS_STATE_DIR=str(state)))
     assert result.returncode == 0, (book.name, result.stdout, result.stderr)
     data = out.read_bytes()
     assert data.startswith(b'P5'), data[:16]
@@ -62,7 +62,7 @@ def ink_rows(width, height, pixels):
     return [y for y in range(height) if any(pixels[y * width + x] < 128 for x in range(width))]
 
 
-with tempfile.TemporaryDirectory(prefix='crosspod-markup-') as tmp:
+with tempfile.TemporaryDirectory(prefix='books-markup-') as tmp:
     tmp = pathlib.Path(tmp)
     # &nbsp;, &mdash;, &hellip;: HTML entities the reader's table expands. Under EPUB3's
     # <!DOCTYPE html> or no DOCTYPE, expat used to fail the chapter and the whole book.
@@ -87,16 +87,16 @@ with tempfile.TemporaryDirectory(prefix='crosspod-markup-') as tmp:
         state.mkdir()
         started = time.monotonic()
         result = subprocess.run([reader, '--validate', str(bomb)], capture_output=True, text=True,
-                                timeout=120, env=dict(os.environ, CROSSPOD_STATE_DIR=str(state)))
+                                timeout=120, env=dict(os.environ, BOOKS_STATE_DIR=str(state)))
         took = time.monotonic() - started
         assert took < 10, f'entity bomb took {took:.1f}s to refuse'
         print('HTML entities: EPUB3, no-DOCTYPE and XHTML 1.1 chapters open and draw; '
               f'an entity bomb is refused in {took:.2f}s')
         sys.exit(0)
 
-    fonts = os.environ.get('CROSSPOD_TEST_FONTS')
+    fonts = os.environ.get('BOOKS_TEST_FONTS')
     if not fonts or not (pathlib.Path(fonts) / 'sans-12.cpfont').exists():
-        print('Italic faces: SKIP (set CROSSPOD_TEST_FONTS to the card font folder)')
+        print('Italic faces: SKIP (set BOOKS_TEST_FONTS to the card font folder)')
         sys.exit(SKIP)
 
     def page(style, text):

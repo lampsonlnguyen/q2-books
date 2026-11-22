@@ -1,4 +1,4 @@
-# CrossPod: genuine CrossPoint engine port
+# Books: genuine CrossPoint engine port
 
 **Status: early, incomplete. Not a deployable reader.**
 
@@ -19,13 +19,13 @@ Replace only device-specific layers:
 - **HalPowerManager:** Linux/Q2 LCD dim/suspend lifecycle, no ESP32 deep-sleep calls
 - **System timing/network:** POSIX equivalents, no Arduino or FreeRTOS dependency
 
-A Linux diagnostic executable now exists (`crosspod-epub-check`), but the graphical reader process still requires an entry point and access to actual Q2 input/display hardware. The Q2 Pod card-app manifest remains only a *launch integration mechanism* if Library placement is desired. It must **not** be a reader, renderer, layout engine or input framework. The eventual reader should also run as a standalone Linux executable.
+A Linux diagnostic executable now exists (`books-epub-check`), but the graphical reader process still requires an entry point and access to actual Q2 input/display hardware. The Q2 Pod card-app manifest remains only a *launch integration mechanism* if Library placement is desired. It must **not** be a reader, renderer, layout engine or input framework. The eventual reader should also run as a standalone Linux executable.
 
 ## Upstream source brought over so far
 
 `lib/Utf8/Utf8.h`, `Utf8.cpp`, and `Utf8ComposeTable.h` were copied unmodified from CrossPoint. The original `lib/Txt/TxtToHtml.cpp` and `TxtToHtml.h` are also compiled unchanged using narrow POSIX replacements for Arduino Print, memory allocation, file helper and logging interfaces. The original EPUB `ContainerParser`, `ContentOpfParser`, `XmlParserUtils`, and `ZipFile` now build against Linux Expat, POSIX storage, and zlib. The original disk-backed `BookMetadataCache` and `BufferedFile` components are also compiled and tested using an EPUB fixture. Q2 book path handoff validation lives under `platform/q2/Q2BookHandoff.hpp`. These functions implement Vietnamese NFC normalization, including decomposed text frequently produced on macOS and inside EPUBs. `reference/` files are unmodified dependency-audit copies of the CrossPoint EPUB and layout code, **not yet compiled**. They identify what needs to be ported without replacing the algorithms.
 
-CrossPoint original source is under MIT, with separately licensed dependencies and fonts (see CrossPoint's `LICENSE` and `licenses/`). The old CrossPod GPL prototype retains its own license. Porting new CrossPoint files must preserve upstream and third-party notices.
+CrossPoint original source is under MIT, with separately licensed dependencies and fonts (see CrossPoint's `LICENSE` and `licenses/`). The old Books GPL prototype retains its own license. Porting new CrossPoint files must preserve upstream and third-party notices.
 
 Source base inspected: CrossPoint commit `9ac3475733e677b7f61ba3f6e8ce41ce1b9b2967`. Do not mix sources from other revisions without rechecking API compatibility.
 

@@ -7,8 +7,8 @@
 
 #include "T9Keypad.hpp"
 
-using crosspod::T9Keypad;
-using crosspod::T9Result;
+using books::T9Keypad;
+using books::T9Result;
 using namespace std::chrono_literals;
 
 int main() {
@@ -53,6 +53,6 @@ int main() {
   assert(small.press(T9Keypad::Ghi, s, 2, now + 200ms) == T9Result::None && s == "ad");
   assert(small.press(T9Keypad::Def, s, 2, now + 300ms) == T9Result::Typed && s == "ae");  // cycling still works at the limit
   assert(small.press(99, s, 2, now) == T9Result::None);
-  std::puts("CrossPod T9 keypad: PASS");
+  std::puts("Books T9 keypad: PASS");
   return 0;
 }

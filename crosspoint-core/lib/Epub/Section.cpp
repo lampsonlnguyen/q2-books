@@ -354,7 +354,7 @@ bool Section::startBuild(const ReaderRenderSpec& spec, const std::function<void(
   bool htmlCached = reusedHtml;
   std::unique_ptr<uint8_t, decltype(&std::free)> htmlBytes{nullptr, &std::free};
   size_t htmlSize = 0;
-#ifdef CROSSPOD_LINUX
+#ifdef BOOKS_LINUX
   // Q2 can hold ordinary chapter XHTML in RAM. Avoid staging it on the SD
   // card before the incremental parser can deliver the first page.
   constexpr size_t maxInMemoryHtml = 1024 * 1024;

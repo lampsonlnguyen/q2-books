@@ -27,7 +27,7 @@ media-type="application/oebps-package+xml"/></rootfiles></container>"""
 opf = f"""<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier>crosspod-{script}</dc:identifier>
+<dc:identifier>books-{script}</dc:identifier>
 <dc:title>{title}</dc:title><dc:language>{lang}</dc:language></metadata>
 <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
 <spine><itemref idref="chapter"/></spine></package>"""

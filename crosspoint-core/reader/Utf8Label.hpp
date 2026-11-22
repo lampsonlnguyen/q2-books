@@ -8,7 +8,7 @@
 
 // Normalize NFD titles (including Vietnamese/macOS filenames) before
 // truncation; preserve complete UTF-8 characters and trailing combining marks.
-namespace crosspod {
+namespace books {
 inline std::string clippedUiLabel(const std::string& raw,size_t limit) {
   const bool unicode=std::any_of(raw.begin(),raw.end(),[](unsigned char c){
     return c>=0x80;
@@ -38,4 +38,4 @@ inline std::string clippedUiLabel(const std::string& raw,size_t limit) {
   if(*cur)output+="...";
   return output;
 }
-} // namespace crosspod
+} // namespace books

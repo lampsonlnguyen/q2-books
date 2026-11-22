@@ -17,7 +17,7 @@
 #include <unistd.h>
 #include <vector>
 
-namespace crosspod {
+namespace books {
 struct OpdsEntry {
   // Search and More are rows the shelf adds for a feed's search and
   // rel="next" links; they are not entries of the feed.
@@ -51,7 +51,7 @@ inline const char* opdsAttribute(const XML_Char** attrs,const char* name) {
 // absolute against the page: resolve with a placeholder that survives
 // URL resolution, then put the braces back.
 inline std::string resolveOpdsTemplate(const std::string& pageUrl,std::string href) {
-  const std::string mark="CROSSPODSEARCHTERMS";
+  const std::string mark="BOOKSSEARCHTERMS";
   const size_t at=href.find("{searchTerms}");
   if(at==std::string::npos)return {};
   href.replace(at,13,mark);
@@ -373,4 +373,4 @@ inline bool opdsDownloadEpub(const std::string& booksRoot,
   saved=file;
   return true;
 }
-} // namespace crosspod
+} // namespace books

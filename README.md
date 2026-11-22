@@ -1,24 +1,16 @@
-# CrossPod — direct CrossPoint Reader port to Shanling Q2
+# Books — direct CrossPoint Reader port to Shanling Q2
 
-**Current status (main, November 2026):** v0.8.0-beta is the latest
-published Q2 MIPS beta. `main` also carries, unreleased and still needing
-physical Q2 testing:
+**Books** is an ebook reader card app for [Q2 Pod](https://github.com/DiamondBond/q2-pod)
+on the Shanling Q2: a port of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)'s
+EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books**
+(card folder `.books`, program `.books/q2-books`). Earlier releases were named
+differently; the first start of this version copies your reading positions,
+bookmarks, highlights and settings from the old card folder into `.books`.
 
-- **v0.9 HTTPS transport** (PR #35, #37, #38): HTTPS OPDS and KOReader sync
-  through Q2 Pod's libcurl with mandatory certificate and hostname checks —
-  see [v0.9 HTTPS transport](docs/v0.9.0-https-transport.md).
-- **v0.10 reading** (PR #39): go to percent, auto page turn, focus reading,
-  plain-text (.txt) books, page counter with book percentage.
-- **v0.11 dictionaries** (PR #40): StarDict dictionaries (.idx/.dict/.dict.dz/
-  .syn) with a bounded index, paged multi-match definitions, TSV fallback; a
-  text-selection touch fix.
-- **OPDS paging and search** (PR #41): "More results" for `rel="next"` and
-  catalog search through OpenSearch.
-
-How to use the new features: [v0.10–v0.11 development notes](docs/v0.10-v0.11-reading-dictionaries-opds.md).
-Nothing here is released until it passes the Q2 hardware gates
-([v0.8 verification plan](docs/v0.8.0-device-integration.md)) and a release is
-approved.
+**Status:** v0.9.0-beta is the latest published release (under the old name).
+`main` is 0.10.0 in development: everything in v0.9.0-beta, plus the T9 search
+keyboard, the list layout fixes and the rename. Not yet tested on a physical Q2.
+User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md).
 
 **Historical note:** The detailed porting inventory below was written during
 the early CrossPoint source migration. Its "not yet done" and host-only notes
@@ -27,7 +19,7 @@ status above, [the connected library guide](docs/v0.7.0-connected-library.md)
 and the v0.8 verification plan for current capabilities and release
 requirements.
 
-The earlier CrossPod prototype has been replaced on `main` by the CrossPoint reader-port foundation. The old prototype remains available in Git history; this implementation does not use its custom EPUB extractor or rendering engine.
+The earlier Books prototype has been replaced on `main` by the CrossPoint reader-port foundation. The old prototype remains available in Git history; this implementation does not use its custom EPUB extractor or rendering engine.
 
 The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout, fonts, page caches, activities and settings, and adapts only the hardware interfaces to the Q2's Linux display, click wheel, touchscreen and SD card. See [the technical plan](crosspoint-core/README.md).
 
@@ -47,14 +39,14 @@ The new architecture retains CrossPoint's source-level EPUB/TXT parsing, layout,
 - Q2 logical-screen `HalDisplay` with original CrossPoint white/ink 1-bpp convention, frame-publication bridge and a tested raster path
 - Q2 Linux socket input, native double-buffered framebuffer and page-presentation adapter; these are individually tested, not wired to a complete reader
 - Original disk-backed `BookMetadataCache` with buffered serialization and persistent `book.bin` index, reducing spine RAM usage
-- A Linux `crosspod-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
+- A Linux `books-epub-check` command for testing EPUB archive/container integrity without claiming to render pages
 - Standalone Q2 Pod Books shelf handoff contract for `/mnt/mmc/Books/...` paths and Vietnamese filenames
 - A standalone click-wheel and touch-event translator independent of the Q2 Pod card-app framework
 - A basic LCD output adapter for CrossPoint-style monochrome rasters and optional warm/cool palettes
 - A sparse checkout of CrossPoint's **reader-related source directories only** (no ESP32 firmware build)
 - CMake host compilation and tests for Unicode, TXT conversion, EPUB archive/ZIP streaming, container XML, wheel/touch input, and LCD output adapters
 
-**Not yet done:** End-to-end chapter XHTML/CSS pagination, linking `ParsedText` and `Page` to the full upstream `GfxRenderer`/font loading/shaping and reader activities, then device-level CPU/input/display/power verification on Q2. The Q2 display/transport interfaces exist but are not driven by a full page engine. There is no installable CrossPod reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
+**Not yet done:** End-to-end chapter XHTML/CSS pagination, linking `ParsedText` and `Page` to the full upstream `GfxRenderer`/font loading/shaping and reader activities, then device-level CPU/input/display/power verification on Q2. The Q2 display/transport interfaces exist but are not driven by a full page engine. There is no installable Books reader ZIP yet. A genuine build requires implementing Linux-compatible adapters for CrossPoint's reader and FreeInk interfaces; no ESP32 firmware components will be built or shipped.
 
 ## Build currently ported source tests
 
@@ -65,7 +57,7 @@ cd q2-crosspoint
 make
 ```
 
-`make` runs upstream CrossPoint parsing/cache and Q2 adapter tests and builds a **host-only EPUB validation command**, `build/crosspoint-core/crosspod-epub-check`. This does not produce an installable Q2 reader.
+`make` runs upstream CrossPoint parsing/cache and Q2 adapter tests and builds a **host-only EPUB validation command**, `build/crosspoint-core/books-epub-check`. This does not produce an installable Q2 reader.
 
 To inspect only the reader-related CrossPoint source at the pinned revision:
 
@@ -77,7 +69,7 @@ A sparse checkout appears in `crosspoint-core/upstream/` and is intentionally ig
 
 ## Q2 Pod Books integration
 
-Q2 Pod already has a `/Books` shelf and a basic EPUB/TXT reader in `patch/books.c`. Its EPUB implementation flattens XHTML into plain text and paints it using the stock font. CrossPod will **keep the Books shelf** but replace the reading experience with CrossPoint's actual engine in an independent Linux process. For the source-level findings, planned controls and safe fallback details, see [Q2 Pod Books integration](docs/q2pod-books-integration.md).
+Q2 Pod already has a `/Books` shelf and a basic EPUB/TXT reader in `patch/books.c`. Its EPUB implementation flattens XHTML into plain text and paints it using the stock font. Books will **keep the Books shelf** but replace the reading experience with CrossPoint's actual engine in an independent Linux process. For the source-level findings, planned controls and safe fallback details, see [Q2 Pod Books integration](docs/q2pod-books-integration.md).
 
 ## Device integration design
 
@@ -96,7 +88,7 @@ The code copied unmodified from CrossPoint is governed by CrossPoint's original 
 
 ### Q2 MIPS / hardware diagnostic
 
-The `crosspod-hwcheck` diagnostic was merged from [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7). Its MIPS cross-build, ELF check and QEMU command-line smoke test passed, but it has **not been tested on the actual Q2 device**. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.
+The `books-hwcheck` diagnostic was merged from [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7). Its MIPS cross-build, ELF check and QEMU command-line smoke test passed, but it has **not been tested on the actual Q2 device**. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.
 
 ### End-to-end reader integration status
 
@@ -107,6 +99,6 @@ mandatory full-link smoke test. The original XHTML chapter parser was compiler-v
 and merged in [PR #17](https://github.com/lampsonlnguyen/q2-crosspoint/pull/17).
 The full renderer linker check still needs resolving upstream font/cache/shaping
 implementation dependencies. Do **not** install the development binaries as
-`/mnt/mmc/.crosspod/crosspod`; a correct reader executable has not been produced.
+`/mnt/mmc/.books/books`; a correct reader executable has not been produced.
 Physical Q2 testing, font coverage, actual page-turn latency, RAM and battery
 measurements remain unverified until the full reader runs on the device.

@@ -8,7 +8,7 @@
 #include <string>
 #include <sys/stat.h>
 
-namespace crosspod {
+namespace books {
 struct ConnectedConfig {
   std::string opdsUrl;
   std::string syncUrl;
@@ -62,4 +62,4 @@ inline ConnectedConfig loadConnectedConfig() {
   if(!parseHttpUrl(config.syncUrl).valid)config.syncUrl.clear();
   return config;
 }
-} // namespace crosspod
+} // namespace books

@@ -68,7 +68,7 @@ def write_license_bundle(out: pathlib.Path, upstream: pathlib.Path,
     """One text file with, per generated family, its source and license, then
     every license text found in the pinned repositories and the CI host's
     Noto packages. (build-sd-fonts.py writes no LICENSE of its own.)"""
-    lines = ["Fonts generated for CrossPod (Shanling Q2) from these sources.",
+    lines = ["Fonts generated for Books (Shanling Q2) from these sources.",
              "Every family listed is under the SIL Open Font License 1.1",
              "unless its own license text below says otherwise.", ""]
     for name in FAMILIES:
@@ -101,7 +101,7 @@ def main() -> int:
         return 2
     target = pathlib.Path(sys.argv[1]).resolve()
     target.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="crosspod-small-fonts-") as work:
+    with tempfile.TemporaryDirectory(prefix="books-small-fonts-") as work:
         workspace = pathlib.Path(work)
         upstream = workspace / "crosspoint"
         run("git", "init", "-q", str(upstream))
@@ -175,7 +175,7 @@ def main() -> int:
                 (10, 11, 12) if name in CROSSINK_FAMILIES else SIZES)
             families.append(source)
 
-        subset = workspace / "crosspod-sizes-10-11.yaml"
+        subset = workspace / "books-sizes-10-11.yaml"
         subset.write_text(yaml.safe_dump({"families": families}, sort_keys=False))
         built = workspace / "fonts"
         # CJK font rasterization is much heavier than Latin. Bound parallelism
@@ -199,7 +199,7 @@ def main() -> int:
                 checksums.append(f"{digest}  {dest.name}")
                 print(f"Generated CrossPoint {name} {size}pt: {len(data)} bytes")
 
-        (target / "crosspod-fonts-10-11.sha256").write_text(
+        (target / "books-fonts-10-11.sha256").write_text(
             "\n".join(checksums) + "\n")
         write_license_bundle(target / "CrossPoint-font-licenses.txt",
                              upstream, crossink, catalog)

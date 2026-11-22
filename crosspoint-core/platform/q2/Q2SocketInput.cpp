@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <utility>
 
-namespace crosspod {
+namespace books {
 namespace {
 bool read_int(std::string_view& text, int& out) {
   while (!text.empty() && text.front() == ' ') text.remove_prefix(1);
@@ -239,4 +239,4 @@ void Q2SocketInput::close() {
     path_.clear();
   }
 }
-} // namespace crosspod
+} // namespace books

@@ -7,7 +7,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 bool Q2Framebuffer::rotateARGB(const uint32_t* src, size_t pixels,
                                uint8_t* dst, size_t bytes, size_t stride) {
   if (!src || !dst || pixels < LogicalWidth * LogicalHeight ||
@@ -73,4 +73,4 @@ void Q2Framebuffer::close() {
   mem_ = nullptr;
   bytes_ = 0;
 }
-} // namespace crosspod
+} // namespace books

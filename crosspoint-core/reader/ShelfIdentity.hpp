@@ -5,7 +5,7 @@
 #include <climits>
 #include <cstring>
 
-namespace crosspod {
+namespace books {
 inline bool parseIdentityNumber(const char*& p,unsigned long long& value) {
   if(*p<'0'||*p>'9')return false;
   unsigned long long parsed=0;
@@ -29,4 +29,4 @@ inline bool parseShelfIdentityHeader(const char* line,const char* magic,
   if(!parseIdentityNumber(p,modified))return false;
   return *p=='\n'||*p=='\0';
 }
-} // namespace crosspod
+} // namespace books

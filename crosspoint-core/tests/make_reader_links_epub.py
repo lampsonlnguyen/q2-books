@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small EPUB2/3 internal links and footnotes test book for CrossPod."""
+"""Small EPUB2/3 internal links and footnotes test book for Books."""
 from pathlib import Path
 import sys
 from zipfile import ZipFile, ZIP_DEFLATED, ZIP_STORED
@@ -11,8 +11,8 @@ def main(out):
     opf='''<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-<dc:identifier>urn:crosspod:links:1</dc:identifier>
-<dc:title>CrossPod Links and Footnotes</dc:title><dc:language>en</dc:language>
+<dc:identifier>urn:books:links:1</dc:identifier>
+<dc:title>Books Links and Footnotes</dc:title><dc:language>en</dc:language>
 </metadata>
 <manifest>
 <item id="one" href="text/first.xhtml" media-type="application/xhtml+xml"/>

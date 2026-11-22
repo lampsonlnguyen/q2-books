@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Release gate for the CA bundle CrossPod ships as .crosspod/ca-bundle.pem.
+"""Release gate for the CA bundle Books ships as .books/ca-bundle.pem.
 
 Usage: check_ca_bundle.py BUNDLE.pem
 Every certificate must parse, and the roots that sign most self-hosted Kavita
 and KOReader servers must be present (Q2 Pod's own scrobble bundle lacks
-several of them, which is why CrossPod carries its own).
+several of them, which is why Books carries its own).
 """
 import re
 import ssl

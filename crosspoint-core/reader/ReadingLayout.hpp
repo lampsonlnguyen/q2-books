@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 // Q2 reader configuration -> original CrossPoint Section layout contract.
-// Keep this separate from the fixed-size CrossPod UI/menu font.
+// Keep this separate from the fixed-size Books UI/menu font.
 #include "ReaderPreferences.hpp"
 #include <ReaderRenderSpec.h>
 #include <algorithm>
 #include <cstdint>
 
-namespace crosspod {
+namespace books {
 inline ReaderRenderSpec makeReaderRenderSpec(
     const ReaderPreferences& preferences,int readingFontId,
     uint16_t screenWidth,uint16_t contentHeight) {
@@ -28,4 +28,4 @@ inline ReaderRenderSpec makeReaderRenderSpec(
   spec.imageRendering=0;
   return spec;
 }
-} // namespace crosspod
+} // namespace books

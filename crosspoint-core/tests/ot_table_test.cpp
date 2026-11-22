@@ -25,6 +25,6 @@ int main() {
   assert(table.at(8).empty());
   assert(table.at(2).length() == 6);
   assert(ot::Table(nullptr, 20).empty());
-  std::puts("CrossPod OpenType table bounds checks OK");
+  std::puts("Books OpenType table bounds checks OK");
   return 0;
 }

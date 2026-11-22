@@ -1,7 +1,7 @@
 #include <cassert>
 #include <climits>
 #include "../platform/q2/Q2Controls.hpp"
-using namespace crosspod;
+using namespace books;
 int main() {
   Q2Controls input;
   assert(input.translate({PhysicalKind::WheelStep,-20}).action==LogicalAction::None);

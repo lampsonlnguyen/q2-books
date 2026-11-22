@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// Small POSIX adapter for CrossPod's per-book reading position.
+// Small POSIX adapter for Books's per-book reading position.
 // Does not replace the upstream CrossPoint page or metadata engine.
 #include <cstdint>
 #include <cstdio>
@@ -9,21 +9,21 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-namespace crosspod {
+namespace books {
 // page alone names content only for the engine and typography that laid it out.
 // So the original engine also stores the page's exact visible-text offset, and
 // either engine stores its place as a fraction of the chapter (parts per
 // million of its pages), which maps a position across an engine fallback.
 // engine: 'o' original CrossPoint Section, 'l' legacy collector, '?' unknown
-// (a CROSSPOD1 file, which held only the page).
+// (a BOOKS1 file, which held only the page).
 struct ReadingPosition {
   int spine=0; size_t page=0;
   char engine='?'; uint32_t textOffset=0; uint32_t fractionPpm=0;
 };
 
 inline std::string positionFile(const std::string& book) {
-  const char* overrideDir=std::getenv("CROSSPOD_STATE_DIR");
-  const std::string dir=(overrideDir && *overrideDir)?overrideDir:"/mnt/mmc/.crosspod";
+  const char* overrideDir=std::getenv("BOOKS_STATE_DIR");
+  const std::string dir=(overrideDir && *overrideDir)?overrideDir:"/mnt/mmc/.books";
   // FNV-1a over the complete path, not the potentially duplicate book title.
   uint64_t hash=14695981039346656037ULL;
   for (unsigned char byte:book) { hash^=byte; hash*=1099511628211ULL; }
@@ -45,11 +45,11 @@ inline bool loadReadingPosition(const std::string& book,ReadingPosition& out) {
   const bool read=std::fgets(line,sizeof(line),f)!=nullptr;
   std::fclose(f);
   if(!read)return false;
-  int parsed=std::sscanf(line,"CROSSPOD2 %llu %llu %d %llu %c %llu %llu",
+  int parsed=std::sscanf(line,"BOOKS2 %llu %llu %d %llu %c %llu %llu",
                          &bytes,&modified,&spine,&page,&engine,&offset,&ppm);
   if(parsed!=7) {
     engine='?';offset=0;ppm=0;
-    parsed=std::sscanf(line,"CROSSPOD1 %llu %llu %d %llu",&bytes,&modified,&spine,&page)==4?7:0;
+    parsed=std::sscanf(line,"BOOKS1 %llu %llu %d %llu",&bytes,&modified,&spine,&page)==4?7:0;
   }
   if(parsed!=7 || spine<0 || spine>100000 ||
      page>1000000ULL || offset>0xffffffffULL || ppm>1000000ULL ||
@@ -70,7 +70,7 @@ inline bool saveReadingPosition(const std::string& book,ReadingPosition position
   std::FILE* f=std::fopen(temp.c_str(),"wb");
   if(!f)return false;
   if(position.engine!='o' && position.engine!='l')position.engine='?';
-  bool ok=std::fprintf(f,"CROSSPOD2 %llu %llu %d %llu %c %lu %lu\n",
+  bool ok=std::fprintf(f,"BOOKS2 %llu %llu %d %llu %c %lu %lu\n",
       static_cast<unsigned long long>(st.st_size),
       static_cast<unsigned long long>(st.st_mtime),
       position.spine,static_cast<unsigned long long>(position.page),position.engine,
@@ -83,4 +83,4 @@ inline bool saveReadingPosition(const std::string& book,ReadingPosition position
   std::remove(temp.c_str());
   return false;
 }
-} // namespace crosspod
+} // namespace books

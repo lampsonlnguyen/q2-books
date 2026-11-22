@@ -15,7 +15,7 @@
 #include <string>
 #include <sys/stat.h>
 
-namespace crosspod {
+namespace books {
 struct ShelfIndexResult {
   bool metadata=false;
   bool cover=false;
@@ -91,4 +91,4 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
   }
   return result;
 }
-} // namespace crosspod
+} // namespace books

@@ -47,6 +47,6 @@ int main() {
   }
   assert(inkPixels > 15);  // A one-pixel smoke test cannot satisfy this.
 
-  std::puts("CrossPod upstream GfxRenderer linked and painted into Q2 HAL");
+  std::puts("Books upstream GfxRenderer linked and painted into Q2 HAL");
   return 0;
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify that the active CrossPod EPUB reader uses original CrossPoint CSS."""
+"""Verify that the active Books EPUB reader uses original CrossPoint CSS."""
 import subprocess
 import sys
 
@@ -18,4 +18,4 @@ assert "SECRET_HIDDEN_PARAGRAPH" not in result.stdout
 rtl = next(line for line in lines if "مرحبا بالعالم" in line)
 assert "rtl=1" in rtl, rtl
 assert "Nguyễn" in result.stdout
-print("CrossPod original CSS cascade, Unicode, RTL and hidden-text integration: OK")
+print("Books original CSS cascade, Unicode, RTL and hidden-text integration: OK")

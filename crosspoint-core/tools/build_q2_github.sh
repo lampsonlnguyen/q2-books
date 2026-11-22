@@ -485,14 +485,16 @@ find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-book
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
 find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
-(cd "$card" && zip -q -r "$base/dist/books-q2-reader-alpha.zip" .books Books)
+# The test books in $card/Books were only for the checks above: the release
+# carries the app alone, never books in the user's Books folder.
+(cd "$card" && zip -q -r "$base/dist/books-q2-reader-alpha.zip" .books)
 sha256sum "$base/dist/books-q2-reader-alpha.zip" > "$base/dist/books-q2-reader-alpha.zip.sha256"
 unzip -t "$base/dist/books-q2-reader-alpha.zip"
-# Verify the allow-list held: nothing but the app's files and the sample books.
+# Verify the allow-list held: nothing but the app's own files (no books).
 unzip -Z1 "$base/dist/books-q2-reader-alpha.zip" | python3 -c '
 import re,sys
 bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
-  r"(\.books/|Books/|\.books/fonts/|Books/[^/]+\.epub|\.books/fonts/[^/]+\.(cpfont|txt)|"
+  r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|"
   r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"

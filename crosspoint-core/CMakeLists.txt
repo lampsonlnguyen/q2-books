@@ -545,6 +545,10 @@ add_test(NAME crosspod_reader_real_page_links
 # Disposable localhost OPDS/Kavita mock: test Atom navigation, an actual
 # streamed EPUB ZIP, KOReader partial-MD5 and XPath push/pull against a real
 # crosspoint-reader process. No external server or credentials required.
+add_test(NAME crosspod_opds_paging_and_search
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_paging_search_test.py"
+    "$<TARGET_FILE:crosspod-reader>")
 add_test(NAME crosspod_connected_network_end_to_end
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"

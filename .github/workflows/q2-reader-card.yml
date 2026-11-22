@@ -2,7 +2,7 @@ name: CrossPod Q2 reader hardware alpha
 on:
   workflow_dispatch:
   push:
-    branches: [main, v0.7.0-connected-library]
+    branches: [main, v0.8-device-integration]
     paths:
       - "crosspoint-core/tools/build_q2_github.sh"
       - ".github/workflows/q2-reader-card.yml"

@@ -33,7 +33,7 @@ Q2 Pod Library > Books (KEEP)
 
 **Ownership:** While the CrossPod process is active, Q2 Pod suspends painting and forwards click-wheel, buttons and touch to the process via a dedicated IPC socket. CrossPod owns pagination, drawing and reading settings. On Back/exit, Q2 Pod resumes the Books shelf with the selected entry highlighted. No UI redraw by two processes at once.
 
-**Power:** Do not reuse Q2 Pod's `game=1` lifecycle: `patch/addon.c` game polling resets idle timers and can terminate idle card apps. Provide a reader-specific process lifecycle that permits configurable display dimming and sleep, while persisting reading position. Linux LCD cannot have zero-power static display as CrossPoint's e-ink hardware does.
+**Power:** Q2 Pod firmware owns device power, display dimming, sleep and wake. CrossPod checkpoints reading progress and saves pending state on graceful termination. When relaunched, it restores the saved reading position.
 
 **Fallback:** Until the complete CrossPoint-based MIPS reader is present and verified, Q2 Pod's `to_reader` must continue opening the current built-in reader. Do not route real books to a development-only host library or an unimplemented executable.
 

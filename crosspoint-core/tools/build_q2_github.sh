@@ -89,6 +89,38 @@ cmake --build "$work/reader" --target crosspod_png_formats_tests --parallel 2
 timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_png_formats_tests"
 elf="$work/reader/crosspod-reader"
 python3 crosspoint-core/tools/check_q2_elf.py "$elf" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+# Exercise the same Q2 socket and controls used by the interactive reader.
+cmake --build "$work/reader" --target crosspod_q2_input_tests crosspoint_controls_tests --parallel 2
+timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspod_q2_input_tests"
+timeout 30s qemu-mipsel -L "$root" "$work/reader/crosspoint_controls_tests"
+CROSSPOD_PROFILE_SESSION=1 python3 - "$root" "$elf" <<'PYTEST'
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+endpoint = Path("/tmp/q2-crosspod.input.sock")
+assert not endpoint.exists(), "Another process owns the CrossPod input endpoint"
+with subprocess.Popen(
+    ["qemu-mipsel", "-L", sys.argv[1], sys.argv[2]],
+    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+) as reader:
+    try:
+        deadline = time.monotonic() + 5
+        while not endpoint.is_socket() and reader.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert endpoint.is_socket(), "Interactive reader did not bind its input socket"
+        # Allow the idle reader to reach the poll wait before sending TERM.
+        time.sleep(0.25)
+        reader.terminate()
+        _, stderr = reader.communicate(timeout=3)
+        assert reader.returncode == 0 and not endpoint.exists(), stderr
+        assert "CrossPod session: elapsed_ms=" in stderr, stderr
+        print(stderr.strip())
+    finally:
+        if reader.poll() is None:
+            reader.kill()
+PYTEST
 # A never-opened EPUB must acquire its OPF title, author and cover without
 # constructing a CrossPoint Section, and a second pass must reuse the cache.
 python3 crosspoint-core/tests/make_shelf_index_epub.py "$work/reader/shelf-cover.epub"

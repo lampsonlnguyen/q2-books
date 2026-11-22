@@ -62,7 +62,6 @@
 #include <memory>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 #include <sys/stat.h>
@@ -81,6 +80,81 @@ constexpr int TEXT_WIDTH = 345, BOTTOM = 306;
 volatile std::sig_atomic_t interrupted = 0;
 std::string clippedLabel(const std::string&,size_t);
 void exitOnSignal(int) { interrupted = 1; }
+
+bool installExitHandlers() {
+  struct sigaction action{};
+  action.sa_handler=exitOnSignal;
+  sigemptyset(&action.sa_mask);
+  if(sigaction(SIGINT,&action,nullptr)==0 && sigaction(SIGTERM,&action,nullptr)==0)
+    return true;
+  std::perror("CrossPod: cannot install exit handlers");
+  return false;
+}
+
+using ReaderClock = std::chrono::steady_clock;
+constexpr auto positionSaveInterval = std::chrono::seconds(5);
+
+// A finite ceiling also covers a shutdown signal arriving just before poll.
+int waitForReaderInput(const crosspod::Q2SocketInput& input,ReaderClock::time_point deadline) {
+  if(interrupted)return 0;
+  const auto now=ReaderClock::now();
+  const auto delay=std::min(now+std::chrono::seconds(1),deadline)-now;
+  const auto timeout=std::max(std::chrono::milliseconds(0),
+      std::chrono::ceil<std::chrono::milliseconds>(delay));
+  return input.waitForInput(static_cast<int>(timeout.count()));
+}
+
+int loadWheelSensitivity() {
+  std::unique_ptr<std::FILE,decltype(&std::fclose)> config(
+      std::fopen("/mnt/data/config.ini","r"),&std::fclose);
+  if(!config)return crosspod::defaultWheelSensitivity;
+  const auto trim=[](std::string_view text) {
+    const auto first=text.find_first_not_of(" \t\r\n");
+    if(first==std::string_view::npos)return std::string_view{};
+    return text.substr(first,text.find_last_not_of(" \t\r\n")-first+1);
+  };
+  bool inQ2Pod=false;
+  char buffer[256];
+  while(std::fgets(buffer,sizeof(buffer),config.get())) {
+    const auto line=trim(buffer);
+    if(line.starts_with('['))inQ2Pod=line=="[Q2POD]";
+    const auto equals=line.find('=');
+    if(inQ2Pod && equals!=std::string_view::npos &&
+       trim(line.substr(0,equals))=="WHEELSENSITIVITY")
+      return crosspod::parseWheelSensitivity(trim(line.substr(equals+1)));
+  }
+  return crosspod::defaultWheelSensitivity;
+}
+
+class SessionProfile {
+  ReaderClock::time_point start_=ReaderClock::now();
+  struct rusage initial_{};
+  bool enabled_=false;
+  static long long micros(const timeval& time) {
+    return static_cast<long long>(time.tv_sec)*1000000+time.tv_usec;
+  }
+ public:
+  SessionProfile() {
+    const char* value=std::getenv("CROSSPOD_PROFILE_SESSION");
+    enabled_=value && std::strcmp(value,"1")==0 && getrusage(RUSAGE_SELF,&initial_)==0;
+  }
+  ~SessionProfile() {
+    struct rusage usage{};
+    if(!enabled_ || getrusage(RUSAGE_SELF,&usage)!=0)return;
+    const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(
+        ReaderClock::now()-start_).count();
+    std::fprintf(stderr,
+        "CrossPod session: elapsed_ms=%lld user_cpu_us=%lld system_cpu_us=%lld "
+        "maxrss_kb=%ld read_blocks=%ld written_blocks=%ld voluntary_switches=%ld "
+        "involuntary_switches=%ld\n",
+        static_cast<long long>(elapsed),
+        micros(usage.ru_utime)-micros(initial_.ru_utime),
+        micros(usage.ru_stime)-micros(initial_.ru_stime),
+        usage.ru_maxrss,usage.ru_inblock-initial_.ru_inblock,
+        usage.ru_oublock-initial_.ru_oublock,
+        usage.ru_nvcsw-initial_.ru_nvcsw,usage.ru_nivcsw-initial_.ru_nivcsw);
+  }
+};
 
 std::string_view localName(std::string_view tag) {
   const size_t separator = tag.find_last_of("|:");
@@ -511,7 +585,7 @@ class Reader {
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
   mutable bool positionDirty_=false;
-  mutable std::chrono::steady_clock::time_point lastPositionSync_{};
+  mutable std::chrono::steady_clock::time_point lastPositionAttempt_{};
   int lineHeight() const { return std::max(22,typography_.size*2); }
   size_t pageCount() const {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
@@ -801,12 +875,15 @@ class Reader {
     if(resumeOnOpen) {
       resumeEnabled_=true;
       if(hasSaved && currentSpine_==saved.spine && pageCount()>0) {
-        // Keep startup bounded. A partially cached chapter may not have
-        // reached this position yet; never skip or fabricate pages.
-        currentPage_=std::min(saved.page,pageCount()-1);
+        // Rebuild a missing page cache only as far as the saved page.
+        while(!interrupted && currentSpine_==saved.spine &&
+              pageCount()<=saved.page && isBuilding())
+          (void)buildNextPages(1);
+        if(currentSpine_==saved.spine && pageCount()>0)
+          currentPage_=std::min(saved.page,pageCount()-1);
       }
       positionDirty_=false;
-      lastPositionSync_=std::chrono::steady_clock::now();
+      lastPositionAttempt_=std::chrono::steady_clock::now();
     }
     return true;
   }
@@ -820,18 +897,23 @@ class Reader {
     }
     currentPage_=std::min(saved.page,pageCount()-1);
     positionDirty_=false;
-    lastPositionSync_=std::chrono::steady_clock::now();
+    lastPositionAttempt_=std::chrono::steady_clock::now();
   }
   void persistPosition(bool force=false) const {
     if(!resumeEnabled_ || currentSpine_<0)return;
     positionDirty_=true;
     const auto now=std::chrono::steady_clock::now();
-    if(!force && lastPositionSync_.time_since_epoch().count()!=0 &&
-       now-lastPositionSync_<std::chrono::seconds(5))return;
-    if(crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_})) {
-      lastPositionSync_=now;
+    if(!force && lastPositionAttempt_.time_since_epoch().count()!=0 &&
+       now-lastPositionAttempt_<positionSaveInterval)return;
+    // Rate-limit retries too. A removed or read-only card should not cause
+    // immediate repeated writes. The dirty position survives a failed attempt.
+    lastPositionAttempt_=now;
+    if(crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_}))
       positionDirty_=false;
-    }
+  }
+  ReaderClock::time_point nextPositionFlush() const {
+    return positionDirty_?lastPositionAttempt_+positionSaveInterval:
+                          ReaderClock::time_point::max();
   }
   void flushPosition(bool force=true) const {
     if(positionDirty_)persistPosition(force);
@@ -2343,7 +2425,10 @@ class CardShelf {
 };
 
 int runCardApp(const std::string& bookDir) {
+  if(!installExitHandlers())return 5;
+  SessionProfile profile;
   std::vector<ShelfEntry> books=scanCardBooks(bookDir);
+  if(interrupted)return 0;
   auto recent=crosspod::loadRecentBooks();
   auto sortMode=crosspod::ShelfSortMode::Title;
   crosspod::sortShelfBooks(books,sortMode,recent);
@@ -2352,13 +2437,12 @@ int runCardApp(const std::string& bookDir) {
     std::fputs("CrossPod card: cannot bind /tmp/q2-crosspod.input.sock\n",stderr);
     return 5;
   }
-  std::signal(SIGINT,exitOnSignal);
-  std::signal(SIGTERM,exitOnSignal);
   size_t selection=crosspod::lastOpenedIndex(books,recent);
   std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
   if(!shelf->open())return 4;
+  if(interrupted)return 0;
   shelf->present();
-  crosspod::Q2Controls controls;
+  crosspod::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
   bool typeMenu=false;
   bool navigationMenu=false;
@@ -2381,14 +2465,14 @@ int runCardApp(const std::string& bookDir) {
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
   while(!interrupted) {
+    if(reader)reader->flushPosition(false);
     crosspod::PhysicalEvent event{};
     if(!input.receive(event)) {
-      if(reader)reader->flushPosition(false);
       const auto now=std::chrono::steady_clock::now();
       // Work only while idle on the bookshelf, not when reading or during
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
       // never parse chapter pages or write an index on every wheel turn.
-      if(shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+      if(!reader && shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
         const auto result=crosspod::indexShelfBook(book);
         if(result.updated) {
@@ -2398,19 +2482,24 @@ int runCardApp(const std::string& bookDir) {
         nextShelfIndexTick=std::chrono::steady_clock::now()+
             std::chrono::milliseconds(800);
       }
-      if(reader && !typeMenu && !navigationMenu && !linkMenu &&
-         !selectionChoosing && !selectionActions && !dictionaryOverlay &&
-         reader->needsPagePrefetch() && now>=nextBuildTick) {
-        // Layout a bounded lookahead only when needed. Stop unnecessary
-        // parser and SD-card activity once five pages are prepared.
-        // No framebuffer refresh while prefetching.
+      const bool canPrefetch=reader && !typeMenu && !navigationMenu && !linkMenu &&
+          !selectionChoosing && !selectionActions && !dictionaryOverlay &&
+          !footnoteOverlay && reader->needsPagePrefetch();
+      if(canPrefetch && now>=nextBuildTick) {
+        // Build only while idle, with no framebuffer refresh.
         (void)reader->buildNextPages(2);
-        nextBuildTick=std::chrono::steady_clock::now()+
-                      std::chrono::milliseconds(150);
+        nextBuildTick=ReaderClock::now()+std::chrono::milliseconds(150);
       }
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
+      if(!reader && shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
+      if(waitForReaderInput(input,deadline)<0) {
+        std::fputs("CrossPod: input socket poll failed\n",stderr);
+        return 5;
+      }
       continue;
     }
+    if(interrupted)break;
     const auto action=controls.translate(event).action;
     nextShelfIndexTick=std::chrono::steady_clock::now()+
         std::chrono::milliseconds(800);
@@ -2574,8 +2663,10 @@ int runCardApp(const std::string& bookDir) {
           if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection==14) {
+            reader->flushPosition();
             (void)reader->pushReadingSync();
           } else if(typeSelection==15) {
+            reader->flushPosition();
             if(reader->pullReadingSync()) {
               typeMenu=false;
               reader->present();
@@ -2786,7 +2877,9 @@ int runCardApp(const std::string& bookDir) {
     shelf->setNotice("Opening EPUB...");
     shelf->present();
     auto next=std::make_unique<Reader>(chosen);
-    if(!next->open(true)) {
+    const bool opened=next->open(true);
+    if(interrupted)break;
+    if(!opened) {
       shelf->setNotice("Cannot read this EPUB");
       shelf->present();
     } else {
@@ -2801,7 +2894,6 @@ int runCardApp(const std::string& bookDir) {
         recent=crosspod::loadRecentBooks();
     }
   }
-  input.close();
   return 0;
 }
 
@@ -3009,9 +3101,14 @@ int main(int argc,char** argv) {
     std::fputs("CrossPod: only EPUB is supported in this device preview\n",stderr);
     return 2;
   }
+  if(!dry && !installExitHandlers())return 5;
+  // Destroy the reader and flush progress before releasing the input socket.
+  crosspod::Q2SocketInput input;
   const auto openStart=std::chrono::steady_clock::now();
   Reader reader(std::move(path));
-  if (!reader.open(!dry)) {
+  const bool opened=reader.open(!dry);
+  if(interrupted)return 0;
+  if(!opened) {
     std::fputs("CrossPod: EPUB not supported by current reader slice\n",stderr);
     return 3;
   }
@@ -3111,23 +3208,25 @@ int main(int argc,char** argv) {
     if (render && !reader.savePgm(output)) return 4;
     return 0;
   }
-  crosspod::Q2SocketInput input;
   if(!input.open()) {
     std::fputs("CrossPod: input socket unavailable, refusing interactive mode\n",stderr);
     return 5;
   }
-  std::signal(SIGINT,exitOnSignal);
-  std::signal(SIGTERM,exitOnSignal);
   reader.present();
   bool typeMenu=false;
   int typeSelection=0;
-  crosspod::Q2Controls controls;
+  crosspod::Q2Controls controls(loadWheelSensitivity());
   while(!interrupted) {
+    reader.flushPosition(false);
     crosspod::PhysicalEvent event{};
     if (!input.receive(event)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      if(waitForReaderInput(input,reader.nextPositionFlush())<0) {
+        std::fputs("CrossPod: input socket poll failed\n",stderr);
+        return 5;
+      }
       continue;
     }
+    if(interrupted)break;
     auto action=controls.translate(event).action;
     bool changed=false;
     if(typeMenu) {
@@ -3170,6 +3269,5 @@ int main(int argc,char** argv) {
     }
     if(changed)reader.present();
   }
-  input.close();
   return 0;
 }

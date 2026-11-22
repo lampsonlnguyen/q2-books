@@ -15,6 +15,8 @@ Q2 Pod does not need the optional CrossPod Books hook for this card app.
 Opening the app without arguments shows a book selector. Turn the wheel,
 press Centre to open, use wheel or left/right touchscreen to turn pages.
 Back from reading returns to the CrossPod shelf; Back on the shelf exits.
+CrossPod reads Q2 Pod's Controls > Wheel Sensitivity setting at launch.
+If the value is missing or invalid, turn distance defaults to 50%.
 
 Only EPUB files are currently handled. It lists the SD root Books folder and
 one subfolder level. TXT books, JPEG, and complex EPUB layouts are not yet supported.
@@ -38,16 +40,36 @@ then Q2 Pod did not reach the launcher (or the card was not writable); that
 narrows the cause to the Q2 Pod fork/exec, script permission, or SD mount.
 For direct terminal tests the reader is .crosspod/crosspod-engine, not the launcher.
 
+SESSION PROFILING (v0.8 development):
+Create an empty .crosspod/profile-session file on the SD card, then launch
+CrossPod from Q2 Pod and exit with Back. Look for the "CrossPod session" line
+in .crosspod/startup.log. Remove the marker to disable profiling. The line
+reports elapsed time, user and system CPU time, peak resident memory, Linux
+block I/O counts and context switches for the reader process. Block counts
+can include any filesystem the reader touched. They are not SD byte counts.
+For an idle baseline, warm the current page and hold the same page for
+several minutes. For a reading sample, use the same book and session length
+and turn pages at a steady pace. Compare screen brightness and audio settings
+across runs. Measure battery drain separately on the physical device.
+
 This build uses CrossPoint's original EPUB ZIP/OPF/spine, ParsedText, TextBlock
 and GfxRenderer; XHTML collection is provisional and can lose styling.
 
-Reading-position resume (development branch): CrossPod now stores a small
-per-book progress file under /mnt/mmc/.crosspod/ after an interactive page
-turn. Reopening the same EPUB restores the last chapter and page. Progress
-is ignored when the EPUB file size or modification time changes. The saved
-page is clamped to the currently paginated chapter; this transitional format
-is NOT CrossPoint's native progress.bin and is not KOReader sync compatible.
-The CLI --validate, --render and --walk modes do not write progress.
+DEVICE POWER AND READING PROGRESS:
+Q2 Pod firmware owns power on, shutdown, sleep and wake. CrossPod checkpoints
+changed reading progress on the SD card at most once every five seconds during
+reading. Leaving a book or receiving SIGTERM/SIGINT flushes pending progress
+before the app releases its input socket and exits. If power is cut or the app
+is forcibly killed, recovery uses the last completed checkpoint.
+
+On the next launch, Continue Reading reopens the last book at its saved
+chapter and page. Progress is ignored if the EPUB size or modification time
+changes. The CLI --validate, --render and --walk modes do not save progress.
+
+On a physical Q2, turn a few pages, exit with Back or Q2 Pod's Hold Return,
+then reopen CrossPod and use Continue Reading. Repeat with a firmware
+shutdown and restart. Check how much progress Q2 Pod preserves during shutdown
+on your firmware version.
 
 TYPOGRAPHY MENU (experimental font builds):
 While reading, press Centre or tap the top 45 pixels to open Reading appearance.

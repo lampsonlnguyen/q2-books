@@ -1,6 +1,7 @@
 #include <Q2SocketInput.hpp>
 #include <cassert>
 #include <cstring>
+#include <cstdio>
 #include <string>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -23,7 +24,12 @@ int main() {
   const std::string path = "/tmp/crosspod-input-test-" + std::to_string(getpid()) + ".sock";
   Q2SocketInput receiver;
   assert(receiver.open(path));
+  // A second reader must never unlink the first reader's live endpoint.
+  Q2SocketInput competing;
+  assert(!competing.open(path));
+  assert(::access(path.c_str(), F_OK) == 0);
   assert(!receiver.receive(event)); // nonblocking and no data
+  assert(receiver.waitForInput(10) == 0);
   int sender = ::socket(AF_UNIX, SOCK_DGRAM, 0);
   assert(sender >= 0);
   sockaddr_un addr{};
@@ -32,10 +38,27 @@ int main() {
   const char msg[] = "k u 172";
   assert(::sendto(sender, msg, sizeof(msg) - 1, 0,
                   reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == sizeof(msg) - 1);
+  assert(receiver.waitForInput(1000) == 1);
   assert(receiver.receive(event));
+  assert(receiver.waitForInput(0) == 0);
   assert(event.kind == PhysicalKind::KeyUp && event.value == 172);
   ::close(sender);
   receiver.close();
+  assert(receiver.waitForInput(0) == -1);
   assert(::access(path.c_str(), F_OK) != 0);
+  // A crashed reader can leave a stale socket pathname behind.
+  int stale=::socket(AF_UNIX,SOCK_DGRAM,0);
+  assert(stale>=0);
+  assert(::bind(stale,reinterpret_cast<sockaddr*>(&addr),sizeof(addr))==0);
+  ::close(stale);
+  assert(receiver.open(path));
+  receiver.close();
+  // Never unlink a regular file that happens to have the socket name.
+  FILE* regular=std::fopen(path.c_str(),"wb");
+  assert(regular);
+  assert(std::fclose(regular)==0);
+  assert(!receiver.open(path));
+  assert(::access(path.c_str(),F_OK)==0);
+  assert(::unlink(path.c_str())==0);
   return 0;
 }

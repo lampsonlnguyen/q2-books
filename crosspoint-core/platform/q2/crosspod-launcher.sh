@@ -8,6 +8,9 @@ LOG="$ROOT/startup.log"
 BIN="$ROOT/crosspod-engine"
 # Keep Section HTML/page caches and font settings on SD, not the 128MB tmpfs.
 export CROSSPOD_STATE_DIR="$ROOT"
+if [ -f "$ROOT/profile-session" ]; then
+  export CROSSPOD_PROFILE_SESSION=1
+fi
 # Do not block launch if card is read-only. Keep log size bounded across boots.
 if ( : >> "$LOG" ) 2>/dev/null; then
   if [ "$(wc -c < "$LOG" 2>/dev/null)" -gt 65536 ] 2>/dev/null; then

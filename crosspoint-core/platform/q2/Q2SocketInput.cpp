@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -63,9 +64,31 @@ bool Q2SocketInput::open(std::string path) {
   sockaddr_un addr{};
   addr.sun_family = AF_UNIX;
   std::memcpy(addr.sun_path, path.c_str(), path.size() + 1);
-  ::unlink(path.c_str());  // stale socket from a crashed reader
-  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
-      ::chmod(path.c_str(), 0600) != 0) {
+  // Do not steal the endpoint from a running reader or delete an unrelated file.
+  // A pathname socket left by a crashed process may be removed only when the
+  // kernel reports that no datagram receiver is bound to it.
+  struct stat previous{};
+  if (::lstat(path.c_str(), &previous) == 0) {
+    if (!S_ISSOCK(previous.st_mode)) { ::close(fd); return false; }
+    int probe = ::socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (probe < 0) { ::close(fd); return false; }
+    const int connected = ::connect(probe, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    const int savedError = errno;
+    ::close(probe);
+    if (connected == 0 || savedError != ECONNREFUSED || ::unlink(path.c_str()) != 0) {
+      ::close(fd);
+      return false;
+    }
+  } else if (errno != ENOENT) {
+    ::close(fd);
+    return false;
+  }
+  // If another process binds in the meantime, its endpoint must remain.
+  if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+    ::close(fd);
+    return false;
+  }
+  if (::chmod(path.c_str(), 0600) != 0) {
     ::close(fd);
     ::unlink(path.c_str());
     return false;
@@ -87,6 +110,14 @@ bool Q2SocketInput::receive(PhysicalEvent& result) {
   if (n < 0) return false;  // nonblocking EAGAIN or transport error
   if (n == 0) return false;
   return parse_q2_input(std::string_view(data, static_cast<size_t>(n)), result);
+}
+int Q2SocketInput::waitForInput(int timeoutMs) const {
+  if (fd_ < 0) return -1;
+  pollfd descriptor{fd_, POLLIN, 0};
+  const int result = ::poll(&descriptor, 1, timeoutMs);
+  if (result < 0) return errno == EINTR ? 0 : -1;
+  if (result == 0) return 0;
+  return (descriptor.revents & POLLIN) ? 1 : -1;
 }
 void Q2SocketInput::close() {
   if (fd_ >= 0) {

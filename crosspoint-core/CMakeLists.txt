@@ -87,6 +87,22 @@ target_link_libraries(crosspod_txt_package_tests PRIVATE crosspoint_txt crosspoi
 target_compile_options(crosspod_txt_package_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_txt_epub_package COMMAND crosspod_txt_package_tests)
 
+# DI-01/DI-02 StarDict: plain and dictzip fixtures, synonyms, sidecar, fuzz.
+set(STARDICT_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/stardict-fixture")
+add_custom_command(OUTPUT "${STARDICT_FIXTURE_DIR}/plain/plain.ifo"
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_stardict_fixture.py" "${STARDICT_FIXTURE_DIR}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_stardict_fixture.py"
+    VERBATIM)
+add_custom_target(stardict_fixture ALL DEPENDS "${STARDICT_FIXTURE_DIR}/plain/plain.ifo")
+add_executable(crosspod_stardict_tests tests/stardict_test.cpp)
+target_include_directories(crosspod_stardict_tests PRIVATE reader)
+target_link_libraries(crosspod_stardict_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(crosspod_stardict_tests PRIVATE -UNDEBUG)
+add_dependencies(crosspod_stardict_tests stardict_fixture)
+add_test(NAME crosspod_stardict_lookup_and_fuzz
+    COMMAND crosspod_stardict_tests "${STARDICT_FIXTURE_DIR}")
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 

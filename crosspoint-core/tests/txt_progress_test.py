@@ -32,6 +32,13 @@ with tempfile.TemporaryDirectory() as tmp:
     latin = os.path.join(tmp, "legacy.txt")
     with open(latin, "wb") as f:
         f.write(("Caf\xe9 cr\xe8me, na\xefve fa\xe7ade.\n".encode("latin-1")) * 4000)
+    # One word on the page: touch boxes must sit on the glyphs (selection
+    # geometry treated the line top as the baseline: one line too high).
+    one = os.path.join(tmp, "one.txt")
+    for word in ["Hello", "Việt", "gypsy"]:
+        with open(one, "w", encoding="utf-8") as f:
+            f.write(word + "\n")
+        run(["--test-selection-geometry", one], env)
     for book in [utf8, latin] + extra:
         run(["--test-progress", book], env)
         out = run(["--walk", book], env)

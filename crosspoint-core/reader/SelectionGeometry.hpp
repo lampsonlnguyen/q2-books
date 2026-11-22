@@ -36,9 +36,11 @@ inline std::vector<SelectedWord> selectableWords(
           wordFont,block->laidOutWord(i),block->wordStyle(i));
       if(width<=0)continue;
       const int x=margin+element->xPos+block->wordXpos(i);
-      // PageLine::yPos is the layout baseline. Include diacritics and
-      // ruby above it, and a small touch slop below.
-      const int y=top+element->yPos-ascent-7;
+      // PageLine::yPos is the top of the line: GfxRenderer::drawText puts
+      // the baseline at y + ascender. (Treating it as the baseline put every
+      // touch box one line too high, so a press picked the word below.)
+      // Include diacritics and ruby above it, and a small touch slop below.
+      const int y=top+element->yPos-7;
       result.push_back({range.start,range.end,x,y,width,ascent+15,
                         block->wordText(i)});
     }

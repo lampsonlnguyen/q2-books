@@ -15,6 +15,13 @@ test -e "$root/lib/libc.so.6"
 test -e "$root/lib/ld-linux-mipsn8.so.1"
 find "$root/lib" "$root/usr/lib" -name 'libstdc++.so.6*' -print -quit | grep -q . ||
   { echo "::error::Firmware has no Q2-compatible libstdc++ runtime"; exit 1; }
+# HTTPS uses the exact libcurl already shipped by Q2 Pod. Never link an
+# Ubuntu x86_64 library or bundle a second TLS stack on the 128MB device.
+if ! test -e "$root/usr/lib/libcurl.so.4"; then
+  echo "::error::Q2 rootfs is missing the stock TLS-enabled libcurl.so.4"
+  exit 1
+fi
+ln -sfn libcurl.so.4 "$root/usr/lib/libcurl.so"
 git clone --quiet --depth 1 --branch shanlingq2 https://github.com/DiamondBond/q2-librespot.git "$work/librespot"
 test "$(git -C "$work/librespot" rev-parse HEAD)" = 4775f9c0b8f02cb76166482abb0d0dc5416f572f
 mkdir -p "$work/headers/gnu"
@@ -81,6 +88,7 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release \
   "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
   "-DCMAKE_EXE_LINKER_FLAGS=$link" \
+  "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -DCROSSPOD_Q2_RUNTIME=1" \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
   "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include" \
   "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include"

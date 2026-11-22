@@ -546,7 +546,11 @@ struct RenderPage {
   std::vector<RenderLine> lines;
   std::vector<RenderImage> images;
 };
+struct DictionaryPage {std::string header;std::vector<std::string> lines;};
 class Reader {
+  std::string dictionaryWord_;
+  std::vector<DictionaryPage> dictionaryPages_;
+  int dictionaryPage_=0;
   std::string bookPath_;
   // The ZIP the engine opens: the book itself, or for a .txt its cached EPUB
   // package (TxtPackage.hpp). bookPath_ stays the book's identity.
@@ -1481,32 +1485,82 @@ class Reader {
     }
     display_.displayBuffer();
   }
-  void showDictionaryDefinition() {
+  // DI-03: every match from every dictionary, paged with the wheel. Pages
+  // are laid out once per lookup; the overlay shows one at a time.
+  void showDictionaryDefinition(int step=0) {
     const auto selected=selectedText();
-    const auto def=crosspod::lookupDefinition(selected);
+    if(step==0 || selected!=dictionaryWord_) {
+      dictionaryWord_=selected;
+      dictionaryPages_.clear();
+      dictionaryPage_=0;
+      const auto matches=crosspod::lookupDefinitions(selected);
+      constexpr int kLines=4;
+      constexpr int kWidth=325;  // inside the overlay, in the overlay font
+      const auto fits=[&](const std::string& t){return renderer_.getTextWidth(2,t.c_str())<=kWidth;};
+      for(size_t m=0;m<matches.size();++m) {
+        const std::string header=matches[m].headword+"  ("+matches[m].source+")";
+        std::vector<std::string> lines;
+        const std::string& text=matches[m].text;
+        size_t cursor=0;
+        while(cursor<text.size() && lines.size()<200) {
+          // The longest run of whole words that fits; a word wider than the
+          // overlay is cut at a character boundary.
+          size_t end=cursor,lastSpace=std::string::npos;
+          while(end<text.size()) {
+            size_t next=end+1;
+            while(next<text.size() && (static_cast<unsigned char>(text[next])&0xC0)==0x80)++next;
+            if(!fits(text.substr(cursor,next-cursor)))break;
+            if(text[end]==' ')lastSpace=end;
+            end=next;
+          }
+          if(end<text.size() && lastSpace!=std::string::npos && lastSpace>cursor)end=lastSpace;
+          if(end==cursor) {  // not even one character fits: take one
+            end=cursor+1;
+            while(end<text.size() && (static_cast<unsigned char>(text[end])&0xC0)==0x80)++end;
+          }
+          lines.push_back(text.substr(cursor,end-cursor));
+          cursor=end;
+          while(cursor<text.size() && text[cursor]==' ')++cursor;
+        }
+        for(size_t l=0;l<lines.size() || l==0;l+=kLines) {
+          DictionaryPage page{header,{}};
+          for(size_t k=l;k<std::min(lines.size(),l+kLines);++k)page.lines.push_back(lines[k]);
+          dictionaryPages_.push_back(std::move(page));
+          if(lines.empty())break;
+        }
+      }
+    } else {
+      dictionaryPage_=std::clamp(dictionaryPage_+step,0,
+          std::max(0,static_cast<int>(dictionaryPages_.size())-1));
+    }
     render();
     renderer_.fillRect(10,90,355,195,true);
     renderer_.fillRect(12,92,351,191,false);
     renderer_.drawText(2,20,103,"Offline dictionary");
-    renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
-    const std::string description=def.empty()?
-      "No match in dictionary.tsv":def;
-    // Break across a few display rows without modifying UTF-8 source text.
-    size_t cursor=0;
-    for(int line=0;line<5 && cursor<description.size();++line) {
-      size_t end=std::min(description.size(),cursor+43);
-      if(end<description.size()) {
-        const size_t space=description.rfind(' ',end);
-        if(space!=std::string::npos && space>cursor)end=space;
+    if(dictionaryPages_.empty()) {
+      renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
+      renderer_.drawText(2,20,158,"No match in the dictionaries");
+      drawMenuText(20,271,"Back: selected text",1);
+    } else {
+      const auto& page=dictionaryPages_[dictionaryPage_];
+      std::string header=page.header;
+      while(header.size()>1 && renderer_.getTextWidth(2,header.c_str())>325) {
+        size_t cut=header.size()-1;
+        while(cut>0 && (static_cast<unsigned char>(header[cut])&0xC0)==0x80)--cut;
+        header.erase(cut);
       }
-      renderer_.drawText(2,20,158+line*20,
-          clippedLabel(description.substr(cursor,end-cursor),42).c_str());
-      cursor=end;
-      while(cursor<description.size() && description[cursor]==' ')++cursor;
+      renderer_.drawText(2,20,131,header.c_str());
+      renderer_.fillRect(20,159,320,1,true);
+      for(size_t line=0;line<page.lines.size();++line)
+        renderer_.drawText(2,20,163+static_cast<int>(line)*25,page.lines[line].c_str());
+      const std::string footer=dictionaryPages_.size()>1?
+          std::to_string(dictionaryPage_+1)+"/"+std::to_string(dictionaryPages_.size())+
+          "  Wheel: more  Back: selected text":"Back: selected text";
+      drawMenuText(20,271,footer.c_str(),1);
     }
-    drawMenuText(20,271,"Back: selected text",1);
     display_.displayBuffer();
   }
+  bool hasMoreDictionaryPages() const {return dictionaryPages_.size()>1;}
   bool rememberPage() {
     const uint32_t offset=upstreamSection_?
       upstreamSection_->getVisibleTextOffsetForPage(
@@ -2137,6 +2191,20 @@ class Reader {
     }
     if(std::fclose(file)!=0)ok=false;
     return ok;
+  }
+  const std::vector<crosspod::SelectedWord>& selectableWordsForTest() const {return selectedWords_;}
+  // Ink bounding box of the book area of the rendered page (no footer).
+  bool inkBounds(int& x0,int& y0,int& x1,int& y1) {
+    render();
+    const uint8_t* pixels=display_.getFrameBuffer();
+    if(!pixels)return false;
+    x0=y0=INT32_MAX;x1=y1=-1;
+    for(int y=TOP;y<BOTTOM;++y)
+      for(int x=0;x<375;++x)
+        if(!(pixels[y*47+x/8]&(0x80u>>(x&7)))) {
+          x0=std::min(x0,x);x1=std::max(x1,x);y0=std::min(y0,y);y1=std::max(y1,y);
+        }
+    return x1>=0;
   }
   bool lastRenderSucceeded() const { return lastRenderOk_; }
   bool pageHasVisibleInk() const {
@@ -2861,7 +2929,10 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(dictionaryOverlay) {
-        if(action==crosspod::LogicalAction::Back ||
+        if(action==crosspod::LogicalAction::Next ||
+           action==crosspod::LogicalAction::Previous) {
+          reader->showDictionaryDefinition(action==crosspod::LogicalAction::Next?1:-1);
+        } else if(action==crosspod::LogicalAction::Back ||
            action==crosspod::LogicalAction::Confirm ||
            event.kind==crosspod::PhysicalKind::TouchUp) {
           dictionaryOverlay=false;
@@ -3253,6 +3324,7 @@ void usage() {
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
     "  crosspod-reader --test-page-links <book.epub> (real link regression)\n"
     "  crosspod-reader --test-progress <book>         (go-to-percent regression)\n"
+    "  crosspod-reader --define <word>               (dictionary lookup)\n"
     "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
@@ -3348,6 +3420,22 @@ int main(int argc,char** argv) {
     std::puts("CrossPod XHTML footnote noteref missing");
     return 7;
   }
+  if(argc==3 && std::strcmp(argv[1],"--test-selection-geometry")==0) {
+    // A one-word page: the word's touch box must hold the glyphs' ink and a
+    // press on the ink must pick that word (it picked the line below).
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.beginTextSelection())return 7;
+    int x0=0,y0=0,x1=0,y1=0;
+    if(!reader.inkBounds(x0,y0,x1,y1))return 8;
+    const auto& words=reader.selectableWordsForTest();
+    if(words.size()!=1)return 9;
+    const auto& w=words[0];
+    std::printf("ink %d,%d-%d,%d  box %d,%d %dx%d\n",x0,y0,x1,y1,w.x,w.y,w.width,w.height);
+    if(y0<w.y || y1>w.y+w.height || x0<w.x-2 || x1>w.x+w.width+2)return 10;
+    if(crosspod::hitSelectableWord(words,(x0+x1)/2,(y0+y1)/2)!=0)return 11;
+    std::puts("CrossPod selection touch boxes on glyphs: PASS");
+    return 0;
+  }
   if(argc==3 && std::strcmp(argv[1],"--test-selection")==0) {
     Reader reader(argv[2]);
     if(!reader.open() || !reader.beginTextSelection())return 7;
@@ -3364,6 +3452,16 @@ int main(int argc,char** argv) {
     std::printf("CrossPod unicode selection and persistent highlight: PASS (%s)\n",
                 selected.c_str());
     return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--define")==0) {
+    // DI-01: check installed dictionaries from a shell (no framebuffer).
+    for(const auto& folder:crosspod::stardictFolders())
+      for(const auto& ifo:crosspod::stardict::findDictionaries(folder))
+        std::printf("dictionary: %s\n",ifo.c_str());
+    const auto matches=crosspod::lookupDefinitions(argv[2]);
+    for(const auto& m:matches)
+      std::printf("[%s] %s: %s\n",m.source.c_str(),m.headword.c_str(),m.text.c_str());
+    return matches.empty()?1:0;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-progress")==0) {
     // RD-01/02/03/06 regression: go-to-percent lands near the target and the

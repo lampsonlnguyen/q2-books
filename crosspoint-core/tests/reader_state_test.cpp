@@ -60,6 +60,26 @@ int main() {
          defaults.alignment==1 && defaults.hyphenation && !defaults.embeddedStyle);
   auto invalid=chosen;invalid.margin=100;
   assert(!crosspod::saveReaderPreferences(invalid));
+  // SETTINGS3: focus reading and auto turn persist; v2 files still load with
+  // both off; an interval outside the menu's choices is refused.
+  chosen.focusReading=true;chosen.autoTurnSeconds=30;
+  assert(crosspod::saveReaderPreferences(chosen));
+  defaults=crosspod::ReaderPreferences{};
+  assert(crosspod::loadReaderPreferences(defaults));
+  assert(defaults.focusReading && defaults.autoTurnSeconds==30 && defaults.margin==22);
+  auto badTurn=chosen;badTurn.autoTurnSeconds=7;
+  assert(!crosspod::validReaderPreferences(badTurn));
+  {
+    FILE* v2=std::fopen(crosspod::readerPreferencesFile().c_str(),"wb");
+    assert(v2);
+    assert(std::fputs("CROSSPOD-SETTINGS2 30 120 0 1 1 1\n",v2)>0);
+    assert(std::fclose(v2)==0);
+    defaults=crosspod::ReaderPreferences{};
+    defaults.focusReading=true;defaults.autoTurnSeconds=10;
+    assert(crosspod::loadReaderPreferences(defaults));
+    assert(defaults.margin==30 && defaults.nightMode && !defaults.focusReading &&
+           defaults.autoTurnSeconds==0);
+  }
 
   assert(crosspod::loadBookmarks(book).empty());
   assert(crosspod::addBookmark(book,{0,3,100}));

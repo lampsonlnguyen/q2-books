@@ -20,7 +20,7 @@ struct MappedEvent { LogicalAction action{LogicalAction::None};int x{},y{}; };
 inline constexpr int defaultWheelSensitivity=50;
 
 inline int parseWheelSensitivity(std::string_view value) {
-    if(value.empty())return defaultWheelSensitivity;
+    if(value.empty() || (value.size()>1 && value.front()=='0'))return defaultWheelSensitivity;
     int percent=0;
     const auto parsed=std::from_chars(value.data(),value.data()+value.size(),percent);
     return parsed.ec==std::errc{} && parsed.ptr==value.data()+value.size() &&
@@ -30,8 +30,8 @@ inline int parseWheelSensitivity(std::string_view value) {
 
 class Q2Controls {
     static constexpr int wheelFine=16;
-    int wheel_accumulator_=0;
-    int wheelThreshold_;
+    int64_t wheel_accumulator_=0;
+    int64_t wheelThreshold_;
     bool confirm_down_=false;
 public:
     explicit Q2Controls(int percent=defaultWheelSensitivity) {
@@ -48,7 +48,7 @@ public:
             if((travel<0 && wheel_accumulator_>0) || (travel>0 && wheel_accumulator_<0))
                 wheel_accumulator_=0;
             const int64_t total=wheel_accumulator_+travel;
-            wheel_accumulator_=static_cast<int>(total%wheelThreshold_);
+            wheel_accumulator_=total%wheelThreshold_;
             if(total>=wheelThreshold_)return {A::Next};
             if(total<=-wheelThreshold_)return {A::Previous};
             return {};

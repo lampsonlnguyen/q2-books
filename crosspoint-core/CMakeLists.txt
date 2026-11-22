@@ -585,6 +585,10 @@ add_test(NAME books_opds_details_and_covers
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/opds_details_cover_test.py"
     "$<TARGET_FILE:books-reader>")
+add_test(NAME books_koreader_sync_conflicts
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/sync_conflict_test.py"
+    "$<TARGET_FILE:books-reader>" "${BOOKS_LINKS_EPUB_FIXTURE}")
 add_test(NAME books_connected_network_end_to_end
   COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"

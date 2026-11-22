@@ -215,6 +215,15 @@ inline constexpr UiTranslation kVietnamese[] = {
     {"No remote progress", "Máy chủ chưa có tiến độ"},
     {"Remote position applied", "Đã lấy vị trí"},
     {"Remote ahead. Pull first.", "Máy chủ mới hơn. Lấy về trước."},
+    {"Remote is behind", "Máy chủ cũ hơn"},
+    {"Reading positions differ", "Vị trí đọc khác nhau"},
+    {"This Q2: ", "Máy này: "},
+    {"Server: ", "Máy chủ: "},
+    {"Another device read further.", "Máy khác đã đọc xa hơn."},
+    {"The server's position is older.", "Vị trí trên máy chủ cũ hơn."},
+    {"Go to the server's ", "Tới vị trí máy chủ "},
+    {"Upload this Q2's ", "Gửi vị trí máy này "},
+    {"Keep and upload ", "Giữ và gửi "},
 };
 
 inline const char* tr(const char* english) {

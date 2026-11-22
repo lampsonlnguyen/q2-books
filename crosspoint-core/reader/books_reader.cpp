@@ -1134,17 +1134,21 @@ class Reader {
   std::string syncDocumentHash() const {
     return books::koReaderPartialMd5(bookPath_);
   }
-  bool pushReadingSync() {
-    const auto config=books::loadConnectedConfig();
-    if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
-      typographyNotice_="Enable sync in connected.conf";
-      return false;
-    }
-    const auto hash=syncDocumentHash();
-    if(hash.empty()) {
-      typographyNotice_="Cannot hash EPUB";
-      return false;
-    }
+  // M4: the conflict the last push or pull found (Server ahead on a push,
+  // behind on a pull); the card app asks which position to keep.
+  struct SyncConflictState {
+    books::SyncConflict kind=books::SyncConflict::None;
+    books::RemoteProgress remote;
+    float local=0;
+  };
+ private:
+  SyncConflictState syncConflict_;
+ public:
+  const SyncConflictState& syncConflict() const {return syncConflict_;}
+  void clearSyncConflict() {syncConflict_={};}
+  // This page as a KOReader position (XPath and percentage).
+  bool localSyncPosition(books::RemoteProgress& local) {
+    if(!upstreamEpub_ || !upstreamSection_)return false;
     CrossPointPosition position{};
     position.spineIndex=currentSpine_;
     position.pageNumber=static_cast<int>(currentPage_);
@@ -1155,26 +1159,42 @@ class Reader {
       position.hasVisibleTextOffset=true;
     }
     const auto mapped=ProgressMapper::toSavedProgress(upstreamEpub_,position);
-    if(mapped.xpath.empty()) {
+    if(mapped.xpath.empty())return false;
+    local={mapped.xpath,std::clamp(mapped.percentage,0.f,1.f),true,{}};
+    return true;
+  }
+  // Upload this page. With |force| false, a server further on (another
+  // device read ahead) is not overwritten: the conflict is kept instead.
+  bool pushReadingSync(bool force=false) {
+    syncConflict_={};
+    const auto config=books::loadConnectedConfig();
+    if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
+      typographyNotice_="Enable sync in connected.conf";
+      return false;
+    }
+    const auto hash=syncDocumentHash();
+    if(hash.empty()) {
+      typographyNotice_="Cannot hash EPUB";
+      return false;
+    }
+    books::RemoteProgress local{};
+    if(!localSyncPosition(local)) {
       typographyNotice_="Cannot map text position";
       return false;
     }
-    books::RemoteProgress remote{};
     std::string error;
-    if(!books::pullKoreaderProgress(config,hash,remote,error)) {
-      typographyNotice_="Sync check: "+error;
-      return false;
+    if(!force) {
+      books::RemoteProgress remote{};
+      if(!books::pullKoreaderProgress(config,hash,remote,error)) {
+        typographyNotice_="Sync check: "+error;
+        return false;
+      }
+      if(books::syncConflict(remote,local.progress,local.percentage)==books::SyncConflict::ServerAhead) {
+        syncConflict_={books::SyncConflict::ServerAhead,remote,local.percentage};
+        typographyNotice_="Remote ahead. Pull first.";
+        return false;
+      }
     }
-    // Never silently overwrite a newer/further location from another
-    // device. The reader's own local position stays intact on conflicts.
-    if(remote.exists &&
-       remote.percentage>mapped.percentage+0.002f &&
-       remote.progress!=mapped.xpath) {
-      typographyNotice_="Remote ahead. Pull first.";
-      return false;
-    }
-    const books::RemoteProgress local{
-        mapped.xpath,std::clamp(mapped.percentage,0.f,1.f),true};
     if(!books::pushKoreaderProgress(config,hash,local,error)) {
       typographyNotice_="Sync upload: "+error;
       return false;
@@ -1182,7 +1202,10 @@ class Reader {
     typographyNotice_="Progress uploaded";
     return true;
   }
-  bool pullReadingSync() {
+  // Go to the server's position. With |force| false, a server behind this
+  // page (an older position) is not applied: the conflict is kept instead.
+  bool pullReadingSync(bool force=false) {
+    syncConflict_={};
     const auto config=books::loadConnectedConfig();
     if(!config.syncConfigured() || !upstreamEpub_ || !upstreamSection_) {
       typographyNotice_="Enable sync in connected.conf";
@@ -1203,6 +1226,16 @@ class Reader {
       typographyNotice_="No remote progress";
       return false;
     }
+    books::RemoteProgress local{};
+    if(!force && localSyncPosition(local) &&
+       books::syncConflict(remote,local.progress,local.percentage)==books::SyncConflict::ServerBehind) {
+      syncConflict_={books::SyncConflict::ServerBehind,remote,local.percentage};
+      typographyNotice_="Remote is behind";
+      return false;
+    }
+    return applyRemoteProgress(remote);
+  }
+  bool applyRemoteProgress(const books::RemoteProgress& remote) {
     SavedProgressPosition saved{remote.progress,remote.percentage};
     const auto mapped=ProgressMapper::toCrossPoint(
         upstreamEpub_,saved,renderer_,currentSpine_,
@@ -1226,6 +1259,37 @@ class Reader {
     persistPosition(true);
     typographyNotice_="Remote position applied";
     return true;
+  }
+  // The choice: the two positions, then what to do. |choice| 0 takes the
+  // server's position, 1 keeps (and uploads) this Q2's, 2 cancels.
+  void showSyncConflict(int choice) {
+    const auto& c=syncConflict_;
+    renderer_.clearScreen(0xff);
+    renderer_.fillRect(10,40,355,236,true);
+    renderer_.fillRect(12,42,351,232,false);
+    books::paintFrame(display_,10,40,355,236,2);
+    drawMenuText(22,52,"Reading positions differ");
+    renderer_.fillRect(18,71,337,1,true);
+    const int server=static_cast<int>(c.remote.percentage*100.f+0.5f);
+    const int here=static_cast<int>(c.local*100.f+0.5f);
+    std::string line=std::string(books::tr("This Q2: "))+std::to_string(here)+"%";
+    drawMenuText(22,78,line.c_str());
+    line=std::string(books::tr("Server: "))+std::to_string(server)+"%";
+    if(!c.remote.device.empty())line+=" ("+clippedLabel(c.remote.device,18)+")";
+    drawMenuText(22,99,line.c_str());
+    drawMenuText(22,124,c.kind==books::SyncConflict::ServerAhead?
+        "Another device read further.":"The server's position is older.",1);
+    const std::string options[3]={
+      std::string(books::tr("Go to the server's "))+std::to_string(server)+"%",
+      std::string(books::tr(c.kind==books::SyncConflict::ServerAhead?"Upload this Q2's ":"Keep and upload "))+
+          std::to_string(here)+"%",
+      books::tr("Cancel")};
+    for(int i=0;i<3;++i) {
+      const int y=146+i*36;
+      drawMenuText(26,y+8,options[i].c_str());
+      if(i==choice)invertMenuRect(18,y,339,32);
+    }
+    display_.displayBuffer();
   }
   void dumpToc() {
     if(!upstreamEpub_)return;
@@ -2101,6 +2165,7 @@ class Reader {
     return static_cast<uint32_t>(std::min<uint64_t>(1000000u,at*1000000u/total));
   }
   int bookPercent() const { return static_cast<int>(bookProgressPpm()/10000u); }
+  const std::string& notice() const {return typographyNotice_;}
   // RD-01: open the page at a book position (0-100 %). The chapter is the one
   // holding that share of the book's text, and the page is placed within it
   // the same way a saved position is carried across a layout change.
@@ -3454,6 +3519,8 @@ int runCardApp(const std::string& bookDir) {
   bool dictionaryOverlay=false;
   bool footnoteOverlay=false;
   bool percentDialog=false;
+  bool syncDialog=false;
+  int syncChoice=0;
   bool aboutShown=false;
   bool dictionaryList=false;
   int dictionarySelection=0;
@@ -3538,6 +3605,27 @@ int runCardApp(const std::string& bookDir) {
                   std::chrono::milliseconds(300);
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
     if(reader) {
+      if(syncDialog) {  // M4: which reading position to keep
+        int pick=-1;
+        if(action==books::LogicalAction::Back)pick=2;
+        else if(action==books::LogicalAction::Next || action==books::LogicalAction::Previous) {
+          syncChoice=std::clamp(syncChoice+(action==books::LogicalAction::Next?1:-1),0,2);
+          reader->showSyncConflict(syncChoice);
+          continue;
+        } else if(action==books::LogicalAction::Confirm)pick=syncChoice;
+        else if(event.kind==books::PhysicalKind::TouchUp && event.y>=146 && event.y<254)
+          pick=(event.y-146)/36;
+        if(pick<0)continue;
+        syncDialog=false;
+        const auto conflict=reader->syncConflict();
+        reader->clearSyncConflict();
+        bool moved=false;
+        if(pick==0)moved=reader->applyRemoteProgress(conflict.remote);
+        else if(pick==1)(void)reader->pushReadingSync(true);
+        if(moved){typeMenu=false;reader->present();}
+        else reader->showTypographyMenu(typeSelection);
+        continue;
+      }
       if(percentDialog) {
         const auto result=handlePercentInput(*reader,action,event,percentValue);
         if(result==PercentResult::Open)continue;
@@ -3762,12 +3850,15 @@ int runCardApp(const std::string& bookDir) {
             (void)reader->adjustPreference(typeSelection);
           } else if(typeSelection==8) {
             (void)reader->rememberPage();
-          } else if(typeSelection==14) {
+          } else if(typeSelection==14 || typeSelection==15) {
             reader->flushPosition();
-            (void)reader->pushReadingSync();
-          } else if(typeSelection==15) {
-            reader->flushPosition();
-            if(reader->pullReadingSync()) {
+            const bool done=typeSelection==14?reader->pushReadingSync():reader->pullReadingSync();
+            if(reader->syncConflict().kind!=books::SyncConflict::None) {
+              syncDialog=true;syncChoice=0;
+              reader->showSyncConflict(syncChoice);
+              continue;
+            }
+            if(done && typeSelection==15) {
               typeMenu=false;
               reader->present();
               continue;
@@ -4192,6 +4283,26 @@ int main(int argc,char** argv) {
     if(!reader.pullReadingSync())return 6;
     std::puts("Books KOReader XPath progress roundtrip: PASS");
     return 0;
+  }
+  // M4 sync conflicts, one step per run (positions persist in the state
+  // folder): --test-sync <epub> <chapter> push|pull [force]
+  if((argc==5 || argc==6) && std::strcmp(argv[1],"--test-sync")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open(true))return 3;
+    const int chapter=std::atoi(argv[3]);
+    if(chapter>=0 && !reader.goToChapter(chapter))return 4;
+    const bool force=argc==6 && std::strcmp(argv[5],"force")==0;
+    const bool push=std::strcmp(argv[4],"push")==0;
+    const bool ok=push?reader.pushReadingSync(force):reader.pullReadingSync(force);
+    const auto& c=reader.syncConflict();
+    if(c.kind!=books::SyncConflict::None) {
+      std::printf("conflict %s server=%.3f local=%.3f device=%s\n",
+                  c.kind==books::SyncConflict::ServerAhead?"ahead":"behind",
+                  static_cast<double>(c.remote.percentage),static_cast<double>(c.local),c.remote.device.c_str());
+      return 0;
+    }
+    std::printf("%s %s percent=%d\n",ok?"ok":"failed",reader.notice().c_str(),reader.bookPercent());
+    return ok?0:7;
   }
   if(argc==3 && std::strcmp(argv[1],"--index-book")==0) {
     // Host/QEMU regression: metadata and an EPUB3 cover-image must become

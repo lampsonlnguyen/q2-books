@@ -268,6 +268,15 @@ python3 crosspoint-core/tests/make_language_visibility_epub.py \
   "$card/Books/CrossPod-Multilingual-Visibility-Test.epub" --check
 # Original CrossPoint font files, pinned to verified official SHA-256 digests.
 python3 crosspoint-core/tools/fetch_q2_fonts.py "$card/.crosspod/fonts"
+# Build authentic CrossPoint glyphs at 8/9/10/11pt from its pinned source,
+# including all 14 fallback scripts. Do not scale the 12pt bitmap or silently
+# ship missing fonts. The font build stays entirely on the CI host.
+python3 -m venv "$work/font-build-venv"
+"$work/font-build-venv/bin/python" -m pip install --quiet --disable-pip-version-check \
+  freetype-py fonttools PyYAML
+"$work/font-build-venv/bin/python" \
+  crosspoint-core/tools/build_q2_small_font_assets.py "$card/.crosspod/fonts"
+(cd "$card/.crosspod/fonts" && sha256sum -c crosspod-fonts-8-11.sha256)
 cp crosspoint-core/lib/EpdFont/builtinFonts/NotoSans-OFL.txt "$card/.crosspod/NotoSans-OFL.txt"
 # Original CrossPoint Page links, internal anchors, EPUB footnotes and
 # one-entry return history must work on the actual Q2 MIPS executable.

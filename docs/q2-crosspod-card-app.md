@@ -74,20 +74,31 @@ on your firmware version.
 TYPOGRAPHY MENU (experimental font builds):
 While reading, press Centre or tap the top 45 pixels to open Reading appearance.
 Turn the wheel to choose Font or Size; Centre cycles the selected value.
-Back closes the menu. Choose Sans or Serif and 12, 14, 16, or 18 pt.
+Back closes the menu. Font cycles through these **nine named families**:
+Noto Sans, Noto Serif, Bitter, Lexend Deca, ChareInk, Literata,
+Merriweather, Inter and Atkinson Hyperlegible Next. Size cycles through
+**10, 11 or 12 pt (maximum)**; 12 pt remains the default.
+Fonts not installed at the currently selected size are skipped, so copies of
+older card packages do not show unusable choices.
+Each family is loaded individually from SD, not kept fully in RAM.
 CrossPod repaginates the current chapter and saves your choices in
 /mnt/mmc/.crosspod/typography.conf. The book's page number may shift when
 font size changes; location anchoring is still a follow-up.
 
-The card app CI installs the original CrossPoint NotoSansExtended and
-NotoSerifExtended 12/14/16/18pt faces. It also installs upstream
+The card app CI installs original CrossPoint NotoSansExtended and
+NotoSerifExtended at 10/11/12pt, using the official pinned 12pt release
+and source-rasterized smaller fonts. Seven additional reading families
+come from CrossInk's pinned font manifest, rasterized into genuine
+CrossPoint cpfont v4 files at 10/11/12pt. It also installs upstream
 NotoSansCJKJP (Japanese and common Chinese), Pretendard (Korean Hangul),
 NotoSansDevanagari (Hindi, Marathi, Nepali), NotoSansBengali (Bengali),
 NotoSansGujarati, NotoSansGurmukhi (Punjabi), NotoSansKannada,
 NotoSansMalayalam, NotoSansOriya (Odia), NotoSansSinhala, NotoSansTamil,
 NotoSansTelugu, NotoNaskhArabicUI (Arabic), and Alef (Hebrew). Each
-fallback family is present at 12/14/16/18pt. All packages are downloaded
-from the official CrossPoint fonts release with pinned SHA-256 checksums.
+fallback family is present at 10/11/12pt. The 12pt packages are downloaded from the original CrossPoint release and
+SHA-256 verified. The 10–11pt variants are built from a pinned CrossPoint
+source snapshot using its own original font converter, with a generated
+asset-checksum manifest; upstream source-font URLs are not all content-pinned.
 The optional script faces stay on SD until their glyphs are requested.
 
 Fallback selection checks glyph coverage for each word and routes it to

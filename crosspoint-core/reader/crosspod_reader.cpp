@@ -602,8 +602,7 @@ class Reader {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
   }
   int fontIdForTypography(crosspod::Typography value) const {
-    return 100+(value.family==crosspod::Typography::Family::Serif?4:0)+
-           (value.size-12)/2;
+    return 100+static_cast<int>(value.family)*3+(value.size-10);
   }
   ReaderRenderSpec upstreamSpec() const {
     return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
@@ -3161,9 +3160,8 @@ int runCardApp(const std::string& bookDir) {
           else {
             auto next=reader->typography();
             if(typeSelection==0) {
-              next.family=next.family==crosspod::Typography::Family::Sans?
-                crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-            } else next.size=12; // Only 12pt fonts are verified in the Q2 package.
+              next.family=crosspod::nextInstalledTypographyFamily(next);
+            } else next.size=crosspod::nextTypographySize(next.size);
             (void)reader->configureTypography(next);
           }
           if(navigationMenu)
@@ -3869,9 +3867,8 @@ int main(int argc,char** argv) {
         else {
           auto next=reader.typography();
           if(typeSelection==0)
-            next.family=next.family==crosspod::Typography::Family::Sans?
-              crosspod::Typography::Family::Serif:crosspod::Typography::Family::Sans;
-          else next.size=12; // Only 12pt fonts are verified in the Q2 package.
+            next.family=crosspod::nextInstalledTypographyFamily(next);
+          else next.size=crosspod::nextTypographySize(next.size);
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);

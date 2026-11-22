@@ -102,6 +102,13 @@ target_compile_options(books_stardict_tests PRIVATE -UNDEBUG)
 add_dependencies(books_stardict_tests stardict_fixture)
 add_test(NAME books_stardict_lookup_and_fuzz
     COMMAND books_stardict_tests "${STARDICT_FIXTURE_DIR}")
+add_executable(books_dictionary_lookup_tests tests/dictionary_lookup_test.cpp)
+target_include_directories(books_dictionary_lookup_tests PRIVATE reader)
+target_link_libraries(books_dictionary_lookup_tests PRIVATE ZLIB::ZLIB)
+target_compile_options(books_dictionary_lookup_tests PRIVATE -UNDEBUG)
+add_dependencies(books_dictionary_lookup_tests stardict_fixture)
+add_test(NAME books_dictionary_spellings_choices_vocabulary
+    COMMAND books_dictionary_lookup_tests "${STARDICT_FIXTURE_DIR}")
 
 add_executable(books_legacy_migration_tests tests/legacy_state_migration_test.cpp)
 target_include_directories(books_legacy_migration_tests PRIVATE reader)

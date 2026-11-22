@@ -99,7 +99,7 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 20;  // 19: About
+constexpr int kTypographyItems = 21;  // 19: About, 20: Dictionaries
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -1496,6 +1496,8 @@ class Reader {
       dictionaryPages_.clear();
       dictionaryPage_=0;
       const auto matches=books::lookupDefinitions(selected);
+      if(!matches.empty())  // DI-04: the words looked up, for review later
+        (void)books::logVocabulary(selected,matches.front().headword,metadata().coreMetadata.title);
       constexpr int kLines=4;
       constexpr int kWidth=325;  // inside the overlay, in the overlay font
       const auto fits=[&](const std::string& t){return renderer_.getTextWidth(2,t.c_str())<=kWidth;};
@@ -1855,7 +1857,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1871,7 +1873,8 @@ class Reader {
       preferences_.focusReading?"On":"Off",
       preferences_.autoTurnSeconds?std::to_string(preferences_.autoTurnSeconds)+"s":"Off",
       std::to_string(bookPercent())+"%",
-      std::string("v")+BOOKS_VERSION
+      std::string("v")+BOOKS_VERSION,
+      std::to_string(dictionaryCount())+" installed"
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2069,6 +2072,42 @@ class Reader {
     persistPosition(true);
     return true;
   }
+  // Reading settings -> Dictionaries: each installed dictionary, on or off.
+  void showDictionaryList(int selected) {
+    const auto names=books::dictionaryNames();
+    const auto off=books::disabledDictionaries();
+    renderer_.clearScreen(0xff);
+    renderer_.fillRect(10,37,355,258,true);
+    renderer_.fillRect(12,39,351,254,false);
+    drawMenuText(22,47,"Dictionaries");
+    renderer_.fillRect(18,66,337,1,true);
+    if(names.empty()) {
+      drawMenuText(22,90,"None installed.",1);
+      drawMenuText(22,106,"Put StarDict folders in",1);
+      drawMenuText(22,120,".books/dictionaries or Dictionaries",1);
+    }
+    constexpr int kRows=9;
+    const int first=std::max(0,std::min(selected-kRows+1,static_cast<int>(names.size())-kRows));
+    for(int row=0;row<kRows && first+row<static_cast<int>(names.size());++row) {
+      const int item=first+row,y=73+row*21;
+      const bool on=std::find(off.begin(),off.end(),names[item])==off.end();
+      drawMenuText(24,y+3,clippedLabel(names[item],22).c_str());
+      drawMenuText(300,y+3,on?"On":"Off");
+      if(item==selected)invertMenuRect(18,y,337,21);
+    }
+    drawMenuText(23,277,"Center: on/off   Back: settings",1);
+    display_.displayBuffer();
+  }
+  // Toggle dictionary |index| of dictionaryNames(); false if none.
+  bool toggleDictionary(int index) {
+    const auto names=books::dictionaryNames();
+    if(index<0 || index>=static_cast<int>(names.size()))return false;
+    auto off=books::disabledDictionaries();
+    const auto at=std::find(off.begin(),off.end(),names[index]);
+    if(at==off.end())off.push_back(names[index]);else off.erase(at);
+    return books::saveDisabledDictionaries(off);
+  }
+  int dictionaryCount() const {return static_cast<int>(books::dictionaryNames().size());}
   void showAbout() {
     renderer_.clearScreen(0xff);
     renderer_.fillRect(10,37,355,258,true);
@@ -2930,6 +2969,8 @@ int runCardApp(const std::string& bookDir) {
   bool footnoteOverlay=false;
   bool percentDialog=false;
   bool aboutShown=false;
+  bool dictionaryList=false;
+  int dictionarySelection=0;
   int percentValue=0;
   // RD-02 auto page turn: the next turn is due at this time; reset by input.
   auto nextAutoTurn=ReaderClock::time_point::max();
@@ -3164,6 +3205,24 @@ int runCardApp(const std::string& bookDir) {
         }
         continue;
       }
+      if(typeMenu && dictionaryList) {
+        const int count=reader->dictionaryCount();
+        if(action==books::LogicalAction::Back) {
+          dictionaryList=false;reader->showTypographyMenu(typeSelection);
+        } else if((action==books::LogicalAction::Next || action==books::LogicalAction::Previous) && count) {
+          dictionarySelection=(dictionarySelection+(action==books::LogicalAction::Next?1:count-1))%count;
+          reader->showDictionaryList(dictionarySelection);
+        } else if(action==books::LogicalAction::Confirm || event.kind==books::PhysicalKind::TouchUp) {
+          if(event.kind==books::PhysicalKind::TouchUp) {
+            if(event.y<66){dictionaryList=false;reader->showTypographyMenu(typeSelection);continue;}
+            const int first=std::max(0,std::min(dictionarySelection-8,count-9));
+            dictionarySelection=std::clamp(first+(event.y-73)/21,0,std::max(0,count-1));
+          }
+          (void)reader->toggleDictionary(dictionarySelection);
+          reader->showDictionaryList(dictionarySelection);
+        }
+        continue;
+      }
       if(typeMenu && aboutShown) {
         if(action==books::LogicalAction::Back || action==books::LogicalAction::Confirm ||
            action==books::LogicalAction::Next || action==books::LogicalAction::Previous ||
@@ -3190,6 +3249,11 @@ int runCardApp(const std::string& bookDir) {
           if(typeSelection==19) {
             aboutShown=true;
             reader->showAbout();
+            continue;
+          }
+          if(typeSelection==20) {
+            dictionaryList=true;dictionarySelection=0;
+            reader->showDictionaryList(0);
             continue;
           }
           if(typeSelection==18) {

@@ -93,7 +93,9 @@ jobs:
         run: |
           set -euo pipefail
           test -s dist/crosspod-q2-reader-alpha.zip
-          (cd dist && sha256sum -c crosspod-q2-reader-alpha.zip.sha256)
+          expected=$(awk 'NR==1 {print $1}' dist/crosspod-q2-reader-alpha.zip.sha256)
+          actual=$(sha256sum dist/crosspod-q2-reader-alpha.zip | cut -d ' ' -f1)
+          test -n "$expected" && test "$expected" = "$actual"
           unzip -t dist/crosspod-q2-reader-alpha.zip
           unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/crosspod-engine'
           unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/q2-crosspod'

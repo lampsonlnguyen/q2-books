@@ -1,6 +1,12 @@
 #pragma once
 
 #include <HalStorage.h>
+// CrossPod: expat.h declares its entity-amplification limits only under
+// XML_DTD, the feature libexpat is built with by default (host and the Q2's
+// pinned 2.6.4 alike); ChapterHtmlSlimParser.cpp sets them.
+#ifndef XML_DTD
+#define XML_DTD 1
+#endif
 #include <expat.h>
 
 #include <array>

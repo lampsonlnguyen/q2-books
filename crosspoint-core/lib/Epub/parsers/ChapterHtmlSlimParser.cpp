@@ -2913,6 +2913,14 @@ bool ChapterHtmlSlimParser::beginParse(uint8_t* inputBytes, size_t inputSize) {
   // <!DOCTYPE html>, or with no DOCTYPE) to the handler above instead of failing the chapter.
   // No external DTD or entity is read: there is no external-entity handler.
   XML_UseForeignDTD(xmlParser_, XML_TRUE);
+#if XML_MAJOR_VERSION > 2 || (XML_MAJOR_VERSION == 2 && XML_MINOR_VERSION >= 4)
+  // CrossPod: expat's entity-amplification guard starts only after 8 MiB of
+  // expanded text by default, and that much "billion laughs" text then laid
+  // out as one word for minutes before the chapter failed. A real chapter
+  // expands entities by a few bytes; refuse past 64 KiB at 100x amplification.
+  XML_SetBillionLaughsAttackProtectionActivationThreshold(xmlParser_, 64u * 1024u);
+  XML_SetBillionLaughsAttackProtectionMaximumAmplification(xmlParser_, 100.0f);
+#endif
 
   inputBytes_ = inputBytes;
   inputSize_ = inputSize;

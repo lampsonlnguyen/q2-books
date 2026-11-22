@@ -2472,7 +2472,7 @@ int runCardApp(const std::string& bookDir) {
       // Work only while idle on the bookshelf, not when reading or during
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
       // never parse chapter pages or write an index on every wheel turn.
-      if(shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+      if(!reader && shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
         const auto result=crosspod::indexShelfBook(book);
         if(result.updated) {
@@ -2491,7 +2491,7 @@ int runCardApp(const std::string& bookDir) {
         nextBuildTick=ReaderClock::now()+std::chrono::milliseconds(150);
       }
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
-      if(shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(!reader && shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
         std::fputs("CrossPod: input socket poll failed\n",stderr);

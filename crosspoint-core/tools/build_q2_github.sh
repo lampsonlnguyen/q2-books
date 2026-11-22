@@ -15,6 +15,13 @@ test -e "$root/lib/libc.so.6"
 test -e "$root/lib/ld-linux-mipsn8.so.1"
 find "$root/lib" "$root/usr/lib" -name 'libstdc++.so.6*' -print -quit | grep -q . ||
   { echo "::error::Firmware has no Q2-compatible libstdc++ runtime"; exit 1; }
+# HTTPS uses the exact libcurl already shipped by Q2 Pod. Never link an
+# Ubuntu x86_64 library or bundle a second TLS stack on the 128MB device.
+if ! test -e "$root/usr/lib/libcurl.so.4"; then
+  echo "::error::Q2 rootfs is missing the stock TLS-enabled libcurl.so.4"
+  exit 1
+fi
+ln -sfn libcurl.so.4 "$root/usr/lib/libcurl.so"
 git clone --quiet --depth 1 --branch shanlingq2 https://github.com/DiamondBond/q2-librespot.git "$work/librespot"
 test "$(git -C "$work/librespot" rev-parse HEAD)" = 4775f9c0b8f02cb76166482abb0d0dc5416f572f
 mkdir -p "$work/headers/gnu"
@@ -81,6 +88,7 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DCMAKE_BUILD_TYPE=Release \
   "-DCMAKE_C_FLAGS=$flags" "-DCMAKE_CXX_FLAGS=$flags" \
   "-DCMAKE_EXE_LINKER_FLAGS=$link" \
+  "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -DCROSSPOD_Q2_RUNTIME=1" \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
   "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include" \
   "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include"
@@ -256,6 +264,11 @@ cp docs/q2-crosspod-card-app.md "$card/.crosspod/README.txt"
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.crosspod/dictionary-starter.tsv"
 cp crosspoint-core/assets/connected.conf.example "$card/.crosspod/connected.conf.example"
+# HTTPS trust: Mozilla's root list (the runner's ca-certificates). Q2 Pod's
+# /etc/scrobble-ca.pem has only the 8 roots its scrobbler needs, so many Kavita
+# hosts (Sectigo/ZeroSSL RSA, SSL.com, Amazon) would fail on the device.
+python3 crosspoint-core/tools/check_ca_bundle.py /etc/ssl/certs/ca-certificates.crt
+cp /etc/ssl/certs/ca-certificates.crt "$card/.crosspod/ca-bundle.pem"
 
 
 cp "$work/reader/vietnamese-prose.epub" "$card/Books/"
@@ -400,9 +413,24 @@ CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
 CROSSPOD_TEST_FONTS="$card/.crosspod/fonts" timeout 180s \
   python3 crosspoint-core/tests/markup_tolerance_test.py "$work/reader-qemu" italic
 
-# Never ship QEMU-generated Section/page caches from the CI sample book.
-rm -rf -- "$card/.crosspod/cache"
+# Ship only the app's own files: the QEMU tests above ran with this folder as
+# their state directory and leave caches, positions, highlights, settings and
+# logs (v0.8.0-beta shipped a test's progress-*.highlights). Allow-list, so a
+# new kind of state can never leak into a release.
+find "$card/.crosspod" -mindepth 1 -maxdepth 1 ! -name crosspod-engine ! -name q2-crosspod \
+  ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
+find "$card/.crosspod/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
 chmod +x "$card/.crosspod/q2-crosspod" "$card/.crosspod/crosspod-engine"
 (cd "$card" && zip -q -r "$base/dist/crosspod-q2-reader-alpha.zip" .crosspod Books)
 sha256sum "$base/dist/crosspod-q2-reader-alpha.zip" > "$base/dist/crosspod-q2-reader-alpha.zip.sha256"
 unzip -t "$base/dist/crosspod-q2-reader-alpha.zip"
+# Verify the allow-list held: nothing but the app's files and the sample books.
+unzip -Z1 "$base/dist/crosspod-q2-reader-alpha.zip" | python3 -c '
+import re,sys
+bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
+  r"(\.crosspod/|Books/|\.crosspod/fonts/|Books/[^/]+\.epub|\.crosspod/fonts/[^/]+\.(cpfont|txt)|"
+  r"\.crosspod/(crosspod-engine|q2-crosspod|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
+  r"connected\.conf\.example|ca-bundle\.pem))",n)]
+assert not bad, f"release ZIP carries state or unexpected files: {bad}"
+print("Release ZIP contents: PASS")'

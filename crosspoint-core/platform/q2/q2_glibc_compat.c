@@ -21,6 +21,15 @@ int __isoc23_fscanf(FILE *stream, const char *format, ...) {
     va_end(ap);
     return rc;
 }
+// ReadingPosition.hpp parses one line with sscanf (the C23 redirect is glibc 2.38+).
+extern int q2_legacy_vsscanf(const char *, const char *, va_list) __asm__("vsscanf");
+int __isoc23_sscanf(const char *input, const char *format, ...) {
+    va_list ap;
+    va_start(ap, format);
+    int rc = q2_legacy_vsscanf(input, format, ap);
+    va_end(ap);
+    return rc;
+}
 void arc4random_buf(void *buffer, size_t length) {
     unsigned char *out = (unsigned char *)buffer;
     int fd = open("/dev/urandom", O_RDONLY);

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// Q2 POSIX HTTP/1.1 transport. No ESP32 WiFi, Arduino HTTPClient or
-// firmware dependencies. Intentional LAN-only HTTP: TLS is NOT implemented
-// here and https:// is rejected, never silently downgraded.
+// Q2 POSIX HTTP/1.1 and verified HTTPS transport. The HTTPS backend uses
+// Q2 Pod's existing libcurl and CA bundle; no ESP32 or firmware ownership.
 #include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <chrono>
 #include <cctype>
 #include <cstdint>
@@ -19,15 +19,28 @@
 #include <string>
 #include <string_view>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <vector>
 
 namespace crosspod {
+// The reader points this at its SIGINT/SIGTERM flag. A transfer checks it at
+// least every 250 ms (curl: every progress callback, about once a second or
+// sooner) and stops: Q2 Pod SIGKILLs a card app 3 s after its SIGTERM, and a
+// download used to run on for up to its whole timeout.
+inline volatile std::sig_atomic_t* httpAbortFlag=nullptr;
+inline bool httpAborted() { return httpAbortFlag && *httpAbortFlag; }
+// A transfer fails when it makes no progress for this long, not when a whole
+// download takes long: a large EPUB on a slow link is not a stalled one.
+constexpr unsigned httpStallSeconds=30;
+constexpr unsigned httpTotalSeconds=30*60;
+
 struct HttpUrl {
   std::string host;
   std::string port="80";
   std::string target="/";
+  bool secure=false;
   bool valid=false;
 };
 inline bool unsafeHttpString(const std::string_view s) {
@@ -38,9 +51,13 @@ inline bool unsafeHttpString(const std::string_view s) {
 }
 inline HttpUrl parseHttpUrl(std::string_view text) {
   HttpUrl url;
-  if(text.size()>1536 || unsafeHttpString(text) ||
-     text.substr(0,7)!="http://")return url;
-  text.remove_prefix(7);
+  if(text.size()>1536 || unsafeHttpString(text))return url;
+  if(text.substr(0,8)=="https://") {
+    url.secure=true;
+    url.port="443";
+    text.remove_prefix(8);
+  } else if(text.substr(0,7)=="http://")text.remove_prefix(7);
+  else return url;
   const auto separator=text.find_first_of("/?#");
   std::string_view authority=text.substr(0,separator);
   if(authority.empty() || authority.size()>253 ||
@@ -80,7 +97,8 @@ inline HttpUrl parseHttpUrl(std::string_view text) {
 }
 inline std::string absoluteHttpUrl(const HttpUrl& url) {
   if(!url.valid)return {};
-  return "http://"+url.host+(url.port=="80"?"":":"+url.port)+url.target;
+  return std::string(url.secure?"https://":"http://")+url.host+
+         (url.port==(url.secure?"443":"80")?"":":"+url.port)+url.target;
 }
 inline std::string normalizeHttpPath(std::string path) {
   const auto query=path.find('?');
@@ -121,10 +139,10 @@ inline std::string resolveHttpHref(const std::string& base,std::string_view href
      unsafeHttpString(href) || href.find('\\')!=std::string_view::npos ||
      href.substr(0,2)=="//")return {};
   HttpUrl child=parent;
-  if(href.substr(0,7)=="http://") {
+  if(href.substr(0,7)=="http://" || href.substr(0,8)=="https://") {
     child=parseHttpUrl(href);
-    if(!child.valid || child.host!=parent.host || child.port!=parent.port)
-      return {};
+    if(!child.valid || child.host!=parent.host || child.port!=parent.port ||
+       child.secure!=parent.secure)return {};
   } else {
     if(href.find("://")!=std::string_view::npos || href.front()=='#')
       return {};
@@ -151,24 +169,228 @@ struct HttpResponse {
 };
 using HttpSink=std::function<bool(const char*,size_t)>;
 
+// The stock Shanling Q2 runtime ships libcurl with TLS and a CA bundle.
+// Use the ABI exposed by Q2 Pod itself; the MIPS sysroot has no curl headers.
+// Numeric options are the stable libcurl easy option values (libcurl 7.x).
+extern "C" {
+struct curl_slist;
+void* curl_easy_init(void);
+int curl_easy_setopt(void*,int,...);
+int curl_easy_perform(void*);
+int curl_easy_getinfo(void*,int,...);
+void curl_easy_cleanup(void*);
+curl_slist* curl_slist_append(curl_slist*,const char*);
+void curl_slist_free_all(curl_slist*);
+}
+struct HttpsStream {
+  const HttpSink* sink;
+  size_t maxBytes;
+  size_t count=0;
+  int status=0;
+  std::string location;
+  bool aborted=false;
+};
+inline size_t httpsBodyCallback(char* bytes,size_t unit,size_t count,void* context) {
+  auto& state=*static_cast<HttpsStream*>(context);
+  if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
+  const size_t length=unit*count;
+  if(state.status>=300 && state.status<400)return length; // never write redirect body
+  if(state.status<200 || state.status>=300)return length; // never write error page to EPUB
+  if(state.count>state.maxBytes || length>state.maxBytes-state.count ||
+     !(*state.sink)(bytes,length)) {
+    state.aborted=true;
+    return 0;
+  }
+  state.count+=length;
+  return length;
+}
+inline int httpsProgressCallback(void*,long long,long long,long long,long long) {
+  return httpAborted()?1:0;  // non-zero: CURLE_ABORTED_BY_CALLBACK
+}
+inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* context) {
+  auto& state=*static_cast<HttpsStream*>(context);
+  if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
+  const size_t length=unit*count;
+  if(length>8192)return 0;
+  std::string_view line(bytes,length);
+  if(line.substr(0,5)=="HTTP/") {
+    const auto space=line.find(' ');
+    state.status=space!=std::string_view::npos && space+4<=line.size() &&
+        line[space+1]>='0' && line[space+1]<='9' &&
+        line[space+2]>='0' && line[space+2]<='9' &&
+        line[space+3]>='0' && line[space+3]<='9' ?
+        (line[space+1]-'0')*100+(line[space+2]-'0')*10+line[space+3]-'0':0;
+    state.location.clear();
+  } else if(line.size()>=9) {
+    std::string prefix(line.substr(0,9));
+    std::transform(prefix.begin(),prefix.end(),prefix.begin(),[](unsigned char c){
+      return static_cast<char>(std::tolower(c));});
+    if(prefix=="location:") {
+      line.remove_prefix(9);
+      const auto begin=line.find_first_not_of(" \t");
+      if(begin!=std::string_view::npos) {
+        line.remove_prefix(begin);
+        const auto end=line.find_first_of("\r\n");
+        line=line.substr(0,end);
+        if(line.size()<=1536 && !unsafeHttpString(line))
+          state.location=std::string(line);
+      }
+    }
+  }
+  return length;
+}
+inline std::string httpsCaBundle() {
+  const char* state=std::getenv("CROSSPOD_STATE_DIR");
+  const std::string card=std::string(state&&*state?state:"/mnt/mmc/.crosspod")+"/ca-bundle.pem";
+  struct stat info{};
+  if(::stat(card.c_str(),&info)==0 && S_ISREG(info.st_mode) && info.st_size>1024 &&
+     ::access(card.c_str(),R_OK)==0)return card;
+  return "/etc/scrobble-ca.pem";
+}
+inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sink,
+                                 size_t maxBytes,const std::string& method,
+                                 const std::string& body,
+                                 const std::map<std::string,std::string>& extra,
+                                 unsigned redirect=0) {
+  HttpResponse result;
+  if(redirect>2 || !parseHttpUrl(original).secure) {
+    result.error="Invalid HTTPS request";return result;
+  }
+  void* curl=curl_easy_init();
+  if(!curl) {result.error="HTTPS unavailable";return result;}
+  struct Guard {
+    void* curl;
+    curl_slist* headers=nullptr;
+    ~Guard() {
+      if(headers)curl_slist_free_all(headers);
+      curl_easy_cleanup(curl);
+    }
+  } guard{curl};
+  HttpsStream stream{&sink,maxBytes};
+  constexpr int urlOpt=10002, agentOpt=10018, writeOpt=20011,
+      writeDataOpt=10001, headerOpt=20079, headerDataOpt=10029,
+      headerListOpt=10023, timeoutOpt=13, connectTimeoutOpt=78,
+      noSignalOpt=99, followOpt=52, caOpt=10065, peerOpt=64, hostOpt=81,
+      protocolsOpt=181, redirectProtocolsOpt=182, customMethodOpt=10036,
+      bodyOpt=10015, bodySizeOpt=60, progressOpt=20219, noProgressOpt=43,
+      lowSpeedLimitOpt=19, lowSpeedTimeOpt=20;
+  constexpr long httpsOnly=2L; // CURLPROTO_HTTPS
+  bool settings=
+      curl_easy_setopt(curl,urlOpt,original.c_str())==0 &&
+      curl_easy_setopt(curl,agentOpt,"CrossPod/0.9") ==0 &&
+      curl_easy_setopt(curl,writeOpt,httpsBodyCallback)==0 &&
+      curl_easy_setopt(curl,writeDataOpt,&stream)==0 &&
+      curl_easy_setopt(curl,headerOpt,httpsHeaderCallback)==0 &&
+      curl_easy_setopt(curl,headerDataOpt,&stream)==0 &&
+      curl_easy_setopt(curl,timeoutOpt,static_cast<long>(httpTotalSeconds))==0 &&
+      curl_easy_setopt(curl,lowSpeedLimitOpt,1024L)==0 &&  // under 1 KB/s ...
+      curl_easy_setopt(curl,lowSpeedTimeOpt,static_cast<long>(httpStallSeconds))==0 &&  // ... for 30 s
+      curl_easy_setopt(curl,progressOpt,httpsProgressCallback)==0 &&
+      curl_easy_setopt(curl,noProgressOpt,0L)==0 &&
+      curl_easy_setopt(curl,connectTimeoutOpt,10L)==0 &&
+      curl_easy_setopt(curl,noSignalOpt,1L)==0 &&
+      curl_easy_setopt(curl,followOpt,0L)==0 &&
+      curl_easy_setopt(curl,protocolsOpt,httpsOnly)==0 &&
+      curl_easy_setopt(curl,redirectProtocolsOpt,httpsOnly)==0 &&
+      curl_easy_setopt(curl,peerOpt,1L)==0 &&
+      curl_easy_setopt(curl,hostOpt,2L)==0;
+#ifdef CROSSPOD_Q2_RUNTIME
+  // Q2 Pod's /etc/scrobble-ca.pem holds only the 8 roots its scrobbler needs
+  // (no Sectigo/ZeroSSL RSA, DigiCert G1, Amazon or SSL.com: Cloudflare's edge
+  // certificates come from SSL.com too). The card ships Mozilla's root list as
+  // .crosspod/ca-bundle.pem, beside the reader binary it already trusts; that
+  // bundle is used when present, Q2 Pod's file otherwise. Verification itself
+  // is never relaxed, and curl fails closed if the file is unusable.
+  settings=settings && curl_easy_setopt(curl,caOpt,httpsCaBundle().c_str())==0;
+#else
+  // Only host tests can substitute a certificate authority. Never compiled
+  // into the device binary (which always uses the firmware-trusted roots).
+  const char* testCa=std::getenv("CROSSPOD_TEST_CA_BUNDLE");
+  if(testCa && *testCa)settings=settings && curl_easy_setopt(curl,caOpt,testCa)==0;
+#endif
+  for(const auto& [name,value]:extra) {
+    for(unsigned char ch:name)
+      if(!(std::isalnum(ch)||ch=='-')) {
+        result.error="Invalid HTTPS header name";return result;
+      }
+    const std::string header=name+": "+value;
+    curl_slist* updated=curl_slist_append(guard.headers,header.c_str());
+    if(!updated) {result.error="Out of memory";return result;}
+    guard.headers=updated;
+  }
+  if(method!="GET") {
+    const std::string contentType="Content-Type: application/json";
+    if(!extra.count("Content-Type")) {
+      curl_slist* updated=curl_slist_append(guard.headers,contentType.c_str());
+      if(!updated) {result.error="Out of memory";return result;}
+      guard.headers=updated;
+    }
+    settings=settings &&
+        curl_easy_setopt(curl,customMethodOpt,method.c_str())==0 &&
+        curl_easy_setopt(curl,bodyOpt,body.c_str())==0 &&
+        curl_easy_setopt(curl,bodySizeOpt,static_cast<long>(body.size()))==0;
+  }
+  if(guard.headers)
+    settings=settings && curl_easy_setopt(curl,headerListOpt,guard.headers)==0;
+  if(!settings) {result.error="HTTPS transport setup failed";return result;}
+  const int code=curl_easy_perform(curl);
+  long status=0;
+  if(code==0)(void)curl_easy_getinfo(curl,0x200002,&status);
+  result.status=static_cast<int>(status);
+  result.bytes=stream.count;
+  if(code!=0) {
+    result.error=code==42?"Transfer stopped":   // CURLE_ABORTED_BY_CALLBACK
+        stream.aborted?"HTTPS download too large or rejected":
+        code==28?"HTTPS transfer stalled":       // CURLE_OPERATION_TIMEDOUT
+        code==60?"HTTPS certificate not trusted (check the device clock)":
+        "HTTPS transfer failed ("+std::to_string(code)+")";
+    return result;
+  }
+  if(status>=300 && status<400) {
+    if(method=="GET" && redirect<2 && !stream.location.empty()) {
+      const auto next=resolveHttpHref(original,stream.location);
+      if(!next.empty() && parseHttpUrl(next).secure)
+        return httpsRequest(next,sink,maxBytes,method,body,extra,redirect+1);
+    }
+    result.error="HTTPS redirect refused (origin or scheme changed)";
+  } else if(status<200 || status>=300)
+    result.error="Server response "+std::to_string(status);
+  return result;
+}
+
 class HttpSocketReader {
   int fd_=-1;
   char buf_[8192]{};
   size_t cursor_=0,count_=0;
-  std::chrono::steady_clock::time_point deadline_;
+  std::chrono::steady_clock::time_point deadline_,stall_;
+  unsigned stallSeconds_;
 public:
-  explicit HttpSocketReader(int fd,unsigned seconds=20):fd_(fd),
-      deadline_(std::chrono::steady_clock::now()+std::chrono::seconds(seconds)) {}
+  bool timedOut=false;
+  explicit HttpSocketReader(int fd,unsigned stallSeconds=httpStallSeconds,
+                            unsigned totalSeconds=httpTotalSeconds):fd_(fd),
+      deadline_(std::chrono::steady_clock::now()+std::chrono::seconds(totalSeconds)),
+      stall_(std::chrono::steady_clock::now()+std::chrono::seconds(stallSeconds)),
+      stallSeconds_(stallSeconds) {}
   bool fill() {
     if(cursor_<count_)return true;
-    while(std::chrono::steady_clock::now()<deadline_) {
-      const ssize_t n=::recv(fd_,buf_,sizeof(buf_),0);
-      if(n>0) {cursor_=0;count_=static_cast<size_t>(n);return true;}
+    for(;;) {
+      const auto now=std::chrono::steady_clock::now();
+      if(now>=deadline_ || now>=stall_) {timedOut=true;return false;}
+      if(httpAborted())return false;
+      pollfd ready{fd_,POLLIN,0};
+      const int polled=::poll(&ready,1,250);
+      if(polled<0 && errno!=EINTR)return false;
+      if(polled<=0)continue;
+      const ssize_t n=::recv(fd_,buf_,sizeof(buf_),MSG_DONTWAIT);
+      if(n>0) {
+        cursor_=0;count_=static_cast<size_t>(n);
+        stall_=std::chrono::steady_clock::now()+std::chrono::seconds(stallSeconds_);
+        return true;
+      }
       if(n==0)return false;
       if(errno==EINTR || errno==EAGAIN || errno==EWOULDBLOCK)continue;
       return false;
     }
-    return false;
   }
   bool line(std::string& out,size_t limit=8192) {
     out.clear();
@@ -201,7 +423,7 @@ public:
          !sink(buf_+cursor_,take))return false;
       consumed+=take;cursor_+=take;
     }
-    return std::chrono::steady_clock::now()<deadline_;
+    return !timedOut && !httpAborted();
   }
 };
 
@@ -223,7 +445,9 @@ inline int connectHttpSocket(const HttpUrl& url) {
     int ret=::connect(fd,ai->ai_addr,ai->ai_addrlen);
     if(ret<0 && errno==EINPROGRESS) {
       pollfd probe{fd,POLLOUT,0};
-      ret=::poll(&probe,1,3000);
+      ret=0;
+      for(int waited=0;ret==0 && waited<3000 && !httpAborted();waited+=250)
+        ret=::poll(&probe,1,250);  // 3 s, in slices a SIGTERM can stop
       if(ret>0) {
         int err=0;socklen_t n=sizeof(err);
         ret=::getsockopt(fd,SOL_SOCKET,SO_ERROR,&err,&n)==0 && !err?0:-1;
@@ -256,7 +480,7 @@ inline HttpResponse httpRequest(const std::string& original,
   if(!url.valid || (method!="GET"&&method!="PUT"&&method!="POST") ||
      maxBytes==0 || maxBytes>64u*1024u*1024u ||
      body.size()>64u*1024u) {
-    result.error="Invalid HTTP request (HTTPS not supported on this Q2 build)";
+    result.error="Invalid HTTP request";
     return result;
   }
   for(const auto& [name,value]:extra)
@@ -264,13 +488,15 @@ inline HttpResponse httpRequest(const std::string& original,
        value.size()>2048||unsafeHttpString(value)) {
       result.error="Unsafe HTTP header";return result;
     }
+  if(url.secure)
+    return httpsRequest(original,sink,maxBytes,method,body,extra,redirect);
   int fd=connectHttpSocket(url);
   if(fd<0) {result.error="Connection unavailable";return result;}
   struct SocketGuard {int fd;~SocketGuard(){::close(fd);}} guard{fd};
   std::string request=method+" "+url.target+" HTTP/1.1\r\nHost: "+url.host+
       (url.port=="80"?"":":"+url.port)+
       "\r\nAccept: application/atom+xml, application/epub+zip, application/json\r\n"
-      "Connection: close\r\nUser-Agent: CrossPod/0.7\r\n";
+      "Connection: close\r\nUser-Agent: CrossPod/0.9\r\n";
   for(const auto& [key,value]:extra)request+=key+": "+value+"\r\n";
   if(method!="GET") {
     request+="Content-Length: "+std::to_string(body.size())+"\r\n";

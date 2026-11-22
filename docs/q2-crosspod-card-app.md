@@ -106,3 +106,12 @@ with adequate space and retain the complete .crosspod/fonts folder.
 An older ZIP with missing script files still opens using available fonts;
 startup logs report the count of loaded script families. See the upstream
 catalog at https://github.com/crosspoint-reader/crosspoint-fonts
+
+## Online library (OPDS / Kavita) over HTTPS
+
+`.crosspod/ca-bundle.pem` is the list of certificate authorities CrossPod
+trusts for HTTPS (Mozilla's roots). Keep it with the app when updating the
+card. Certificates are always verified; if a server fails with "certificate
+not trusted", check the Q2's date and time first. Holding Return during a
+download stops it cleanly; an interrupted download is resumed from scratch
+the next time you choose the book.

@@ -11,6 +11,8 @@
 #include <cstring>
 #include <fcntl.h>
 #include <string>
+#include <dirent.h>
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
@@ -173,6 +175,27 @@ inline std::string opdsDestination(const std::string& booksRoot,
                 static_cast<unsigned long long>(opdsFnv64(entry.href)));
   return booksRoot+"/Online/"+label+id;
 }
+// Removes .part files in Books/Online that no running download holds (a
+// reader killed mid-transfer leaves one). Returns how many were removed.
+inline int sweepStaleOpdsDownloads(const std::string& booksRoot) {
+  const std::string folder=booksRoot+"/Online";
+  DIR* dir=::opendir(folder.c_str());
+  if(!dir)return 0;
+  int removed=0;
+  while(const dirent* entry=::readdir(dir)) {
+    const std::string name=entry->d_name;
+    if(name.size()<=5 || name.compare(name.size()-5,5,".part")!=0)continue;
+    const std::string path=folder+"/"+name;
+    const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
+    if(fd<0)continue;
+    struct stat info{};
+    if(::fstat(fd,&info)==0 && S_ISREG(info.st_mode) && ::flock(fd,LOCK_EX|LOCK_NB)==0 &&
+       ::unlink(path.c_str())==0)++removed;
+    ::close(fd);
+  }
+  ::closedir(dir);
+  return removed;
+}
 inline bool opdsDownloadEpub(const std::string& booksRoot,
                              const OpdsEntry& entry,
                              std::string& saved,std::string& error) {
@@ -195,8 +218,19 @@ inline bool opdsDownloadEpub(const std::string& booksRoot,
     error="File destination not regular";return false;
   }
   const std::string temp=file+".part";
-  int fd=::open(temp.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW,0600);
-  if(fd<0) {error="Download already in progress or unwritable";return false;}
+  // The .part is locked for as long as its download runs. One left by a reader
+  // that was killed mid-transfer (Q2 Pod SIGKILLs 3 s after Return's SIGTERM)
+  // holds no lock: take it over, instead of refusing every later attempt.
+  int fd=::open(temp.c_str(),O_WRONLY|O_CREAT|O_NOFOLLOW|O_CLOEXEC,0600);
+  if(fd<0) {error="Download destination unwritable";return false;}
+  struct stat partInfo{};
+  if(::fstat(fd,&partInfo)!=0 || !S_ISREG(partInfo.st_mode)) {
+    ::close(fd);error="File destination not regular";return false;
+  }
+  if(::flock(fd,LOCK_EX|LOCK_NB)!=0) {
+    ::close(fd);error="Download already in progress";return false;
+  }
+  if(::ftruncate(fd,0)!=0) {::close(fd);::unlink(temp.c_str());error="Cannot save EPUB";return false;}
   size_t bytes=0;
   bool writeOk=true;
   char first[4]{};size_t firstCount=0;
@@ -211,7 +245,9 @@ inline bool opdsDownloadEpub(const std::string& booksRoot,
     bytes+=len;return true;
   },32u*1024u*1024u);
   if(::fsync(fd)!=0)writeOk=false;
-  if(::close(fd)!=0)writeOk=false;
+  // Keep the .part locked until it is renamed or removed, so no other
+  // download can take it over in between.
+  struct PartGuard {int fd;~PartGuard(){::close(fd);}} part{fd};
   if(!response.ok() || !writeOk || bytes<32 ||
      firstCount!=4 || first[0]!='P'||first[1]!='K' ||
      first[2]!='\003'||first[3]!='\004') {

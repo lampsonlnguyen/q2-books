@@ -822,6 +822,9 @@ class Reader {
       bodyFont_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
   ~Reader() {
+    // A layout cut short by the exit is not a page to keep: drop that build
+    // instead of suspending it, which would cache its pages.
+    if(upstreamSection_ && crosspodlayout::layoutAborted())upstreamSection_->abandonBuild();
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
@@ -874,14 +877,8 @@ class Reader {
     if(!loaded)return false;
     if(resumeOnOpen) {
       resumeEnabled_=true;
-      if(hasSaved && currentSpine_==saved.spine && pageCount()>0) {
-        // Rebuild a missing page cache only as far as the saved page.
-        while(!interrupted && currentSpine_==saved.spine &&
-              pageCount()<=saved.page && isBuilding())
-          (void)buildNextPages(1);
-        if(currentSpine_==saved.spine && pageCount()>0)
-          currentPage_=std::min(saved.page,pageCount()-1);
-      }
+      if(hasSaved && currentSpine_==saved.spine && pageCount()>0)
+        placeSavedPosition(saved);
       positionDirty_=false;
       lastPositionAttempt_=std::chrono::steady_clock::now();
     }
@@ -895,9 +892,69 @@ class Reader {
       (void)loadSpine(0,1);
       return;
     }
-    currentPage_=std::min(saved.page,pageCount()-1);
+    placeSavedPosition(saved);
     positionDirty_=false;
     lastPositionAttempt_=std::chrono::steady_clock::now();
+  }
+  // The place to save: the page, and what names its content for another
+  // engine or a later layout (see crosspod::ReadingPosition).
+  crosspod::ReadingPosition currentPosition() const {
+    crosspod::ReadingPosition position{currentSpine_,currentPage_};
+    if(upstreamSection_) {
+      position.engine='o';
+      if(auto offset=upstreamSection_->getVisibleTextOffsetForPage(
+           static_cast<uint16_t>(currentPage_)))position.textOffset=*offset;
+      const size_t total=std::max<size_t>(pageCount(),upstreamSection_->estimatedTotalPages());
+      if(total)position.fractionPpm=static_cast<uint32_t>(
+          static_cast<uint64_t>(currentPage_)*1000000u/total);
+    } else if(!pages_.empty()) {
+      position.engine='l';
+      position.fractionPpm=static_cast<uint32_t>(
+          static_cast<uint64_t>(currentPage_)*1000000u/pages_.size());
+    }
+    return position;
+  }
+  // currentSpine_ is the saved chapter: put currentPage_ on the saved content.
+  // The original engine finds its own pages by exact text offset; across an
+  // engine fallback (a full card, a chapter it cannot lay out) the page index
+  // names other content, so the chapter fraction places it instead.
+  void placeSavedPosition(const crosspod::ReadingPosition& saved) {
+    const int spine=currentSpine_;
+    if(upstreamSection_ && saved.engine=='o' && saved.textOffset>0) {
+      while(!interrupted && upstreamSection_ && currentSpine_==spine &&
+            upstreamSection_->isBuilding() &&
+            !upstreamSection_->buildReachedVisibleTextOffset(saved.textOffset))
+        (void)buildNextPages(2);
+      if(upstreamSection_ && currentSpine_==spine) {
+        if(auto page=upstreamSection_->getPageForVisibleTextOffset(saved.textOffset)) {
+          currentPage_=std::min<size_t>(*page,pageCount()-1);
+          return;
+        }
+      }
+    }
+    if(upstreamSection_ && saved.engine=='l') {
+      const auto target=[&] {
+        const size_t total=std::max<size_t>(pageCount(),upstreamSection_->estimatedTotalPages());
+        return static_cast<size_t>(static_cast<uint64_t>(saved.fractionPpm)*total/1000000u);
+      };
+      while(!interrupted && upstreamSection_ && currentSpine_==spine &&
+            upstreamSection_->isBuilding() && pageCount()<=target())
+        (void)buildNextPages(2);
+      if(upstreamSection_ && currentSpine_==spine && pageCount()>0) {
+        currentPage_=std::min(target(),pageCount()-1);
+        return;
+      }
+    }
+    if(!upstreamSection_ && saved.engine=='o' && !pages_.empty()) {
+      currentPage_=std::min<size_t>(
+          static_cast<uint64_t>(saved.fractionPpm)*pages_.size()/1000000u,pages_.size()-1);
+      return;
+    }
+    // Same engine without an anchor, or a version 1 file: the page itself.
+    while(!interrupted && currentSpine_==spine && pageCount()<=saved.page && isBuilding())
+      (void)buildNextPages(1);
+    if(currentSpine_==spine && pageCount()>0)
+      currentPage_=std::min(saved.page,pageCount()-1);
   }
   void persistPosition(bool force=false) const {
     if(!resumeEnabled_ || currentSpine_<0)return;
@@ -908,7 +965,7 @@ class Reader {
     // Rate-limit retries too. A removed or read-only card should not cause
     // immediate repeated writes. The dirty position survives a failed attempt.
     lastPositionAttempt_=now;
-    if(crosspod::saveReadingPosition(bookPath_,{currentSpine_,currentPage_}))
+    if(crosspod::saveReadingPosition(bookPath_,currentPosition()))
       positionDirty_=false;
   }
   ReaderClock::time_point nextPositionFlush() const {
@@ -1272,7 +1329,7 @@ class Reader {
       drawMenuText(23,y,label.c_str());
       if(index==selected)invertMenuRect(18,y-3,337,21);
     }
-    drawMenuText(22,278,"Wheel: select  Center: follow");
+    drawMenuText(22,278,"Wheel: pick  Center: go");  // "follow" was clipped
     display_.displayBuffer();
   }
   const std::vector<crosspod::Highlight>& highlights() {
@@ -1616,17 +1673,17 @@ class Reader {
     {0x38,0x44,0x44,0x44,0x7f}, // 100
     {0x38,0x54,0x54,0x54,0x58}, // 101
     {0x08,0x7e,0x09,0x01,0x02}, // 102
-    {0x0c,0x52,0x52,0x52,0x3e}, // 103
+    {0x18,0xa4,0xa4,0xa4,0x7c}, // 103 (descender in row 7)
     {0x7f,0x04,0x04,0x04,0x78}, // 104
     {0x00,0x44,0x7d,0x40,0x00}, // 105
-    {0x20,0x40,0x44,0x3d,0x00}, // 106
+    {0x40,0x80,0x84,0x7d,0x00}, // 106 (descender in row 7)
     {0x7f,0x10,0x28,0x44,0x00}, // 107
     {0x00,0x41,0x7f,0x40,0x00}, // 108
     {0x7c,0x04,0x78,0x04,0x78}, // 109
     {0x7c,0x04,0x04,0x04,0x78}, // 110
     {0x38,0x44,0x44,0x44,0x38}, // 111
-    {0x7c,0x14,0x14,0x14,0x08}, // 112
-    {0x08,0x14,0x14,0x14,0x7c}, // 113
+    {0xfc,0x24,0x24,0x24,0x18}, // 112 (descender in row 7)
+    {0x18,0x24,0x24,0x18,0xfc}, // 113 (descender in row 7)
     {0x7c,0x08,0x04,0x04,0x08}, // 114
     {0x48,0x54,0x54,0x54,0x24}, // 115
     {0x04,0x3f,0x44,0x40,0x20}, // 116
@@ -1634,7 +1691,7 @@ class Reader {
     {0x1c,0x20,0x40,0x20,0x1c}, // 118
     {0x3c,0x40,0x30,0x40,0x3c}, // 119
     {0x44,0x28,0x10,0x28,0x44}, // 120
-    {0x0c,0x50,0x50,0x50,0x3c}, // 121
+    {0x1c,0xa0,0xa0,0xa0,0x7c}, // 121 (descender in row 7)
     {0x44,0x64,0x54,0x4c,0x44}, // 122
     {0x00,0x08,0x36,0x41,0x00}, // 123
     {0x00,0x00,0x7f,0x00,0x00}, // 124
@@ -1646,8 +1703,9 @@ class Reader {
       const unsigned cp=*p>=32 && *p<=126?*p:static_cast<unsigned>('?');
       if(x+6*scale>352)break;
       const uint8_t* glyph=glyphs[cp-32];
+      // 8 rows: g j p q y descend into row 7 (in 7 rows "g" read as "9").
       for(int gx=0;gx<5;++gx)
-        for(int gy=0;gy<7;++gy)
+        for(int gy=0;gy<8;++gy)
           if(glyph[gx] & (1u<<gy))
             renderer_.fillRect(x+gx*scale,top+gy*scale,scale,scale,true);
       x+=6*scale;
@@ -1808,9 +1866,13 @@ class Reader {
   }
   bool move(int direction) {
     if(direction>0 && currentPage_+1>=pageCount() && isBuilding()) {
-      (void)buildNextPages(2);
-      // No new page available yet: remain in this chapter until the
-      // incremental parser finishes. Never silently skip unread content.
+      // Lay out until the next page exists, for up to 2 s: a press that came
+      // before the prefetch was dropped, so fast turns lost pages. Never
+      // skip unread content: past the bound the turn waits for the next press.
+      const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+      do (void)buildNextPages(2);
+      while(isBuilding() && currentPage_+1>=pageCount() && !interrupted &&
+            std::chrono::steady_clock::now()<until);
       if(isBuilding() && currentPage_+1>=pageCount())return false;
     }
     if (direction>0 && currentPage_+1<pageCount()) { ++currentPage_; persistPosition(); return true; }
@@ -2267,6 +2329,73 @@ class CardShelf {
           EpdFontFamily::REGULAR,x,baseline,scale);
     }
   }
+  // A list row's second line (an author), in font 1's own glyphs scaled down:
+  // two full-size lines of font 1 (34 px apart) cannot share a 38 px row, and
+  // drawing the second at +18 px overprinted the next row. Draws nothing and
+  // returns false when font 1 lacks a character (CJK comes from a fallback
+  // font that scaled drawing does not reach), rather than dropping letters.
+  bool drawSmallLine(int x,int baseline,const std::string& text,int maxWidth) {
+    constexpr int scale=150;
+    const auto* probe=reinterpret_cast<const unsigned char*>(text.c_str());
+    while(*probe) {
+      const uint32_t cp=utf8NextCodepoint(&probe);
+      int32_t advance=0;int top=0;
+      if(!renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,top))return false;
+    }
+    const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
+    int cx=x;
+    while(*p) {
+      const auto* before=p;
+      const uint32_t cp=utf8NextCodepoint(&p);
+      int32_t advance=0;int top=0;
+      (void)renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,top);
+      const int width=fp4::toPixel(advance*scale/256);
+      if(cx+width>x+maxWidth) {  // clip at a whole character, with an ellipsis
+        (void)before;
+        for(int dot=0;dot<3;++dot)
+          cx+=renderer_.drawScaledCodepoint(1,'.',EpdFontFamily::REGULAR,cx,baseline,scale);
+        break;
+      }
+      cx+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,cx,baseline,scale);
+    }
+    return true;
+  }
+  void invertRect(int x0,int y0,int width,int height) {
+    uint8_t* fb=display_.getFrameBuffer();
+    if(!fb)return;
+    for(int y=std::max(0,y0);y<std::min<int>(HalDisplay::DISPLAY_HEIGHT,y0+height);++y)
+      for(int x=std::max(0,x0);x<std::min<int>(HalDisplay::DISPLAY_WIDTH,x0+width);++x)
+        fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=static_cast<uint8_t>(0x80u>>(x&7));
+  }
+  // One book or catalog row: the title in font 1, an author beneath it in a
+  // smaller line when there is one (else the title is centred in the row).
+  // Clip at a whole character to a pixel width: wide CJK titles clipped by a
+  // character count still ran past the row's right edge.
+  std::string fitWidth(std::string text,int maxWidth) const {
+    if(renderer_.getTextWidth(1,text.c_str())<=maxWidth)return text;
+    const std::string dots="...";
+    while(!text.empty()) {
+      size_t cut=text.size()-1;
+      while(cut>0 && (static_cast<unsigned char>(text[cut])&0xC0)==0x80)--cut;
+      text.erase(cut);
+      while(!text.empty() && text.back()==' ')text.pop_back();
+      if(renderer_.getTextWidth(1,(text+dots).c_str())<=maxWidth)return text+dots;
+    }
+    return dots;
+  }
+  void drawListRow(int y,const std::string& rawTitle,const std::string& author,bool active) {
+    const std::string title=fitWidth(rawTitle,334);
+    if(!active)renderer_.drawLine(15,y+36,359,y+36,true);
+    const bool second=!author.empty();
+    if(second)renderer_.drawText(1,22,y-7,title.c_str(),true);
+    else drawRowLabel(22,y,36,title.c_str());
+    if(second && !drawSmallLine(24,y+33,author,330)) {
+      // no glyphs for the author: centre the title alone instead
+      renderer_.fillRect(13,y,349,36,false);
+      drawRowLabel(22,y,36,title.c_str());
+    }
+    if(active)invertRect(12,y,350,36);
+  }
   void drawRowLabel(int x,int y,int height,const char* label,bool black=true) {
     const int textY=y+(height-renderer_.getLineHeight(1))/2;
     renderer_.drawText(1,x,textY,label,black);
@@ -2281,9 +2410,10 @@ class CardShelf {
       for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
         fb[y*HalDisplay::DISPLAY_WIDTH_BYTES+byte]^=0xff;
     if(onlineMode_) {
-      renderer_.drawText(1,16,49,
+      // Placed as Home's header is: drawn at y 49 its glyphs crossed the rule.
+      drawRowLabel(16,39,35,
           clippedLabel(onlineTitle_.empty()?"Online library":onlineTitle_,35).c_str());
-      renderer_.drawLine(15,72,359,72,true);
+      renderer_.drawLine(15,74,359,74,true);
       if(onlineEntries_.empty()) {
         renderer_.drawText(1,20,120,"No EPUBs or folders");
         drawCompactLabel(20,159,"Back: leave catalog",190);
@@ -2293,16 +2423,10 @@ class CardShelf {
         const size_t index=start+row;
         const int y=TOP_Y+static_cast<int>(row)*ROW_H;
         const bool active=index==onlineSelection_;
-        if(active)renderer_.fillRect(12,y,350,36,true);
-        else renderer_.drawLine(15,y+36,359,y+36,true);
         const auto& entry=onlineEntries_[index];
         const std::string prefix=entry.kind==crosspod::OpdsEntry::Kind::Epub?
           "[EPUB] ":"[DIR] ";
-        renderer_.drawText(1,20,y+3,
-          clippedLabel(prefix+entry.title,31).c_str(),!active);
-        if(!entry.author.empty())
-          renderer_.drawText(1,20,y+21,
-            clippedLabel(entry.author,32).c_str(),!active);
+        drawListRow(y,clippedLabel(prefix+entry.title,31),entry.author,active);
       }
     } else if(!browsing_) {
       drawRowLabel(16,39,35,"Home");
@@ -2388,15 +2512,10 @@ class CardShelf {
           const size_t index=visible_[filtered];
           const int y=TOP_Y+static_cast<int>(row)*ROW_H;
           const bool active=filtered==selected_;
-          if(active)renderer_.fillRect(12,y,350,36,true);
-          else renderer_.drawLine(15,y+36,359,y+36,true);
           const auto& info=details(index);
           const std::string label=clippedLabel(
               info.title.empty()?books_[index].label:info.title,26);
-          renderer_.drawText(1,22,y+3,label.c_str(),!active);
-          if(!info.author.empty())
-            renderer_.drawText(1,22,y+21,
-                clippedLabel(info.author,29).c_str(),!active);
+          drawListRow(y,label,info.author,active);
         }
       }
     }
@@ -2431,6 +2550,9 @@ class CardShelf {
 int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
+  // Downloads cut off by a kill leave an unlocked .part each: remove them.
+  if(const int stale=crosspod::sweepStaleOpdsDownloads(bookDir))
+    std::fprintf(stderr,"CrossPod: removed %d interrupted download(s)\n",stale);
   std::vector<ShelfEntry> books=scanCardBooks(bookDir);
   if(interrupted)return 0;
   auto recent=crosspod::loadRecentBooks();
@@ -2468,10 +2590,14 @@ int runCardApp(const std::string& bookDir) {
   size_t nextShelfIndex=0;
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
+  // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
+  // its own step, before reading the next datagram.
+  crosspod::LogicalAction pendingAction=crosspod::LogicalAction::None;
+  int pendingRepeat=0;
   while(!interrupted) {
     if(reader)reader->flushPosition(false);
     crosspod::PhysicalEvent event{};
-    if(!input.receive(event)) {
+    if(pendingRepeat==0 && !input.receive(event)) {
       const auto now=std::chrono::steady_clock::now();
       // Work only while idle on the bookshelf, not when reading or during
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
@@ -2504,7 +2630,17 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(interrupted)break;
-    const auto action=controls.translate(event).action;
+    crosspod::LogicalAction action;
+    if(pendingRepeat>0) {
+      --pendingRepeat;
+      event=crosspod::PhysicalEvent{};
+      event.kind=crosspod::PhysicalKind::WheelStep;
+      action=pendingAction;
+    } else {
+      const auto mapped=controls.translate(event);
+      action=mapped.action;
+      if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
+    }
     nextShelfIndexTick=std::chrono::steady_clock::now()+
         std::chrono::milliseconds(800);
     nextBuildTick=std::chrono::steady_clock::now()+
@@ -2920,6 +3056,8 @@ void usage() {
 } // namespace
 
 int main(int argc,char** argv) {
+  crosspod::httpAbortFlag=&interrupted;  // SIGTERM stops a running transfer
+  crosspodlayout::layoutAbortFlag=&interrupted;  // and an overlong word's layout
   // Card apps start with NO book argument; the on-device picker owns launch.
   if(argc==1) return runCardApp("/mnt/mmc/Books");
   if(argc==3 && std::strcmp(argv[1],"--opds-probe")==0) {
@@ -2937,6 +3075,8 @@ int main(int argc,char** argv) {
     return 0;
   }
   if(argc==4 && std::strcmp(argv[1],"--opds-download")==0) {
+    // As in the app: SIGTERM stops the transfer and removes its .part.
+    if(!installExitHandlers())return 5;
     auto catalog=crosspod::fetchOpdsFeed(argv[2]);
     if(!catalog.error.empty())return 8;
     for(const auto& entry:catalog.entries) {
@@ -3220,10 +3360,14 @@ int main(int argc,char** argv) {
   bool typeMenu=false;
   int typeSelection=0;
   crosspod::Q2Controls controls(loadWheelSensitivity());
+  // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
+  // its own step, before reading the next datagram.
+  crosspod::LogicalAction pendingAction=crosspod::LogicalAction::None;
+  int pendingRepeat=0;
   while(!interrupted) {
     reader.flushPosition(false);
     crosspod::PhysicalEvent event{};
-    if (!input.receive(event)) {
+    if (pendingRepeat==0 && !input.receive(event)) {
       if(waitForReaderInput(input,reader.nextPositionFlush())<0) {
         std::fputs("CrossPod: input socket poll failed\n",stderr);
         return 5;
@@ -3231,7 +3375,17 @@ int main(int argc,char** argv) {
       continue;
     }
     if(interrupted)break;
-    auto action=controls.translate(event).action;
+    crosspod::LogicalAction action;
+    if(pendingRepeat>0) {
+      --pendingRepeat;
+      event=crosspod::PhysicalEvent{};
+      event.kind=crosspod::PhysicalKind::WheelStep;
+      action=pendingAction;
+    } else {
+      const auto mapped=controls.translate(event);
+      action=mapped.action;
+      if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
+    }
     bool changed=false;
     if(typeMenu) {
       if(action==crosspod::LogicalAction::Back) {

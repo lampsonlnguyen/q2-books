@@ -2,7 +2,11 @@
 #include <cassert>
 #include <cstring>
 #include <cstdio>
+#include <csignal>
+#include <ctime>
+#include <pthread.h>
 #include <string>
+#include <thread>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -42,6 +46,42 @@ int main() {
   assert(receiver.receive(event));
   assert(receiver.waitForInput(0) == 0);
   assert(event.kind == PhysicalKind::KeyUp && event.value == 172);
+  // Q2 Pod sends with MSG_DONTWAIT; the kernel queues only max_dgram_qlen (10)
+  // datagrams. A burst while the reader is busy must not be lost.
+  for (int i = 0; i < 100; ++i) {
+    const char key[] = "k u 173";
+    for (int tries = 0; ::sendto(sender, key, sizeof(key) - 1, MSG_DONTWAIT,
+                                 reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0; ++tries) {
+      assert(tries < 2000);  // the drain thread empties the queue within microseconds
+      usleep(100);
+    }
+  }
+  for (int i = 0; i < 50; ++i) {
+    const char wheel[] = "w -4";
+    while (::sendto(sender, wheel, sizeof(wheel) - 1, MSG_DONTWAIT,
+                    reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) usleep(100);
+  }
+  usleep(200000);  // the reader was "busy": nothing received yet
+  int keys = 0, travel = 0, wheelEvents = 0;
+  while (receiver.receive(event)) {
+    if (event.kind == PhysicalKind::KeyUp) ++keys;
+    if (event.kind == PhysicalKind::WheelStep) { travel += event.value; ++wheelEvents; }
+  }
+  assert(keys == 100);
+  assert(travel == -200 && wheelEvents >= 1 && wheelEvents < 50);  // merged, none lost
+  assert(receiver.waitForInput(0) == 0);
+  // SIGTERM must still interrupt the main thread's wait (the drain thread blocks it).
+  struct sigaction quiet{};
+  quiet.sa_handler = [](int) {};
+  sigaction(SIGUSR1, &quiet, nullptr);
+  sigaction(SIGTERM, &quiet, nullptr);
+  pthread_t self = pthread_self();
+  std::thread([self] { usleep(100000); pthread_kill(self, SIGTERM); }).detach();
+  timespec start{}, end{};
+  clock_gettime(CLOCK_MONOTONIC, &start);
+  assert(receiver.waitForInput(3000) == 0);
+  clock_gettime(CLOCK_MONOTONIC, &end);
+  assert(end.tv_sec - start.tv_sec < 2);
   ::close(sender);
   receiver.close();
   assert(receiver.waitForInput(0) == -1);

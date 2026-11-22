@@ -44,7 +44,7 @@ add_test(NAME crosspod_advanced_reading_persistence_dictionary_footnote
 
 add_executable(crosspod_connected_tests tests/connected_library_test.cpp)
 target_include_directories(crosspod_connected_tests PRIVATE reader)
-target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT)
+target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT curl)
 target_compile_options(crosspod_connected_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_opds_kavita_and_koreader_transport_contract
     COMMAND crosspod_connected_tests)
@@ -196,6 +196,8 @@ target_link_libraries(crosspoint_opf PUBLIC crosspoint_book_cache)
 # No AWTK or ESP32 dependencies are needed for this interface.
 add_library(crosspod_q2_input STATIC platform/q2/Q2SocketInput.cpp)
 target_include_directories(crosspod_q2_input PUBLIC platform/q2)
+find_package(Threads REQUIRED)
+target_link_libraries(crosspod_q2_input PUBLIC Threads::Threads)
 add_executable(crosspod_q2_input_tests tests/socket_input_test.cpp)
 target_link_libraries(crosspod_q2_input_tests PRIVATE crosspod_q2_input)
 target_compile_options(crosspod_q2_input_tests PRIVATE -UNDEBUG)
@@ -497,7 +499,7 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspod_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
@@ -526,6 +528,26 @@ add_test(NAME crosspod_connected_network_end_to_end
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
     "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
+# Exercise the same reader/OPDS/KOReader flows with a local TLS server.
+# Trust is injected only into the host build; the Q2 binary always uses the
+# firmware CA bundle and does not accept a test-CA environment override.
+add_test(NAME crosspod_connected_https_verify_and_sync
+  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_connected_network.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+
+
+# Downloads across SIGTERM, a SIGKILL's leftover .part and a slow, steady link.
+add_test(NAME crosspod_opds_download_lifecycle
+  COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
+add_test(NAME crosspod_opds_download_lifecycle_https
+  COMMAND "${CMAKE_COMMAND}" -E env CROSSPOD_TEST_HTTPS=1
+    "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/download_lifecycle_test.py"
+    "$<TARGET_FILE:crosspod-reader>" "${CROSSPOD_LINKS_EPUB_FIXTURE}")
 
 add_test(NAME crosspod_reader_real_epub_spine
     COMMAND crosspod-reader --validate "${EPUB_FIXTURE}")

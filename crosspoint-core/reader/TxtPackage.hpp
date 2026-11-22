@@ -5,6 +5,7 @@
 // reader then opens that package with the same engine as any EPUB, so
 // positions, bookmarks, highlights, percent and focus reading all work, while
 // the book's identity (positions, bookmarks, sync) stays the .txt path.
+#include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -174,6 +175,17 @@ inline std::string buildTxtEpub(std::string_view name,std::string_view text) {
 
 // The cached package for |txtPath| under |cacheDir|, built if it is missing
 // or the TXT changed (size or mtime are in the name). Empty on failure.
+// Remove "<name>.part<pid>" files a killed build left for this target.
+inline void removeStaleParts(const std::string& dir,const std::string& name) {
+  DIR* d=opendir(dir.c_str());
+  if(!d)return;
+  const std::string prefix=name+".part";
+  std::vector<std::string> stale;
+  for(dirent* e;(e=readdir(d))!=nullptr;)
+    if(std::string_view(e->d_name).rfind(prefix,0)==0)stale.push_back(dir+"/"+e->d_name);
+  closedir(d);
+  for(const auto& p:stale)std::remove(p.c_str());
+}
 inline std::string packageTxtBook(const std::string& txtPath,const std::string& cacheDir,
                                   std::string& error) {
   struct stat st{};
@@ -189,6 +201,7 @@ inline std::string packageTxtBook(const std::string& txtPath,const std::string& 
   const std::string out=cacheDir+leaf;
   struct stat existing{};
   if(::stat(out.c_str(),&existing)==0 && S_ISREG(existing.st_mode) && existing.st_size>0)return out;
+  removeStaleParts(cacheDir,out.substr(out.find_last_of('/')+1));
   FILE* in=std::fopen(txtPath.c_str(),"rb");
   if(!in){error="TXT could not be opened";return {};}
   std::string text(static_cast<size_t>(st.st_size),'\0');

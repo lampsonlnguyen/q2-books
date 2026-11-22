@@ -55,8 +55,14 @@ int main() {
   }
   std::string error;
   const std::string cache=std::string(dir)+"/cache";
-  const std::string package=crosspod::packageTxtBook(book,cache,error);
+  // A killed build's leftovers for this book are removed by the next build.
+  std::string package=crosspod::packageTxtBook(book,cache,error);
   assert(!package.empty());
+  std::remove(package.c_str());
+  const std::string stale=package+".part424242";
+  {FILE* f=std::fopen(stale.c_str(),"wb");assert(f);std::fputs("half",f);std::fclose(f);}
+  package=crosspod::packageTxtBook(book,cache,error);
+  assert(!package.empty() && ::access(stale.c_str(),F_OK)!=0);
   struct stat first{};
   assert(::stat(package.c_str(),&first)==0);
   assert(crosspod::packageTxtBook(book,cache,error)==package);  // reused, not rebuilt

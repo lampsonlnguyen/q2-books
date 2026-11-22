@@ -7,9 +7,9 @@ EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books
 differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
-**Status:** v0.9.0-beta is the latest published release (under the old name).
-`main` is 0.10.0 in development: everything in v0.9.0-beta, plus the T9 search
-keyboard, the list layout fixes and the rename. Not yet tested on a physical Q2.
+**Status:** 1.0.0 is the current release, the first under the name Books
+(earlier releases were v0.3–v0.9 as CrossPod). Battery, suspend and long-session
+memory on a physical Q2 are still to be measured.
 User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md).
 
 **Historical note:** The detailed porting inventory below was written during

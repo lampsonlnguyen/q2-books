@@ -8,9 +8,62 @@ differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
 **Status:** 1.0.0 is the current release, the first under the name Books
-(earlier releases were v0.3–v0.9 as CrossPod). Battery, suspend and long-session
-memory on a physical Q2 are still to be measured.
-User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md).
+(earlier releases were v0.3–v0.9 as CrossPod). It passes the host test suites
+(GCC, Clang, ASan), EPUB fuzzing and the Q2 MIPS/QEMU build, but it has **not
+yet been validated on a physical Q2**: see M1 below.
+User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
+[release notes](docs/release-notes/v1.0.0.md).
+
+## Milestones
+
+| Milestone | Scope | Status |
+|---|---|---|
+| M0 — HTTPS transport (v0.9) | HTTPS OPDS and KOReader sync through Q2 Pod's libcurl, mandatory certificate and hostname checks, same-origin redirects, stall timeouts | Code done and released. Open: tests against a real HTTPS Kavita server from a Q2 |
+| M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
+| M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt | Done except RD-05 (user-installed fonts) |
+| M3 — Dictionary, fonts, languages (v0.11) | StarDict dictionaries, paged definitions | Partly done (DI-01 to DI-03). Open items below |
+| M4 — Library and servers (v0.12) | OPDS paging and catalog search | Partly done. Open items below |
+| M5 — EPUB3 fidelity and resilience (v0.13) | Golden reference corpus compared with upstream CrossPoint; tables, ruby, RTL, footnotes, embedded fonts | Not started (fuzzing and stress tests exist) |
+| M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
+| M7 — Stable readiness (v1.0) | Device-proven daily reading | Version 1.0.0 is tagged; the criteria below are not all met yet |
+
+## What still needs doing
+
+**On a physical Q2 (M1, the release gate for "stable")**
+- Fill a hardware QA matrix: firmware revision, release ZIP SHA-256, SD card type, pass/fail with photos and sanitized logs.
+- Launch from Library; wheel at 10/50/100/200 % sensitivity; fast turns, Back, Centre and touch; auto page turn with and without Smart Awake.
+- Screen off/on and Q2 Pod suspend; resume at the exact paragraph; forced exit during layout and downloads.
+- SD card full, read-only, missing, unplugged and replugged; USB storage mode while running.
+- Slow or missing Wi-Fi; an HTTPS Kavita server: browse, download, push/pull progress, refuse an invalid certificate with a readable error.
+- Idle and active RAM, CPU, SD writes, battery drain and heat over a 30-minute session.
+- Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
+
+**Reader and languages (M2/M3)**
+- RD-05: install and select your own `.cpfont` fonts from the SD card; evaluate TTF/OTF only with a memory benchmark.
+- Translated menus (Vietnamese and English first) and a menu font with CJK glyphs; menus show `?` for CJK today.
+- Dictionary: Unicode case folding (e.g. `Đ`/`đ`), choosing which dictionaries to use, look-up history (vocabulary log), defining a selected phrase.
+- Export highlights and clippings as plain text.
+
+**Library and servers (M4)**
+- Several saved OPDS servers (add, edit, delete) with their own credentials.
+- Network cover thumbnails, an offline catalog cache, retry on failure.
+- Folder tree with breadcrumbs; faster browsing of large libraries.
+- Sync conflict handling, and syncing highlights where the server can store them.
+
+**EPUB fidelity (M5)**
+- A reference set of difficult books (tables, nested CSS, ruby/CJK, Indic/Arabic/RTL, anchors, images, embedded fonts, broken EPUBs) rendered here and on upstream CrossPoint with the same settings, with documented allowed differences.
+- No known blank-page or data-corruption defects.
+
+**Release and packaging (M7)**
+- Compatibility and test report from the device, a troubleshooting guide and a user manual.
+- Font and dependency license audit (the bundled font licenses are collected in `.books/fonts/CrossPoint-font-licenses.txt`; a full audit is pending).
+- Q2 Pod's App Store: upstream must take `books` off its reserved ids (`patch/netupdate.c`) and enable `lampsonlnguyen/q2-books` in `sources.list`; until then, install by extracting the release ZIP to the SD card.
+- Q2 Pod's built-in Books entry and this app both appear in the Library until Q2 Pod hands the name over.
+- Remove the one-time `.crosspod` migration in a later release, once upgrades are done.
+
+**Known limits today**
+- A server certificate with a CN and no subjectAltName may be accepted, depending on the Q2's libcurl.
+- Battery, suspend and long-session memory are unmeasured.
 
 **Historical note:** The detailed porting inventory below was written during
 the early CrossPoint source migration. Its "not yet done" and host-only notes

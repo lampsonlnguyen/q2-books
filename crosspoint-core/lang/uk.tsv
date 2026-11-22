@@ -1,0 +1,174 @@
+# Українська
+Reading settings	Reading settings	Налаштування читання
+Font	Font	Шрифт
+Size	Size	Розмір
+Line spacing	Line spacing	Інтервал
+Margins	Margins	Поля
+Alignment	Alignment	Вирівнювання
+Hyphenation	Hyphenation	Перенесення
+Book CSS	Book CSS	CSS книги
+Night mode	Night mode	Нічний режим
+Add bookmark	Add bookmark	Закладка +
+Bookmarks	Bookmarks	Закладки
+Chapters	Chapters	Розділи
+Page links	Page links	Посилання
+Return link	Return link	Повернутися
+Select text	Select text	Виділити текст
+Sync: upload	Sync: upload	Sync: надісл.
+Sync: download	Sync: download	Sync: отримати
+Focus read	Focus read	Фокус-читання
+Auto turn	Auto turn	Автогортання
+Go to %	Go to %	Перейти до %
+About	About	Про програму
+Dictionaries	Dictionaries	Словники
+Export notes	Export notes	Експорт
+On	On	Увімк
+Off	Off	Вимк
+Justify	Justify	По ширині
+Book default	Book default	Як у книзі
+Save page	Save page	Зберегти стор.
+Saved pages	Saved pages	Збережені
+Browse book	Browse book	Огляд книги
+Footnotes / links	Footnotes / links	Виноски/посил.
+Go back	Go back	Назад
+No previous link	No previous link	Посилань нема
+Highlight / define	Highlight / define	Виділити/визн.
+Save position	Save position	Надіслати
+Use remote position	Use remote position	Взяти позицію
+To Clippings	To Clippings	До Clippings
+installed	installed	встановлено
+Wheel: scroll  Center: select	Wheel: scroll  Center: select	Коліщатко: гортати  Центр: вибір
+Over 2 min idle needs Q2 Pod Smart Awake	Over 2 min idle needs Q2 Pod Smart Awake	Понад 2 хв простою потрібен Smart Awake
+Reading settings not saved	Reading settings not saved	Налаштування не збережено
+Bookmark saved	Bookmark saved	Закладку збережено
+Cannot save bookmark	Cannot save bookmark	Не вдалося зберегти закладку
+No highlights or bookmarks yet	No highlights or bookmarks yet	Ще немає виділень і закладок
+Cannot write Clippings	Cannot write Clippings	Не вдалося записати Clippings
+Selected font file missing	Selected font file missing	Вибраного шрифту немає
+Font file not installed	Font file not installed	Шрифт не встановлено
+Go to percent	Go to percent	Перейти до відсотка
+Wheel: 1%   Keys: 10%	Wheel: 1%   Keys: 10%	Коліщатко: 1%   Кнопки: 10%
+Center: go   Back: cancel	Center: go   Back: cancel	Центр: перейти   Назад: скасувати
+Any key: back	Any key: back	Будь-яка кнопка: назад
+Center: on/off   Back: settings	Center: on/off   Back: settings	Центр: увімк/вимк   Назад: налаштування
+None installed.	None installed.	Не встановлено.
+Put StarDict folders in	Put StarDict folders in	Покладіть теки StarDict у
+Links and footnotes	Links and footnotes	Посилання і виноски
+No links on this page	No links on this page	На сторінці немає посилань
+Wheel: pick  Center: go	Wheel: pick  Center: go	Коліщатко: вибір  Центр: перейти
+Back: close   Center: jump	Back: close   Center: jump	Назад: закрити   Центр: перейти
+Back: selected text	Back: selected text	Назад: виділений текст
+Offline dictionary	Offline dictionary	Офлайн-словник
+No match in the dictionaries	No match in the dictionaries	У словниках не знайдено
+Wheel: more  Back: selected text	Wheel: more  Back: selected text	Коліщатко: далі  Назад: виділений текст
+Footnote	Footnote	Виноска
+No bookmarks yet	No bookmarks yet	Закладок ще немає
+No chapters	No chapters	Немає розділів
+Wheel: select  Center: go  Back: settings	Wheel: select  Center: go  Back: settings	Коліщатко: вибір  Центр: перейти  Назад: налаштування
+Wheel: word   Center: start	Wheel: word   Center: start	Коліщатко: слово   Центр: почати
+Wheel: extend  Center: actions	Wheel: extend  Center: actions	Коліщатко: розширити  Центр: дії
+Highlight	Highlight	Виділити
+Define	Define	Визначити
+Remove	Remove	Видалити
+Cancel	Cancel	Скасувати
+Page text unavailable	Page text unavailable	Текст сторінки недоступний
+Home	Home	Головна
+Current book	Current book	Поточна книга
+No books yet	No books yet	Книг ще немає
+Continue reading	Continue reading	Читати далі
+Browse files	Browse files	Огляд файлів
+Sort: 	Sort: 	Сортування: 
+Title A-Z	Title A-Z	Назва А-Я
+Recently read	Recently read	Нещодавно прочитані
+Recently added	Recently added	Нещодавно додані
+Folders	Folders	Теки
+Online	Online	Онлайн
+Search | Online	Search | Online	Пошук | Онлайн
+OK: open   Back: exit	OK: open   Back: exit	OK: відкрити   Назад: вихід
+OK: open   Back: home	OK: open   Back: home	OK: відкрити   Назад: головна
+OK: open   Back: up	OK: open   Back: up	OK: відкрити   Назад: вгору
+OK: open/get   Back: prev	OK: open/get   Back: prev	OK: відкрити/завантажити   Назад: попер.
+OK: press   Back: close	OK: press   Back: close	OK: натиснути   Назад: закрити
+No EPUB books found	No EPUB books found	Книг EPUB не знайдено
+No matching books	No matching books	Немає відповідних книг
+No EPUBs or folders	No EPUBs or folders	Немає EPUB і тек
+Back: leave catalog	Back: leave catalog	Назад: вийти з каталогу
+Search library	Search library	Пошук у бібліотеці
+Search catalog	Search catalog	Пошук у каталозі
+Done: search	Done: search	Done: шукати
+Wheel: key   Centre: press   Again: next letter	Wheel: key   Centre: press   Again: next letter	Коліщатко: клавіша   Центр: натиснути   Знову: наступна літера
+Search this catalog	Search this catalog	Шукати в цьому каталозі
+More results	More results	Більше результатів
+Loading catalog...	Loading catalog...	Завантаження каталогу...
+Downloading EPUB...	Downloading EPUB...	Завантаження EPUB...
+EPUB downloaded to Books/Online	EPUB downloaded to Books/Online	EPUB завантажено в Books/Online
+Searching...	Searching...	Пошук...
+No results	No results	Нічого не знайдено
+Opening EPUB...	Opening EPUB...	Відкриття EPUB...
+Cannot read this EPUB	Cannot read this EPUB	Не вдається прочитати EPUB
+Set .books/connected.conf	Set .books/connected.conf	Створіть .books/connected.conf
+Type a search first	Type a search first	Спершу введіть запит
+This catalog has no search	This catalog has no search	У каталозі немає пошуку
+Connected library	Connected library	Під'єднана бібліотека
+Catalog servers	Catalog servers	Сервери каталогів
+Choose a server to edit	Choose a server to edit	Виберіть сервер
+New server	New server	Новий сервер
+Edit server	Edit server	Змінити сервер
++ Add server	+ Add server	+ Додати сервер
+Edit a server	Edit a server	Змінити сервер
+Name	Name	Ім'я
+User	User	Користувач
+Password	Password	Пароль
+Save	Save	Зберегти
+Delete server	Delete server	Видалити сервер
+Press again to delete	Press again to delete	Натисніть ще раз для видалення
+(the host name)	(the host name)	(ім'я хоста)
+(none)	(none)	(немає)
+Server name	Server name	Ім'я сервера
+Catalog URL	Catalog URL	URL каталогу
+User name	User name	Ім'я користувача
+Done: keep	Done: keep	Done: залишити
+Server saved	Server saved	Сервер збережено
+Server deleted	Server deleted	Сервер видалено
+Add a catalog server	Add a catalog server	Додайте сервер каталогу
+Up to 8 servers	Up to 8 servers	Не більше 8 серверів
+OK: edit   Back: cancel	OK: edit   Back: cancel	OK: змінити   Назад: скасувати
+Type the catalog URL	Type the catalog URL	Введіть URL каталогу
+URL must start http:// or https://	URL must start http:// or https://	URL має починатися з http:// або https://
+Password needs a user	Password needs a user	Для пароля потрібен користувач
+Value too long	Value too long	Задовге значення
+Cannot save settings	Cannot save settings	Не вдалося зберегти
+Offline copy	Offline copy	Офлайн-копія
+Book details	Book details	Про книгу
+No description	No description	Немає опису
+On the card	On the card	На карті
+Already on the card	Already on the card	Вже на карті
+OK: download   Back: list	OK: download   Back: list	OK: завантажити   Назад: список
+OK: show on card   Back: list	OK: show on card   Back: list	OK: показати   Назад: список
+Loading...	Loading...	Завантаження...
+An ebook reader for Q2 Pod	An ebook reader for Q2 Pod	Читалка книг для Q2 Pod
+on the Shanling Q2.	on the Shanling Q2.	на Shanling Q2.
+A port of CrossPoint Reader:	A port of CrossPoint Reader:	Порт CrossPoint Reader:
+its EPUB engine, layout and	its EPUB engine, layout and	його рушій EPUB, верстка і
+fonts, on the Q2's Linux.	fonts, on the Q2's Linux.	шрифти, на Linux у Q2.
+MIT license; see LICENSE files	MIT license; see LICENSE files	Ліцензія MIT; див. файли LICENSE
+Enable sync in connected.conf	Enable sync in connected.conf	Увімкніть sync у connected.conf
+Progress uploaded	Progress uploaded	Прогрес надіслано
+No remote progress	No remote progress	На сервері немає прогресу
+Remote position applied	Remote position applied	Позицію з сервера застосовано
+Remote ahead. Pull first.	Remote ahead. Pull first.	Сервер попереду. Спершу отримайте.
+Remote is behind	Remote is behind	Сервер позаду
+Reading positions differ	Reading positions differ	Позиції читання різняться
+This Q2: 	This Q2: 	Цей Q2: 
+Server: 	Server: 	Сервер: 
+Another device read further.	Another device read further.	Інший пристрій прочитав далі.
+The server's position is older.	The server's position is older.	Позиція на сервері старіша.
+Go to the server's 	Go to the server's 	До позиції сервера 
+Upload this Q2's 	Upload this Q2's 	Надіслати позицію Q2 
+Keep and upload 	Keep and upload 	Залишити й надіслати 
+%zu / %zu books	%zu / %zu books	%zu / %zu книг
+Books: %zu/%zu	Books: %zu/%zu	Книги: %zu/%zu
+Copy EPUBs to /Books	Copy EPUBs to /Books	Скопіюйте EPUB у /Books
+Tap title to edit search	Tap title to edit search	Торкніться заголовка для пошуку
+Untitled	Untitled	Без назви
+Too many servers	Too many servers	Забагато серверів

@@ -21,7 +21,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 | M0 — HTTPS transport (v0.9) | HTTPS OPDS and KOReader sync through Q2 Pod's libcurl, mandatory certificate and hostname checks, same-origin redirects, stall timeouts | Code done and released. Open: tests against a real HTTPS Kavita server from a Q2 |
 | M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
 | M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt, your own fonts (RD-05) | Done |
-| M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, Vietnamese menus | Done on `main` (after 1.1.0). Open: more languages, CJK letters in menus |
+| M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, menus in Q2 Pod's language | Done. Menus follow Q2 Pod's language (after 1.1.1). Open: CJK and Thai menus, native review of the tables |
 | M4 — Library and servers (v0.12) | OPDS paging and catalog search; several saved servers with credentials; offline catalog copy and retry; book details with network covers; folders with breadcrumbs; 4000-book libraries; sync conflict choice | Done on `main` (after 1.1.1); see [the M4 guide](docs/v0.12-library-and-servers.md). Open: highlight sync |
 | M5 — EPUB3 fidelity and resilience (v0.13) | Golden reference corpus compared with upstream CrossPoint; tables, ruby, RTL, footnotes, embedded fonts | Not started (fuzzing and stress tests exist) |
 | M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
@@ -39,7 +39,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
 
 **Reader and languages (M3 follow-ups)**
-- More menu languages than English and Vietnamese; CJK letters in menus (book text has them; menus show `?`).
+- Menus follow Q2 Pod's language, with tables for de, es, fr, it, pl, ru, uk (and vi) in `crosspoint-core/lang/`; a native speaker's review of each. Q2 Pod's ja, ko, th, zh_CN and zh_HK need CJK and Thai letters in the menu font first (book text has them); until then those show English.
 - Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 
 **Library and servers (M4 follow-ups)**

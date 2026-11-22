@@ -1,236 +1,210 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-// M3 translated menus. The UI language is saved in <state>/language.conf
-// ("BOOKS-LANG1 vi"); English is the default and the source text. tr()
-// returns the Vietnamese text for an English UI string, or the string itself
-// when there is no translation (book text, names and numbers pass through).
+// Menus in Q2 Pod's own language. Books has no language setting: it reads
+// the one Q2 Pod uses, as Q2 Pod's patch/language.c decides it. The code
+// is LANG under [Q2POD] in /mnt/data/config.ini, and it counts only while
+// Q2 Pod's copy of that language, /mnt/data/q2-lang-<code>.tsv, is there.
+// Anything else (no key, a reset config, the pack removed) is English.
+//
+// A text is looked up, by its English, in Books' own table for that
+// language, .books/lang/<code>.tsv, else it stays English (as Q2 Pod shows
+// a text its pack lacks). The table is in Q2 Pod's language-pack format: a
+// first line "# <name>", then key<TAB>English<TAB>translation, with \n, \t
+// and \\ escaped. As in Q2 Pod, a line counts only for the English it was
+// written for, and only when its printf conversions match the English's.
+// Q2 Pod's own table is not borrowed from: half a menu in each language
+// reads worse than one language.
+//
+// A translation whose letters the menu font can't draw (setUiGlyphCheck)
+// is shown in English, never as boxes or question marks.
+#include <cctype>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <sys/stat.h>
+#include <unordered_map>
 #include <unistd.h>
 
 namespace books {
 
-enum class UiLanguage { English, Vietnamese };
-
-inline std::string uiLanguageFile() {
+inline std::string uiStateDir() {
   const char* env = std::getenv("BOOKS_STATE_DIR");
-  return std::string(env && *env ? env : "/mnt/mmc/.books") + "/language.conf";
+  return env && *env ? env : "/mnt/mmc/.books";
 }
-inline UiLanguage& currentUiLanguage() {
-  static UiLanguage language = [] {
-    UiLanguage l = UiLanguage::English;
-    if (FILE* f = std::fopen(uiLanguageFile().c_str(), "rb")) {
-      char code[8] = {};
-      if (std::fscanf(f, "BOOKS-LANG1 %7s", code) == 1 && std::strcmp(code, "vi") == 0) l = UiLanguage::Vietnamese;
-      std::fclose(f);
+// Q2 Pod's settings file (BOOKS_SYSTEM_CONFIG for tests); its language
+// copies sit beside it.
+inline std::string systemConfigFile() {
+  const char* env = std::getenv("BOOKS_SYSTEM_CONFIG");
+  return env && *env ? env : "/mnt/data/config.ini";
+}
+// Q2 Pod's codes: letters and '_', 2 to 11 of them (de, zh_CN...).
+inline bool validLanguageCode(const std::string& code) {
+  if (code.size() < 2 || code.size() > 11) return false;
+  for (unsigned char c : code)
+    if (!std::isalpha(c) && c != '_') return false;
+  return true;
+}
+// The value of |key| under [section] in an ini file, as Q2 Pod's
+// toolsReadConfig reads it (trimmed); empty when absent.
+inline std::string readIniValue(const std::string& file, const char* section, const char* key) {
+  FILE* f = std::fopen(file.c_str(), "rb");
+  if (!f) return {};
+  char line[512];
+  bool inSection = false;
+  std::string found;
+  const auto trim = [](std::string s) {
+    while (!s.empty() && std::strchr(" \t\r\n", s.back())) s.pop_back();
+    size_t i = 0;
+    while (i < s.size() && std::strchr(" \t", s[i])) ++i;
+    return s.substr(i);
+  };
+  for (int n = 0; n < 2000 && std::fgets(line, sizeof line, f); ++n) {
+    const std::string text = trim(line);
+    if (!text.empty() && text.front() == '[') {
+      inSection = text == std::string("[") + section + "]";
+      continue;
     }
-    return l;
-  }();
-  return language;
+    const auto eq = text.find('=');
+    if (inSection && eq != std::string::npos && trim(text.substr(0, eq)) == key) {
+      found = trim(text.substr(eq + 1));
+      break;
+    }
+  }
+  std::fclose(f);
+  return found;
 }
-inline UiLanguage uiLanguage() { return currentUiLanguage(); }
-inline bool setUiLanguage(UiLanguage l) {
-  currentUiLanguage() = l;
-  const std::string file = uiLanguageFile(), tmp = file + ".tmp";
-  FILE* f = std::fopen(tmp.c_str(), "wb");
-  if (!f) return false;
-  bool ok = std::fprintf(f, "BOOKS-LANG1 %s\n", l == UiLanguage::Vietnamese ? "vi" : "en") > 0;
-  ok = std::fclose(f) == 0 && ok;
-  if (ok && std::rename(tmp.c_str(), file.c_str()) == 0) return true;
-  std::remove(tmp.c_str());
-  return false;
+// The language Q2 Pod shows ("" for English). BOOKS_LANG overrides it for
+// tests and the host.
+inline std::string readSystemLanguage() {
+  if (const char* env = std::getenv("BOOKS_LANG")) return validLanguageCode(env) ? env : "";
+  const std::string config = systemConfigFile();
+  const std::string code = readIniValue(config, "Q2POD", "LANG");
+  if (!validLanguageCode(code)) return {};
+  const auto slash = config.find_last_of('/');
+  const std::string copy =
+      (slash == std::string::npos ? std::string(".") : config.substr(0, slash)) + "/q2-lang-" + code + ".tsv";
+  return ::access(copy.c_str(), R_OK) == 0 ? code : std::string();
 }
-inline const char* uiLanguageName(UiLanguage l) { return l == UiLanguage::Vietnamese ? "Tiếng Việt" : "English"; }
+
+// The printf conversions of a text, in order ("%zu%s"); "%%" is none.
+inline std::string printfConversions(const std::string& text) {
+  std::string out;
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (text[i] != '%') continue;
+    if (i + 1 < text.size() && text[i + 1] == '%') { ++i; continue; }
+    size_t j = i + 1;
+    while (j < text.size() && std::strchr("-+ #0123456789.*hlLzjt", text[j])) ++j;
+    if (j < text.size() && std::strchr("diouxXeEfFgGaAcspn", text[j])) {
+      out += text.substr(i, j - i + 1);
+      i = j;
+    }
+  }
+  return out;
+}
+inline std::string unescapeLanguageField(const std::string& field) {
+  std::string out;
+  for (size_t i = 0; i < field.size(); ++i) {
+    if (field[i] == '\\' && i + 1 < field.size()) {
+      const char e = field[++i];
+      out += e == 'n' ? '\n' : e == 't' ? '\t' : e;
+    } else out += field[i];
+  }
+  return out;
+}
 
 struct UiTranslation {
-  const char* en;
-  const char* vi;
+  std::string text;
+  signed char drawable = -1;  // unknown until first asked
 };
-// Short on purpose: menu rows are about 13 characters wide.
-inline constexpr UiTranslation kVietnamese[] = {
-    // Reading settings
-    {"Reading settings", "Cài đặt đọc"},
-    {"Font", "Phông chữ"},
-    {"Size", "Cỡ chữ"},
-    {"Line spacing", "Giãn dòng"},
-    {"Margins", "Lề"},
-    {"Alignment", "Căn lề"},
-    {"Hyphenation", "Ngắt từ"},
-    {"Book CSS", "CSS sách"},
-    {"Night mode", "Chế độ đêm"},
-    {"Add bookmark", "Thêm dấu"},
-    {"Bookmarks", "Dấu trang"},
-    {"Chapters", "Mục lục"},
-    {"Page links", "Liên kết"},
-    {"Return link", "Quay về"},
-    {"Select text", "Chọn chữ"},
-    {"Sync: upload", "Gửi tiến độ"},
-    {"Sync: download", "Lấy tiến độ"},
-    {"Focus read", "Đọc nhấn"},
-    {"Auto turn", "Tự lật"},
-    {"Go to %", "Đi tới %"},
-    {"About", "Giới thiệu"},
-    {"Dictionaries", "Từ điển"},
-    {"Export notes", "Xuất ghi chú"},
-    {"Language", "Ngôn ngữ"},
-    {"On", "Bật"},
-    {"Off", "Tắt"},
-    {"Justify", "Đều hai bên"},
-    {"Book default", "Theo sách"},
-    {"Save page", "Lưu trang"},
-    {"Saved pages", "Đã lưu"},
-    {"Browse book", "Xem sách"},
-    {"Footnotes / links", "Chú thích"},
-    {"Go back", "Quay lại"},
-    {"No previous link", "Không có"},
-    {"Highlight / define", "Tô / tra từ"},
-    {"Save position", "Lưu vị trí"},
-    {"Use remote position", "Lấy vị trí"},
-    {"To Clippings", "Vào Clippings"},
-    {"installed", "đã cài"},
-    {"Wheel: scroll  Center: select", "Xoay: cuộn  Giữa: chọn"},
-    {"Over 2 min idle needs Q2 Pod Smart Awake", "Trên 2 phút cần Smart Awake"},
-    {"Reading settings not saved", "Chưa lưu được cài đặt"},
-    {"Bookmark saved", "Đã lưu dấu trang"},
-    {"Cannot save bookmark", "Không lưu được dấu"},
-    {"No highlights or bookmarks yet", "Chưa có ghi chú"},
-    {"Cannot write Clippings", "Không ghi được Clippings"},
-    {"Selected font file missing", "Thiếu tệp phông"},
-    {"Font file not installed", "Chưa cài phông"},
-    // Dialogs and overlays
-    {"Go to percent", "Đi tới phần trăm"},
-    {"Wheel: 1%   Keys: 10%", "Xoay: 1%   Phím: 10%"},
-    {"Center: go   Back: cancel", "Giữa: đi   Back: hủy"},
-    {"Any key: back", "Phím bất kỳ: quay lại"},
-    {"Center: on/off   Back: settings", "Giữa: bật/tắt   Back: cài đặt"},
-    {"None installed.", "Chưa cài từ điển."},
-    {"Put StarDict folders in", "Chép thư mục StarDict vào"},
-    {"Links and footnotes", "Liên kết, chú thích"},
-    {"No links on this page", "Trang này không có liên kết"},
-    {"Wheel: pick  Center: go", "Xoay: chọn  Giữa: đi"},
-    {"Back: close   Center: jump", "Back: đóng   Giữa: tới"},
-    {"Back: selected text", "Back: chữ đã chọn"},
-    {"Offline dictionary", "Từ điển"},
-    {"No match in the dictionaries", "Không tìm thấy trong từ điển"},
-    {"Wheel: more  Back: selected text", "Xoay: thêm  Back: chữ đã chọn"},
-    {"Footnote", "Chú thích"},
-    {"No bookmarks yet", "Chưa có dấu trang"},
-    {"No chapters", "Không có mục lục"},
-    {"Wheel: select  Center: go  Back: settings", "Xoay: chọn  Giữa: đi  Back: cài đặt"},
-    {"Wheel: word   Center: start", "Xoay: từ   Giữa: bắt đầu"},
-    {"Wheel: extend  Center: actions", "Xoay: mở rộng  Giữa: thao tác"},
-    {"Highlight", "Tô sáng"},
-    {"Define", "Tra từ"},
-    {"Remove", "Xóa"},
-    {"Cancel", "Hủy"},
-    {"Page text unavailable", "Không đọc được chữ"},
-    // Shelf
-    {"Home", "Trang chủ"},
-    {"Current book", "Sách đang đọc"},
-    {"No books yet", "Chưa có sách"},
-    {"Continue reading", "Đọc tiếp"},
-    {"Browse files", "Duyệt sách"},
-    {"Sort: ", "Xếp: "},
-    {"Title A-Z", "Tên A-Z"},
-    {"Recently read", "Mới đọc"},
-    {"Recently added", "Mới thêm"},
-    {"Folders", "Thư mục"},
-    {"Online", "Mạng"},
-    {"Search | Online", "Tìm | Mạng"},
-    {"OK: open   Back: exit", "OK: mở   Back: thoát"},
-    {"OK: open   Back: home", "OK: mở   Back: về"},
-    {"OK: open   Back: up", "OK: mở   Back: lên"},
-    {"OK: open/get   Back: prev", "OK: mở/tải   Back: lùi"},
-    {"OK: press   Back: close", "OK: nhấn   Back: đóng"},
-    {"No EPUB books found", "Không có sách"},
-    {"No matching books", "Không có sách phù hợp"},
-    {"No EPUBs or folders", "Không có sách hay thư mục"},
-    {"Back: leave catalog", "Back: rời thư viện"},
-    {"Search library", "Tìm sách"},
-    {"Search catalog", "Tìm trong thư viện"},
-    {"Done: search", "Done: tìm"},
-    {"Wheel: key   Centre: press   Again: next letter", "Xoay: phím   Giữa: nhấn   Lại: chữ kế"},
-    {"Search this catalog", "Tìm trong thư viện này"},
-    {"More results", "Thêm kết quả"},
-    {"Loading catalog...", "Đang tải thư viện..."},
-    {"Downloading EPUB...", "Đang tải sách..."},
-    {"EPUB downloaded to Books/Online", "Đã tải vào Books/Online"},
-    {"Searching...", "Đang tìm..."},
-    {"No results", "Không có kết quả"},
-    {"Opening EPUB...", "Đang mở sách..."},
-    {"Cannot read this EPUB", "Không đọc được sách này"},
-    {"Set .books/connected.conf", "Cần .books/connected.conf"},
-    {"Type a search first", "Hãy nhập từ cần tìm"},
-    {"This catalog has no search", "Thư viện không có tìm kiếm"},
-    {"Connected library", "Thư viện"},
-    // Catalog servers (M4)
-    {"Catalog servers", "Máy chủ thư viện"},
-    {"Choose a server to edit", "Chọn máy chủ để sửa"},
-    {"New server", "Máy chủ mới"},
-    {"Edit server", "Sửa máy chủ"},
-    {"+ Add server", "+ Thêm máy chủ"},
-    {"Edit a server", "Sửa máy chủ"},
-    {"Name", "Tên"},
-    {"User", "Tài khoản"},
-    {"Password", "Mật khẩu"},
-    {"Save", "Lưu"},
-    {"Delete server", "Xóa máy chủ"},
-    {"Press again to delete", "Nhấn lần nữa để xóa"},
-    {"(the host name)", "(tên máy chủ)"},
-    {"(none)", "(không có)"},
-    {"Server name", "Tên máy chủ"},
-    {"Catalog URL", "Địa chỉ thư viện"},
-    {"User name", "Tài khoản"},
-    {"Done: keep", "Done: giữ"},
-    {"Server saved", "Đã lưu máy chủ"},
-    {"Server deleted", "Đã xóa máy chủ"},
-    {"Add a catalog server", "Hãy thêm máy chủ"},
-    {"Up to 8 servers", "Tối đa 8 máy chủ"},
-    {"OK: edit   Back: cancel", "OK: sửa   Back: hủy"},
-    {"Type the catalog URL", "Hãy nhập địa chỉ"},
-    {"URL must start http:// or https://", "Địa chỉ phải bắt đầu http(s)://"},
-    {"Password needs a user", "Cần tài khoản"},
-    {"Value too long", "Quá dài"},
-    {"Cannot save settings", "Không lưu được"},
-    {"Offline copy", "Bản lưu"},
-    {"Book details", "Thông tin sách"},
-    {"No description", "Không có mô tả"},
-    {"On the card", "Đã có trên thẻ"},
-    {"Already on the card", "Sách đã có trên thẻ"},
-    {"OK: download   Back: list", "OK: tải   Back: danh sách"},
-    {"OK: show on card   Back: list", "OK: xem   Back: danh sách"},
-    {"Loading...", "Đang tải..."},
-    // About
-    {"An ebook reader for Q2 Pod", "Ứng dụng đọc sách cho Q2 Pod"},
-    {"on the Shanling Q2.", "trên Shanling Q2."},
-    {"A port of CrossPoint Reader:", "Chuyển từ CrossPoint Reader:"},
-    {"its EPUB engine, layout and", "bộ đọc EPUB, dàn trang và"},
-    {"fonts, on the Q2's Linux.", "phông chữ, trên Linux của Q2."},
-    {"MIT license; see LICENSE files", "Giấy phép MIT; xem tệp LICENSE"},
-    // Sync
-    {"Enable sync in connected.conf", "Bật đồng bộ trong connected.conf"},
-    {"Progress uploaded", "Đã gửi tiến độ"},
-    {"No remote progress", "Máy chủ chưa có tiến độ"},
-    {"Remote position applied", "Đã lấy vị trí"},
-    {"Remote ahead. Pull first.", "Máy chủ mới hơn. Lấy về trước."},
-    {"Remote is behind", "Máy chủ cũ hơn"},
-    {"Reading positions differ", "Vị trí đọc khác nhau"},
-    {"This Q2: ", "Máy này: "},
-    {"Server: ", "Máy chủ: "},
-    {"Another device read further.", "Máy khác đã đọc xa hơn."},
-    {"The server's position is older.", "Vị trí trên máy chủ cũ hơn."},
-    {"Go to the server's ", "Tới vị trí máy chủ "},
-    {"Upload this Q2's ", "Gửi vị trí máy này "},
-    {"Keep and upload ", "Giữ và gửi "},
+struct UiLanguageState {
+  bool loaded = false;
+  std::string code;
+  std::unordered_map<std::string, UiTranslation> table;  // English -> translation
+  bool (*glyphCheck)(uint32_t) = nullptr;
 };
+inline UiLanguageState& uiLanguageState() {
+  static UiLanguageState state;
+  return state;
+}
+// Adds a language-pack table's lines to |table| (lines already there win).
+// Returns how many it added. At most 2 MB is read.
+inline size_t loadLanguageTable(const std::string& file, std::unordered_map<std::string, UiTranslation>& table) {
+  struct stat info {};
+  if (::stat(file.c_str(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > 2 * 1024 * 1024) return 0;
+  FILE* f = std::fopen(file.c_str(), "rb");
+  if (!f) return 0;
+  std::string data(static_cast<size_t>(info.st_size), '\0');
+  data.resize(std::fread(data.data(), 1, data.size(), f));
+  std::fclose(f);
+  size_t added = 0;
+  for (size_t start = 0; start < data.size();) {
+    size_t end = data.find('\n', start);
+    if (end == std::string::npos) end = data.size();
+    std::string line = data.substr(start, end - start);
+    start = end + 1;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty() || line[0] == '#') continue;
+    const auto tab1 = line.find('\t');
+    const auto tab2 = tab1 == std::string::npos ? std::string::npos : line.find('\t', tab1 + 1);
+    if (tab2 == std::string::npos) continue;
+    const std::string english = unescapeLanguageField(line.substr(tab1 + 1, tab2 - tab1 - 1));
+    const std::string translation = unescapeLanguageField(line.substr(tab2 + 1));
+    if (english.empty() || translation.empty() || tab1 == 0) continue;
+    if (printfConversions(english) != printfConversions(translation)) continue;  // would read the wrong argument
+    if (table.emplace(english, UiTranslation{translation, -1}).second) ++added;
+  }
+  return added;
+}
+inline void loadUiLanguage(UiLanguageState& s) {
+  s.loaded = true;
+  s.table.clear();
+  s.code = readSystemLanguage();
+  if (s.code.empty()) return;
+  loadLanguageTable(uiStateDir() + "/lang/" + s.code + ".tsv", s.table);
+}
+// The code of the language the menus are in ("" for English).
+inline const std::string& uiLanguageCode() {
+  auto& s = uiLanguageState();
+  if (!s.loaded) loadUiLanguage(s);
+  return s.code;
+}
+// True when menus are drawn in another language than English (with the
+// reading font's glyphs rather than the pixel font).
+inline bool uiTranslated() { return !uiLanguageCode().empty(); }
+// Read Q2 Pod's language again (tests; Books itself reads it once a run, as
+// Q2 Pod restarts to change it).
+inline void reloadUiLanguage() { loadUiLanguage(uiLanguageState()); }
+inline void setUiGlyphCheck(bool (*check)(uint32_t)) {
+  auto& s = uiLanguageState();
+  s.glyphCheck = check;
+  for (auto& [english, t] : s.table) t.drawable = -1;
+}
+inline bool uiTextDrawable(const std::string& text, bool (*check)(uint32_t)) {
+  if (!check) return true;
+  for (size_t i = 0; i < text.size();) {
+    const unsigned char b = static_cast<unsigned char>(text[i]);
+    uint32_t cp = b;
+    size_t n = 1;
+    if (b >= 0xF0) cp = b & 7, n = 4;
+    else if (b >= 0xE0) cp = b & 15, n = 3;
+    else if (b >= 0xC0) cp = b & 31, n = 2;
+    if (i + n > text.size()) return false;
+    for (size_t k = 1; k < n; ++k) cp = (cp << 6) | (static_cast<unsigned char>(text[i + k]) & 63);
+    i += n;
+    if (cp >= 0x20 && !check(cp)) return false;
+  }
+  return true;
+}
 
 inline const char* tr(const char* english) {
-  if (!english || uiLanguage() == UiLanguage::English) return english;
-  for (const auto& t : kVietnamese)
-    if (std::strcmp(t.en, english) == 0) return t.vi;
-  return english;
+  if (!english || !uiTranslated()) return english;
+  auto& s = uiLanguageState();
+  const auto it = s.table.find(english);
+  if (it == s.table.end()) return english;
+  if (it->second.drawable < 0) it->second.drawable = uiTextDrawable(it->second.text, s.glyphCheck) ? 1 : 0;
+  return it->second.drawable ? it->second.text.c_str() : english;
 }
 inline std::string tr(const std::string& english) { return tr(english.c_str()); }
 

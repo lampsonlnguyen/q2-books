@@ -1,0 +1,174 @@
+# Polski
+Reading settings	Reading settings	Ustawienia czytania
+Font	Font	Czcionka
+Size	Size	Rozmiar
+Line spacing	Line spacing	Interlinia
+Margins	Margins	Marginesy
+Alignment	Alignment	Wyrównanie
+Hyphenation	Hyphenation	Dzielenie
+Book CSS	Book CSS	CSS książki
+Night mode	Night mode	Tryb nocny
+Add bookmark	Add bookmark	Dodaj zakładkę
+Bookmarks	Bookmarks	Zakładki
+Chapters	Chapters	Rozdziały
+Page links	Page links	Linki strony
+Return link	Return link	Link powrotny
+Select text	Select text	Zaznacz tekst
+Sync: upload	Sync: upload	Sync: wyślij
+Sync: download	Sync: download	Sync: pobierz
+Focus read	Focus read	Skupienie
+Auto turn	Auto turn	Auto-strona
+Go to %	Go to %	Idź do %
+About	About	O aplikacji
+Dictionaries	Dictionaries	Słowniki
+Export notes	Export notes	Eksport notatek
+On	On	Wł.
+Off	Off	Wył.
+Justify	Justify	Wyjustuj
+Book default	Book default	Jak w książce
+Save page	Save page	Zapisz stronę
+Saved pages	Saved pages	Zapisane strony
+Browse book	Browse book	Przeglądaj
+Footnotes / links	Footnotes / links	Przypisy / linki
+Go back	Go back	Wróć
+No previous link	No previous link	Brak linku
+Highlight / define	Highlight / define	Zaznacz/definiuj
+Save position	Save position	Wyślij pozycję
+Use remote position	Use remote position	Użyj pozycji
+To Clippings	To Clippings	Do Clippings
+installed	installed	zainstalowane
+Wheel: scroll  Center: select	Wheel: scroll  Center: select	Pokrętło: przewiń  Środek: wybierz
+Over 2 min idle needs Q2 Pod Smart Awake	Over 2 min idle needs Q2 Pod Smart Awake	Ponad 2 min bezczynności wymaga Smart Awake
+Reading settings not saved	Reading settings not saved	Ustawienia nie zapisane
+Bookmark saved	Bookmark saved	Zakładka zapisana
+Cannot save bookmark	Cannot save bookmark	Nie można zapisać zakładki
+No highlights or bookmarks yet	No highlights or bookmarks yet	Brak zaznaczeń i zakładek
+Cannot write Clippings	Cannot write Clippings	Nie można zapisać Clippings
+Selected font file missing	Selected font file missing	Brak wybranej czcionki
+Font file not installed	Font file not installed	Czcionka nie zainstalowana
+Go to percent	Go to percent	Idź do procentu
+Wheel: 1%   Keys: 10%	Wheel: 1%   Keys: 10%	Pokrętło: 1%   Klawisze: 10%
+Center: go   Back: cancel	Center: go   Back: cancel	Środek: idź   Wstecz: anuluj
+Any key: back	Any key: back	Dowolny klawisz: wstecz
+Center: on/off   Back: settings	Center: on/off   Back: settings	Środek: wł./wył.   Wstecz: ustawienia
+None installed.	None installed.	Brak zainstalowanych.
+Put StarDict folders in	Put StarDict folders in	Umieść foldery StarDict w
+Links and footnotes	Links and footnotes	Linki i przypisy
+No links on this page	No links on this page	Brak linków na stronie
+Wheel: pick  Center: go	Wheel: pick  Center: go	Pokrętło: wybierz  Środek: idź
+Back: close   Center: jump	Back: close   Center: jump	Wstecz: zamknij   Środek: skocz
+Back: selected text	Back: selected text	Wstecz: zaznaczony tekst
+Offline dictionary	Offline dictionary	Słownik offline
+No match in the dictionaries	No match in the dictionaries	Brak w słownikach
+Wheel: more  Back: selected text	Wheel: more  Back: selected text	Pokrętło: więcej  Wstecz: zaznaczony tekst
+Footnote	Footnote	Przypis
+No bookmarks yet	No bookmarks yet	Brak zakładek
+No chapters	No chapters	Brak rozdziałów
+Wheel: select  Center: go  Back: settings	Wheel: select  Center: go  Back: settings	Pokrętło: wybierz  Środek: idź  Wstecz: ustawienia
+Wheel: word   Center: start	Wheel: word   Center: start	Pokrętło: słowo   Środek: start
+Wheel: extend  Center: actions	Wheel: extend  Center: actions	Pokrętło: rozszerz  Środek: akcje
+Highlight	Highlight	Zaznacz
+Define	Define	Definiuj
+Remove	Remove	Usuń
+Cancel	Cancel	Anuluj
+Page text unavailable	Page text unavailable	Tekst strony niedostępny
+Home	Home	Start
+Current book	Current book	Bieżąca książka
+No books yet	No books yet	Brak książek
+Continue reading	Continue reading	Czytaj dalej
+Browse files	Browse files	Przeglądaj pliki
+Sort: 	Sort: 	Sortuj: 
+Title A-Z	Title A-Z	Tytuł A-Z
+Recently read	Recently read	Ostatnio czytane
+Recently added	Recently added	Ostatnio dodane
+Folders	Folders	Foldery
+Online	Online	Online
+Search | Online	Search | Online	Szukaj | Online
+OK: open   Back: exit	OK: open   Back: exit	OK: otwórz   Wstecz: wyjdź
+OK: open   Back: home	OK: open   Back: home	OK: otwórz   Wstecz: start
+OK: open   Back: up	OK: open   Back: up	OK: otwórz   Wstecz: wyżej
+OK: open/get   Back: prev	OK: open/get   Back: prev	OK: otwórz/pobierz   Wstecz: poprz.
+OK: press   Back: close	OK: press   Back: close	OK: naciśnij   Wstecz: zamknij
+No EPUB books found	No EPUB books found	Brak książek EPUB
+No matching books	No matching books	Brak pasujących książek
+No EPUBs or folders	No EPUBs or folders	Brak EPUB i folderów
+Back: leave catalog	Back: leave catalog	Wstecz: wyjdź z katalogu
+Search library	Search library	Szukaj w bibliotece
+Search catalog	Search catalog	Szukaj w katalogu
+Done: search	Done: search	Done: szukaj
+Wheel: key   Centre: press   Again: next letter	Wheel: key   Centre: press   Again: next letter	Pokrętło: klawisz   Środek: naciśnij   Znowu: następna litera
+Search this catalog	Search this catalog	Szukaj w tym katalogu
+More results	More results	Więcej wyników
+Loading catalog...	Loading catalog...	Wczytywanie katalogu...
+Downloading EPUB...	Downloading EPUB...	Pobieranie EPUB...
+EPUB downloaded to Books/Online	EPUB downloaded to Books/Online	EPUB pobrany do Books/Online
+Searching...	Searching...	Szukanie...
+No results	No results	Brak wyników
+Opening EPUB...	Opening EPUB...	Otwieranie EPUB...
+Cannot read this EPUB	Cannot read this EPUB	Nie można czytać EPUB
+Set .books/connected.conf	Set .books/connected.conf	Utwórz .books/connected.conf
+Type a search first	Type a search first	Najpierw wpisz szukane
+This catalog has no search	This catalog has no search	Katalog bez wyszukiwania
+Connected library	Connected library	Połączona biblioteka
+Catalog servers	Catalog servers	Serwery katalogów
+Choose a server to edit	Choose a server to edit	Wybierz serwer do edycji
+New server	New server	Nowy serwer
+Edit server	Edit server	Edytuj serwer
++ Add server	+ Add server	+ Dodaj serwer
+Edit a server	Edit a server	Edytuj serwer
+Name	Name	Nazwa
+User	User	Użytkownik
+Password	Password	Hasło
+Save	Save	Zapisz
+Delete server	Delete server	Usuń serwer
+Press again to delete	Press again to delete	Naciśnij ponownie, aby usunąć
+(the host name)	(the host name)	(nazwa hosta)
+(none)	(none)	(brak)
+Server name	Server name	Nazwa serwera
+Catalog URL	Catalog URL	URL katalogu
+User name	User name	Nazwa użytkownika
+Done: keep	Done: keep	Done: zachowaj
+Server saved	Server saved	Serwer zapisany
+Server deleted	Server deleted	Serwer usunięty
+Add a catalog server	Add a catalog server	Dodaj serwer katalogu
+Up to 8 servers	Up to 8 servers	Najwyżej 8 serwerów
+OK: edit   Back: cancel	OK: edit   Back: cancel	OK: edytuj   Wstecz: anuluj
+Type the catalog URL	Type the catalog URL	Wpisz URL katalogu
+URL must start http:// or https://	URL must start http:// or https://	URL musi zaczynać się od http:// lub https://
+Password needs a user	Password needs a user	Hasło wymaga użytkownika
+Value too long	Value too long	Za długa wartość
+Cannot save settings	Cannot save settings	Nie można zapisać
+Offline copy	Offline copy	Kopia offline
+Book details	Book details	Szczegóły książki
+No description	No description	Brak opisu
+On the card	On the card	Na karcie
+Already on the card	Already on the card	Już na karcie
+OK: download   Back: list	OK: download   Back: list	OK: pobierz   Wstecz: lista
+OK: show on card   Back: list	OK: show on card   Back: list	OK: pokaż   Wstecz: lista
+Loading...	Loading...	Wczytywanie...
+An ebook reader for Q2 Pod	An ebook reader for Q2 Pod	Czytnik e-booków dla Q2 Pod
+on the Shanling Q2.	on the Shanling Q2.	na Shanling Q2.
+A port of CrossPoint Reader:	A port of CrossPoint Reader:	Port CrossPoint Reader:
+its EPUB engine, layout and	its EPUB engine, layout and	silnik EPUB, układ i
+fonts, on the Q2's Linux.	fonts, on the Q2's Linux.	czcionki, na Linuksie Q2.
+MIT license; see LICENSE files	MIT license; see LICENSE files	Licencja MIT; zobacz pliki LICENSE
+Enable sync in connected.conf	Enable sync in connected.conf	Włącz sync w connected.conf
+Progress uploaded	Progress uploaded	Postęp wysłany
+No remote progress	No remote progress	Brak zdalnego postępu
+Remote position applied	Remote position applied	Zdalna pozycja użyta
+Remote ahead. Pull first.	Remote ahead. Pull first.	Serwer dalej. Najpierw pobierz.
+Remote is behind	Remote is behind	Serwer jest wcześniej
+Reading positions differ	Reading positions differ	Pozycje czytania się różnią
+This Q2: 	This Q2: 	Ten Q2: 
+Server: 	Server: 	Serwer: 
+Another device read further.	Another device read further.	Inne urządzenie czytało dalej.
+The server's position is older.	The server's position is older.	Pozycja na serwerze jest starsza.
+Go to the server's 	Go to the server's 	Idź do pozycji serwera 
+Upload this Q2's 	Upload this Q2's 	Wyślij pozycję Q2 
+Keep and upload 	Keep and upload 	Zachowaj i wyślij 
+%zu / %zu books	%zu / %zu books	%zu / %zu książek
+Books: %zu/%zu	Books: %zu/%zu	Książki: %zu/%zu
+Copy EPUBs to /Books	Copy EPUBs to /Books	Skopiuj EPUB do /Books
+Tap title to edit search	Tap title to edit search	Dotknij tytułu, aby szukać
+Untitled	Untitled	Bez tytułu
+Too many servers	Too many servers	Za dużo serwerów

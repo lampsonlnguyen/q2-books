@@ -1,0 +1,174 @@
+# Русский
+Reading settings	Reading settings	Настройки чтения
+Font	Font	Шрифт
+Size	Size	Размер
+Line spacing	Line spacing	Интервал
+Margins	Margins	Поля
+Alignment	Alignment	Выравнивание
+Hyphenation	Hyphenation	Переносы
+Book CSS	Book CSS	CSS книги
+Night mode	Night mode	Ночной режим
+Add bookmark	Add bookmark	Закладка +
+Bookmarks	Bookmarks	Закладки
+Chapters	Chapters	Главы
+Page links	Page links	Ссылки
+Return link	Return link	Ссылка назад
+Select text	Select text	Выделить текст
+Sync: upload	Sync: upload	Sync: отправ.
+Sync: download	Sync: download	Sync: получить
+Focus read	Focus read	Фокус-чтение
+Auto turn	Auto turn	Автолистание
+Go to %	Go to %	Перейти к %
+About	About	О программе
+Dictionaries	Dictionaries	Словари
+Export notes	Export notes	Экспорт
+On	On	Вкл
+Off	Off	Выкл
+Justify	Justify	По ширине
+Book default	Book default	Как в книге
+Save page	Save page	Сохранить стр.
+Saved pages	Saved pages	Сохранённые
+Browse book	Browse book	Обзор книги
+Footnotes / links	Footnotes / links	Сноски/ссылки
+Go back	Go back	Назад
+No previous link	No previous link	Нет ссылки
+Highlight / define	Highlight / define	Выделить/опр.
+Save position	Save position	Отправить
+Use remote position	Use remote position	Взять позицию
+To Clippings	To Clippings	В Clippings
+installed	installed	установлено
+Wheel: scroll  Center: select	Wheel: scroll  Center: select	Колесо: прокрутка  Центр: выбор
+Over 2 min idle needs Q2 Pod Smart Awake	Over 2 min idle needs Q2 Pod Smart Awake	Больше 2 мин простоя нужен Smart Awake
+Reading settings not saved	Reading settings not saved	Настройки не сохранены
+Bookmark saved	Bookmark saved	Закладка сохранена
+Cannot save bookmark	Cannot save bookmark	Не удалось сохранить закладку
+No highlights or bookmarks yet	No highlights or bookmarks yet	Пока нет выделений и закладок
+Cannot write Clippings	Cannot write Clippings	Не удалось записать Clippings
+Selected font file missing	Selected font file missing	Выбранный шрифт не найден
+Font file not installed	Font file not installed	Шрифт не установлен
+Go to percent	Go to percent	Перейти к проценту
+Wheel: 1%   Keys: 10%	Wheel: 1%   Keys: 10%	Колесо: 1%   Кнопки: 10%
+Center: go   Back: cancel	Center: go   Back: cancel	Центр: перейти   Назад: отмена
+Any key: back	Any key: back	Любая кнопка: назад
+Center: on/off   Back: settings	Center: on/off   Back: settings	Центр: вкл/выкл   Назад: настройки
+None installed.	None installed.	Не установлены.
+Put StarDict folders in	Put StarDict folders in	Положите папки StarDict в
+Links and footnotes	Links and footnotes	Ссылки и сноски
+No links on this page	No links on this page	На странице нет ссылок
+Wheel: pick  Center: go	Wheel: pick  Center: go	Колесо: выбор  Центр: перейти
+Back: close   Center: jump	Back: close   Center: jump	Назад: закрыть   Центр: перейти
+Back: selected text	Back: selected text	Назад: выделенный текст
+Offline dictionary	Offline dictionary	Офлайн-словарь
+No match in the dictionaries	No match in the dictionaries	В словарях не найдено
+Wheel: more  Back: selected text	Wheel: more  Back: selected text	Колесо: дальше  Назад: выделенный текст
+Footnote	Footnote	Сноска
+No bookmarks yet	No bookmarks yet	Закладок пока нет
+No chapters	No chapters	Нет глав
+Wheel: select  Center: go  Back: settings	Wheel: select  Center: go  Back: settings	Колесо: выбор  Центр: перейти  Назад: настройки
+Wheel: word   Center: start	Wheel: word   Center: start	Колесо: слово   Центр: начать
+Wheel: extend  Center: actions	Wheel: extend  Center: actions	Колесо: расширить  Центр: действия
+Highlight	Highlight	Выделить
+Define	Define	Определить
+Remove	Remove	Удалить
+Cancel	Cancel	Отмена
+Page text unavailable	Page text unavailable	Текст страницы недоступен
+Home	Home	Главная
+Current book	Current book	Текущая книга
+No books yet	No books yet	Книг пока нет
+Continue reading	Continue reading	Продолжить чтение
+Browse files	Browse files	Обзор файлов
+Sort: 	Sort: 	Сортировка: 
+Title A-Z	Title A-Z	Название А-Я
+Recently read	Recently read	Недавно прочитанные
+Recently added	Recently added	Недавно добавленные
+Folders	Folders	Папки
+Online	Online	Онлайн
+Search | Online	Search | Online	Поиск | Онлайн
+OK: open   Back: exit	OK: open   Back: exit	OK: открыть   Назад: выход
+OK: open   Back: home	OK: open   Back: home	OK: открыть   Назад: главная
+OK: open   Back: up	OK: open   Back: up	OK: открыть   Назад: вверх
+OK: open/get   Back: prev	OK: open/get   Back: prev	OK: открыть/скачать   Назад: пред.
+OK: press   Back: close	OK: press   Back: close	OK: нажать   Назад: закрыть
+No EPUB books found	No EPUB books found	Книги EPUB не найдены
+No matching books	No matching books	Нет подходящих книг
+No EPUBs or folders	No EPUBs or folders	Нет EPUB и папок
+Back: leave catalog	Back: leave catalog	Назад: выйти из каталога
+Search library	Search library	Поиск в библиотеке
+Search catalog	Search catalog	Поиск в каталоге
+Done: search	Done: search	Done: искать
+Wheel: key   Centre: press   Again: next letter	Wheel: key   Centre: press   Again: next letter	Колесо: клавиша   Центр: нажать   Снова: след. буква
+Search this catalog	Search this catalog	Искать в этом каталоге
+More results	More results	Ещё результаты
+Loading catalog...	Loading catalog...	Загрузка каталога...
+Downloading EPUB...	Downloading EPUB...	Скачивание EPUB...
+EPUB downloaded to Books/Online	EPUB downloaded to Books/Online	EPUB скачан в Books/Online
+Searching...	Searching...	Поиск...
+No results	No results	Ничего не найдено
+Opening EPUB...	Opening EPUB...	Открытие EPUB...
+Cannot read this EPUB	Cannot read this EPUB	Не удаётся прочитать EPUB
+Set .books/connected.conf	Set .books/connected.conf	Создайте .books/connected.conf
+Type a search first	Type a search first	Сначала введите запрос
+This catalog has no search	This catalog has no search	В каталоге нет поиска
+Connected library	Connected library	Подключённая библиотека
+Catalog servers	Catalog servers	Серверы каталогов
+Choose a server to edit	Choose a server to edit	Выберите сервер
+New server	New server	Новый сервер
+Edit server	Edit server	Изменить сервер
++ Add server	+ Add server	+ Добавить сервер
+Edit a server	Edit a server	Изменить сервер
+Name	Name	Имя
+User	User	Пользователь
+Password	Password	Пароль
+Save	Save	Сохранить
+Delete server	Delete server	Удалить сервер
+Press again to delete	Press again to delete	Нажмите ещё раз для удаления
+(the host name)	(the host name)	(имя хоста)
+(none)	(none)	(нет)
+Server name	Server name	Имя сервера
+Catalog URL	Catalog URL	URL каталога
+User name	User name	Имя пользователя
+Done: keep	Done: keep	Done: оставить
+Server saved	Server saved	Сервер сохранён
+Server deleted	Server deleted	Сервер удалён
+Add a catalog server	Add a catalog server	Добавьте сервер каталога
+Up to 8 servers	Up to 8 servers	Не больше 8 серверов
+OK: edit   Back: cancel	OK: edit   Back: cancel	OK: изменить   Назад: отмена
+Type the catalog URL	Type the catalog URL	Введите URL каталога
+URL must start http:// or https://	URL must start http:// or https://	URL должен начинаться с http:// или https://
+Password needs a user	Password needs a user	Для пароля нужен пользователь
+Value too long	Value too long	Слишком длинно
+Cannot save settings	Cannot save settings	Не удалось сохранить
+Offline copy	Offline copy	Офлайн-копия
+Book details	Book details	О книге
+No description	No description	Нет описания
+On the card	On the card	На карте
+Already on the card	Already on the card	Уже на карте
+OK: download   Back: list	OK: download   Back: list	OK: скачать   Назад: список
+OK: show on card   Back: list	OK: show on card   Back: list	OK: показать   Назад: список
+Loading...	Loading...	Загрузка...
+An ebook reader for Q2 Pod	An ebook reader for Q2 Pod	Читалка книг для Q2 Pod
+on the Shanling Q2.	on the Shanling Q2.	на Shanling Q2.
+A port of CrossPoint Reader:	A port of CrossPoint Reader:	Порт CrossPoint Reader:
+its EPUB engine, layout and	its EPUB engine, layout and	его движок EPUB, вёрстка и
+fonts, on the Q2's Linux.	fonts, on the Q2's Linux.	шрифты, на Linux у Q2.
+MIT license; see LICENSE files	MIT license; see LICENSE files	Лицензия MIT; см. файлы LICENSE
+Enable sync in connected.conf	Enable sync in connected.conf	Включите sync в connected.conf
+Progress uploaded	Progress uploaded	Прогресс отправлен
+No remote progress	No remote progress	На сервере нет прогресса
+Remote position applied	Remote position applied	Позиция с сервера применена
+Remote ahead. Pull first.	Remote ahead. Pull first.	Сервер впереди. Сначала получите.
+Remote is behind	Remote is behind	Сервер отстаёт
+Reading positions differ	Reading positions differ	Позиции чтения различаются
+This Q2: 	This Q2: 	Этот Q2: 
+Server: 	Server: 	Сервер: 
+Another device read further.	Another device read further.	Другое устройство прочитало дальше.
+The server's position is older.	The server's position is older.	Позиция на сервере старее.
+Go to the server's 	Go to the server's 	К позиции сервера 
+Upload this Q2's 	Upload this Q2's 	Отправить позицию Q2 
+Keep and upload 	Keep and upload 	Оставить и отправить 
+%zu / %zu books	%zu / %zu books	%zu / %zu книг
+Books: %zu/%zu	Books: %zu/%zu	Книги: %zu/%zu
+Copy EPUBs to /Books	Copy EPUBs to /Books	Скопируйте EPUB в /Books
+Tap title to edit search	Tap title to edit search	Нажмите на заголовок для поиска
+Untitled	Untitled	Без названия
+Too many servers	Too many servers	Слишком много серверов

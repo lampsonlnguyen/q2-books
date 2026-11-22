@@ -403,7 +403,7 @@ for family in ("sans", "serif"):
     previous = None
     for size in range(8, 13):
         data = (work / f"{family}-{size}.pgm").read_bytes()
-        assert data.startswith(b"P5\\n375 320\\n255\\n") and len(data)==120015
+        assert data.startswith(b"P5\n375 320\n255\n") and len(data)==120015
         assert data[15:].count(0)>50, (family,size)
         assert previous!=data, f"Size {size} did not change raster for {family}"
         previous = data

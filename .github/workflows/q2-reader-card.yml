@@ -1,4 +1,4 @@
-name: CrossPod Q2 reader hardware alpha
+name: CrossPod Q2 v0.8.0 beta build and release
 on:
   workflow_dispatch:
   push:
@@ -19,8 +19,27 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 jobs:
+  host-tests:
+    name: Host GCC and Clang tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install EPUB dependencies
+        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev zlib1g-dev libjpeg-dev
+      - name: Configure
+        run: cmake -S crosspoint-core -B build/core-host -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - name: Build
+        run: cmake --build build/core-host --parallel 2
+      - name: Run full host regression suite
+        run: ctest --test-dir build/core-host --output-on-failure
+
   build-q2-reader:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -56,3 +75,47 @@ jobs:
             build/q2-device/reader/CMakeFiles/CMakeOutput.log
           if-no-files-found: ignore
           retention-days: 7
+  publish-v0-8-beta:
+    name: Publish v0.8.0 beta from verified MIPS package
+    needs: [host-tests, build-q2-reader]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: crosspod-q2-reader-alpha
+          path: dist
+      - name: Verify package and prepare versioned beta artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/crosspod-q2-reader-alpha.zip
+          (cd dist && sha256sum -c crosspod-q2-reader-alpha.zip.sha256)
+          unzip -t dist/crosspod-q2-reader-alpha.zip
+          unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/crosspod-engine'
+          unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/q2-crosspod'
+          cp dist/crosspod-q2-reader-alpha.zip dist/crosspod-q2-v0.8.0-beta.zip
+          (cd dist && sha256sum crosspod-q2-v0.8.0-beta.zip > crosspod-q2-v0.8.0-beta.zip.sha256)
+          sha256sum -c dist/crosspod-q2-v0.8.0-beta.zip.sha256
+      - name: Publish immutable beta tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TARGET_COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.8.0-beta >/dev/null 2>&1; then
+            echo "::error::v0.8.0-beta already exists; refusing to overwrite a published beta"
+            exit 1
+          fi
+          gh release create v0.8.0-beta \
+            dist/crosspod-q2-v0.8.0-beta.zip \
+            dist/crosspod-q2-v0.8.0-beta.zip.sha256 \
+            --target "$TARGET_COMMIT" \
+            --title "CrossPod v0.8.0 beta (Shanling Q2)" \
+            --prerelease \
+            --notes "Q2 MIPS/Linux CrossPoint EPUB reader beta. Built from commit $TARGET_COMMIT after GCC/Clang CTest and Q2 MIPS/QEMU checks. Extract the ZIP to the SD-card root; do not flash this as firmware. Includes EPUB reader, multilingual fonts, OPDS/Kavita trusted-LAN HTTP and KOReader-compatible manual sync, wheel sensitivity integration, and power-safe app exit. Physical Q2 suspend, USB/SD, battery and touchscreen validation remains pending. HTTPS is NOT supported; never expose credentials over an untrusted network."

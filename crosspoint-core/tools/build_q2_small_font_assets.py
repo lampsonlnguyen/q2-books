@@ -79,7 +79,7 @@ def main() -> int:
                 if not source.is_file():
                     raise RuntimeError(f"Missing freshly rasterized font: {source}")
                 data = source.read_bytes()
-                if len(data) < 10_000 or data[:8] != b"CPFONT\\x00\\x00":
+                if len(data) < 10_000 or data[:8] != b"CPFONT\x00\x00":
                     raise RuntimeError(f"Invalid CPFONT v4 generated: {source}")
                 dest = target / f"{slug}-{size}.cpfont"
                 shutil.copyfile(source, dest)
@@ -88,7 +88,7 @@ def main() -> int:
                 print(f"Generated CrossPoint {name} {size}pt: {len(data)} bytes")
 
         (target / "crosspod-fonts-8-11.sha256").write_text(
-            "\\n".join(checksums) + "\\n")
+            "\n".join(checksums) + "\n")
         shutil.copyfile(built / "LICENSE", target / "CrossPoint-font-licenses.txt")
         # Validate these sizes exist for *all* 14 scripts and both primary
         # families, or fail the package rather than silently drop glyphs.

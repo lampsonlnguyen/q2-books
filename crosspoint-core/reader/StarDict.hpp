@@ -536,6 +536,15 @@ class Dictionary {
     }
     if(!sidecar.empty()) {
       ::mkdir(cacheDir.c_str(),0755);
+      // A build killed before its rename leaves "<sidecar>.part<pid>".
+      if(DIR* d=opendir(cacheDir.c_str())) {
+        const std::string prefix=sidecar.substr(sidecar.find_last_of('/')+1)+".part";
+        std::vector<std::string> stale;
+        for(dirent* e;(e=readdir(d))!=nullptr;)
+          if(std::string_view(e->d_name).rfind(prefix,0)==0)stale.push_back(cacheDir+"/"+e->d_name);
+        closedir(d);
+        for(const auto& p:stale)std::remove(p.c_str());
+      }
       const std::string tmp=sidecar+".part"+std::to_string(static_cast<long>(::getpid()));
       if(FILE* f=std::fopen(tmp.c_str(),"wb")) {
         const uint64_t entries=samples_.entries,count=samples_.pos.size();

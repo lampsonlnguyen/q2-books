@@ -16,19 +16,37 @@ struct PhysicalEvent {
 };
 struct MappedEvent { LogicalAction action{LogicalAction::None};int x{},y{}; };
 class Q2Controls {
-    int wheel_accumulator_=0;
+    // Use 64-bit accumulation so extreme wheel deltas cannot overflow.
+    int64_t wheel_accumulator_=0;
+    int wheel_threshold_=35;
     bool confirm_down_=false;
 public:
+    // Q2 sensitivity setting can supply an alternate wheel threshold.
+    // Keep the historic 35-count default unless explicitly configured.
+    explicit Q2Controls(int wheel_threshold=35)
+        : wheel_threshold_(wheel_threshold>0 && wheel_threshold<=2000 ? wheel_threshold : 35) {}
+
+    void setWheelThreshold(int threshold) {
+        if(threshold>0 && threshold<=2000) {
+            wheel_threshold_=threshold;
+            wheel_accumulator_=0; // discard partial detents at sensitivity changes
+        }
+    }
+
     MappedEvent translate(const PhysicalEvent& event) {
         using K=PhysicalKind;
         using A=LogicalAction;
         switch(event.kind) {
         case K::WheelStep:
             // Q2 wheel turns in 200 raw increments/revolution.
-            // Do not interpret wheel as repeated keypresses until threshold reached.
-            wheel_accumulator_ -= event.value;
-            if(wheel_accumulator_>=35){wheel_accumulator_-=35;return {A::Next};}
-            if(wheel_accumulator_<=-35){wheel_accumulator_+=35;return {A::Previous};}
+            // Preserve remaining raw motion between events.
+            wheel_accumulator_ -= static_cast<int64_t>(event.value);
+            if(wheel_accumulator_>=wheel_threshold_){
+                wheel_accumulator_-=wheel_threshold_;return {A::Next};
+            }
+            if(wheel_accumulator_<=-wheel_threshold_){
+                wheel_accumulator_+=wheel_threshold_;return {A::Previous};
+            }
             return {};
         case K::KeyDown:
             if(event.value==218){

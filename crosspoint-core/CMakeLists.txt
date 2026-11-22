@@ -103,6 +103,11 @@ add_dependencies(crosspod_stardict_tests stardict_fixture)
 add_test(NAME crosspod_stardict_lookup_and_fuzz
     COMMAND crosspod_stardict_tests "${STARDICT_FIXTURE_DIR}")
 
+add_executable(crosspod_t9_keypad_tests tests/t9_keypad_test.cpp)
+target_include_directories(crosspod_t9_keypad_tests PRIVATE reader)
+target_compile_options(crosspod_t9_keypad_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_t9_search_keypad COMMAND crosspod_t9_keypad_tests)
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 

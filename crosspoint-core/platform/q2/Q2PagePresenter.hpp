@@ -29,6 +29,15 @@ class Q2PagePresenter {
     return fb_.presentARGB(pixels_.get(), Q2Display::Width * Q2Display::Height);
   }
 
+  bool presentThemed(const uint8_t* mono, size_t bytes, uint32_t ink, uint32_t paper,
+                     const Q2Display::Zone* zones, size_t count) {
+    if (!fb_.isOpen() || !pixels_ ||
+        !Q2Display::presentThemed(mono, bytes, pixels_.get(), Q2Display::Width * Q2Display::Height,
+                                  ink, paper, zones, count))
+      return false;
+    return fb_.presentARGB(pixels_.get(), Q2Display::Width * Q2Display::Height);
+  }
+
   bool presentARGB(const uint32_t* rgba, size_t pixels) {
     return fb_.isOpen() && fb_.presentARGB(rgba, pixels);
   }

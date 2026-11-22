@@ -110,6 +110,11 @@ add_dependencies(books_dictionary_lookup_tests stardict_fixture)
 add_test(NAME books_dictionary_spellings_choices_vocabulary
     COMMAND books_dictionary_lookup_tests "${STARDICT_FIXTURE_DIR}")
 
+add_executable(books_q2_theme_tests tests/q2_theme_test.cpp)
+target_include_directories(books_q2_theme_tests PRIVATE reader platform/posix platform/q2)
+target_compile_options(books_q2_theme_tests PRIVATE -UNDEBUG)
+add_test(NAME books_q2pod_theme_colours COMMAND books_q2_theme_tests)
+
 add_executable(books_ui_language_tests tests/ui_language_test.cpp)
 target_include_directories(books_ui_language_tests PRIVATE reader)
 target_compile_options(books_ui_language_tests PRIVATE -UNDEBUG)

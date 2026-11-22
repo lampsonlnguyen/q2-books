@@ -1336,6 +1336,7 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   // annotation, so the hyphenator sees the whole word and every legal break is reachable.
   // Hangul breaks come first so they win a tie against a hyphenated break at the same width.
   auto breakInfos = hangulLineEndBreaks(word);
+  const size_t hangulCount = breakInfos.size();
   const auto hyphenBreaks = Hyphenator::breakOffsets(word, allowFallbackBreaks);
   breakInfos.insert(breakInfos.end(), hyphenBreaks.begin(), hyphenBreaks.end());
   if (breakInfos.empty()) {
@@ -1346,9 +1347,26 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   int chosenWidth = -1;
   bool chosenNeedsHyphen = true;
 
+  // CrossPod (performance only; the chosen break is unchanged): the candidates are two lists
+  // (Hangul, then hyphenation), each normally in ascending offsets, and a longer prefix is
+  // never narrower. Once a prefix minus any inserted hyphen (and a kerning margin) is wider
+  // than the line, no later candidate of that list can fit, so the rest of it is skipped
+  // instead of measured: measuring every fallback break of an overlong word was quadratic
+  // (seconds for a long URL on a Q2). Only a list whose offsets ascend is cut short.
+  const auto ascending = [&](const size_t begin, const size_t end) {
+    for (size_t i = begin + 1; i < end; ++i)
+      if (breakInfos[i].byteOffset <= breakInfos[i - 1].byteOffset) return false;
+    return true;
+  };
+  const bool listAscending[2] = {ascending(0, hangulCount), ascending(hangulCount, breakInfos.size())};
+  const int hyphenMargin = 2 * measureFocusWordWidth(renderer, wordFontId(wordIndex, fontId), "-", style, 0,
+                                                     blockStyle.characterSpacing, wordSpacingPercent, false) +
+                           4;
+
   // Iterate over each legal breakpoint and retain the widest prefix that still fits.
-  for (const auto& info : breakInfos) {
+  for (size_t index = 0; index < breakInfos.size(); ++index) {
     if (crosspodlayout::shouldAbort()) return false;  // CrossPod: exiting (see ParsedText.h)
+    const auto& info = breakInfos[index];
     const size_t offset = info.byteOffset;
     if (offset == 0 || offset >= word.size()) {
       continue;
@@ -1358,6 +1376,12 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
     const int prefixWidth = measureFocusWordWidth(renderer, wordFontId(wordIndex, fontId), word.substr(0, offset),
                                                   style, focusBoundaryBefore(focusBoundary, offset),
                                                   blockStyle.characterSpacing, wordSpacingPercent, needsHyphen);
+    const bool inHangul = index < hangulCount;
+    if (prefixWidth - hyphenMargin > availableWidth && listAscending[inHangul ? 0 : 1]) {
+      if (!inHangul) break;          // the rest of the hyphenation list is wider still
+      index = hangulCount - 1;       // the rest of the Hangul list: go on to hyphenation
+      continue;
+    }
     if (prefixWidth > availableWidth || prefixWidth <= chosenWidth) {
       continue;  // Skip if too wide or not an improvement
     }

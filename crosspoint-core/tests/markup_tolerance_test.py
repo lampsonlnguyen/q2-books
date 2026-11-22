@@ -77,7 +77,21 @@ with tempfile.TemporaryDirectory(prefix='crosspod-markup-') as tmp:
         w, h, px = render(book, state)
         assert ink_rows(w, h, px), f'{name}: entity chapter drew nothing'
     if part == 'entities':
-        print('HTML entities: EPUB3, no-DOCTYPE and XHTML 1.1 chapters open and draw')
+        # An entity bomb is refused promptly: expat's guard used to start after 8 MiB of
+        # expansion, which then laid out as one word for minutes (133 s on a PC).
+        import time
+        bomb = tmp / 'bomb.epub'
+        laughs = ''.join(f'<!ENTITY {chr(98 + i)} "{("&" + chr(97 + i) + ";") * 10}">' for i in range(9))
+        epub(bomb, f'<!DOCTYPE html [<!ENTITY a "aaaaaaaaaa">{laughs}]>\n', '<p>&j;</p>')
+        state = tmp / 'state-bomb'
+        state.mkdir()
+        started = time.monotonic()
+        result = subprocess.run([reader, '--validate', str(bomb)], capture_output=True, text=True,
+                                timeout=120, env=dict(os.environ, CROSSPOD_STATE_DIR=str(state)))
+        took = time.monotonic() - started
+        assert took < 10, f'entity bomb took {took:.1f}s to refuse'
+        print('HTML entities: EPUB3, no-DOCTYPE and XHTML 1.1 chapters open and draw; '
+              f'an entity bomb is refused in {took:.2f}s')
         sys.exit(0)
 
     fonts = os.environ.get('CROSSPOD_TEST_FONTS')

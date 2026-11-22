@@ -99,7 +99,7 @@ jobs:
           unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/q2-crosspod'
           cp dist/crosspod-q2-reader-alpha.zip dist/crosspod-q2-v0.8.0-beta.zip
           (cd dist && sha256sum crosspod-q2-v0.8.0-beta.zip > crosspod-q2-v0.8.0-beta.zip.sha256)
-          sha256sum -c dist/crosspod-q2-v0.8.0-beta.zip.sha256
+          (cd dist && sha256sum -c crosspod-q2-v0.8.0-beta.zip.sha256)
       - name: Publish immutable beta tag and release
         env:
           GH_TOKEN: ${{ github.token }}

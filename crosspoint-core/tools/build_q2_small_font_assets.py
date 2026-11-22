@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate real CrossPoint CPFONT v4 glyphs at 8/9/10/11 pt for Shanling Q2.
+"""Generate real CrossPoint CPFONT v4 glyphs at 10/11 pt for Shanling Q2.
 
 The 12 pt assets remain pinned to official CrossPoint release SHA-256 hashes
 in fetch_q2_fonts.py. Smaller fonts must be *rasterized at their real point
@@ -23,7 +23,7 @@ from crosspoint_script_fonts import SCRIPT_FONTS
 # definitions are used; no ESP32 firmware is compiled for the Q2.
 CROSSPOINT_REF = "42d58daaabcf469a2e5e1ba871714fb9dcf51d29"
 CROSSPOINT_URL = "https://github.com/crosspoint-reader/crosspoint-reader.git"
-SIZES = (8, 9, 10, 11)
+SIZES = (10, 11)
 FAMILIES = {
     "NotoSansExtended": "sans",
     "NotoSerifExtended": "serif",
@@ -63,7 +63,7 @@ def main() -> int:
             source["sizes"] = list(SIZES)
             families.append(source)
 
-        subset = workspace / "crosspod-sizes-8-11.yaml"
+        subset = workspace / "crosspod-sizes-10-11.yaml"
         subset.write_text(yaml.safe_dump({"families": families}, sort_keys=False))
         built = workspace / "fonts"
         # CJK font rasterization is much heavier than Latin. Bound parallelism
@@ -87,7 +87,7 @@ def main() -> int:
                 checksums.append(f"{digest}  {dest.name}")
                 print(f"Generated CrossPoint {name} {size}pt: {len(data)} bytes")
 
-        (target / "crosspod-fonts-8-11.sha256").write_text(
+        (target / "crosspod-fonts-10-11.sha256").write_text(
             "\n".join(checksums) + "\n")
         shutil.copyfile(built / "LICENSE", target / "CrossPoint-font-licenses.txt")
         # Validate these sizes exist for *all* 14 scripts and both primary

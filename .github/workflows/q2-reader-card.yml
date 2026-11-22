@@ -1,6 +1,14 @@
-name: CrossPod Q2 v0.8.0 beta build and release
+name: CrossPod Q2 card build and release
 on:
+  # Every push to main builds and tests the card ZIP. A release is published
+  # only by a manual run on main that names its tag; the tag must be new and
+  # docs/release-notes/<tag>.md must exist.
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish this tag from the verified build (e.g. v0.9.0-beta); leave empty to only build"
+        required: false
+        default: ""
   push:
     branches: [main]
     paths:
@@ -78,10 +86,10 @@ jobs:
             build/q2-device/reader/CMakeFiles/CMakeOutput.log
           if-no-files-found: ignore
           retention-days: 7
-  publish-v0-8-beta:
-    name: Publish v0.8.0 beta from verified MIPS package
+  publish-release:
+    name: Publish ${{ inputs.release_tag }} from the verified MIPS package
     needs: [host-tests, build-q2-reader]
-    if: github.ref == 'refs/heads/main' && github.sha == '8f82f195c462de770a5676d52e4688cf93deccdc'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_tag != ''
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -91,10 +99,14 @@ jobs:
         with:
           name: crosspod-q2-reader-alpha
           path: dist
-      - name: Verify package and prepare versioned beta artifacts
+      - name: Verify package and prepare versioned artifacts
         shell: bash
+        env:
+          TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]] || { echo "::error::bad tag $TAG"; exit 1; }
+          test -s "docs/release-notes/$TAG.md" || { echo "::error::docs/release-notes/$TAG.md is missing"; exit 1; }
           test -s dist/crosspod-q2-reader-alpha.zip
           expected=$(awk 'NR==1 {print $1}' dist/crosspod-q2-reader-alpha.zip.sha256)
           actual=$(sha256sum dist/crosspod-q2-reader-alpha.zip | cut -d ' ' -f1)
@@ -102,25 +114,26 @@ jobs:
           unzip -t dist/crosspod-q2-reader-alpha.zip
           unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/crosspod-engine'
           unzip -Z1 dist/crosspod-q2-reader-alpha.zip | grep -Fxq '.crosspod/q2-crosspod'
-          cp dist/crosspod-q2-reader-alpha.zip dist/crosspod-q2-v0.8.0-beta.zip
-          (cd dist && sha256sum crosspod-q2-v0.8.0-beta.zip > crosspod-q2-v0.8.0-beta.zip.sha256)
-          (cd dist && sha256sum -c crosspod-q2-v0.8.0-beta.zip.sha256)
-      - name: Publish immutable beta tag and release
+          cp dist/crosspod-q2-reader-alpha.zip "dist/crosspod-q2-$TAG.zip"
+          (cd dist && sha256sum "crosspod-q2-$TAG.zip" > "crosspod-q2-$TAG.zip.sha256")
+          (cd dist && sha256sum -c "crosspod-q2-$TAG.zip.sha256")
+      - name: Publish immutable tag and prerelease
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TARGET_COMMIT: ${{ github.sha }}
+          TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view v0.8.0-beta >/dev/null 2>&1; then
-            echo "::error::v0.8.0-beta already exists; refusing to overwrite a published beta"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG already exists; refusing to overwrite a published release"
             exit 1
           fi
-          gh release create v0.8.0-beta \
-            dist/crosspod-q2-v0.8.0-beta.zip \
-            dist/crosspod-q2-v0.8.0-beta.zip.sha256 \
+          gh release create "$TAG" \
+            "dist/crosspod-q2-$TAG.zip" \
+            "dist/crosspod-q2-$TAG.zip.sha256" \
             --target "$TARGET_COMMIT" \
-            --title "CrossPod v0.8.0 beta (Shanling Q2)" \
+            --title "CrossPod $TAG (Shanling Q2)" \
             --prerelease \
-            --notes "Q2 MIPS/Linux CrossPoint EPUB reader beta. Built from commit $TARGET_COMMIT after GCC/Clang CTest and Q2 MIPS/QEMU checks. Extract the ZIP to the SD-card root; do not flash this as firmware. Includes EPUB reader, multilingual fonts, OPDS/Kavita trusted-LAN HTTP and KOReader-compatible manual sync, wheel sensitivity integration, and power-safe app exit. Physical Q2 suspend, USB/SD, battery and touchscreen validation remains pending. HTTPS is NOT supported; never expose credentials over an untrusted network."
+            --notes-file "docs/release-notes/$TAG.md"

@@ -688,6 +688,12 @@ add_test(NAME crosspod_reader_png_and_jpeg
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/epub_png_jpeg_test.py"
       "$<TARGET_FILE:crosspod-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/jpeg-png-page.pgm")
+# These open the same illustrated EPUB, and so the same Section cache, in the
+# default state folder: run them one at a time (ctest -j raced on the cache).
+set_tests_properties(crosspod_real_nav_ncx_toc crosspod_original_zip_illustrated_epub
+    crosspod_reader_relative_css_and_inline_image crosspod_reader_bounded_xhtml_streaming
+    crosspod_reader_renders_epub_png crosspod_reader_png_and_jpeg
+    PROPERTIES RESOURCE_LOCK illustrated_epub_cache)
 
 # Chinese/Japanese EPUB. Q2 hardware build renders this through the original
 # CrossPoint Section and verifies CJK glyph fallback is actually used.

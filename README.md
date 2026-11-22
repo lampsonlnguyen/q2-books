@@ -7,12 +7,12 @@ EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books
 differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
-**Status:** 1.0.0 is the current release, the first under the name Books
+**Status:** 1.1.0 is the current release (1.0.0 was the first under the name Books)
 (earlier releases were v0.3–v0.9 as CrossPod). It passes the host test suites
 (GCC, Clang, ASan), EPUB fuzzing and the Q2 MIPS/QEMU build, but it has **not
 yet been validated on a physical Q2**: see M1 below.
 User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
-[release notes](docs/release-notes/v1.0.0.md).
+[release notes](docs/release-notes/v1.1.0.md).
 
 ## Milestones
 

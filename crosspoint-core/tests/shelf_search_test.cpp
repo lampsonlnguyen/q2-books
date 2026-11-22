@@ -27,13 +27,15 @@ int main() {
   put(b+"/Tie\u0302\u0301ng Vie\u0323t.epub");
   put(c+"/FOUR.epub");
   put(root+"/.hidden.epub");
-  put(root+"/fifth.txt");
+  put(root+"/fifth.txt");   // RD-04: plain text is a book too
+  put(root+"/notes.pdf");   // other types are not
+  put(root+"/sixth.txt.bak");
   assert(symlink(c.c_str(),(root+"/linked").c_str())==0);
   const auto books=crosspod::scanCardBooks(root);
-  assert(books.size()==4);
+  assert(books.size()==5);
   const auto limited=crosspod::scanCardBooks(
       root,crosspod::ShelfScanLimits{512,256,1});
-  assert(limited.size()==2);
+  assert(limited.size()==3);
   const auto capped=crosspod::scanCardBooks(
       root,crosspod::ShelfScanLimits{1,256,5});
   assert(capped.size()==1);

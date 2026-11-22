@@ -81,6 +81,12 @@ target_include_directories(crosspod_reader_state_tests PRIVATE reader)
 target_compile_options(crosspod_reader_state_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_reader_state_and_bookmarks COMMAND crosspod_reader_state_tests)
 
+add_executable(crosspod_txt_package_tests tests/txt_package_test.cpp)
+target_include_directories(crosspod_txt_package_tests PRIVATE reader)
+target_link_libraries(crosspod_txt_package_tests PRIVATE crosspoint_txt crosspoint_zip)
+target_compile_options(crosspod_txt_package_tests PRIVATE -UNDEBUG)
+add_test(NAME crosspod_txt_epub_package COMMAND crosspod_txt_package_tests)
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 
@@ -499,7 +505,7 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspod_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
+    crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
@@ -703,6 +709,10 @@ add_custom_command(OUTPUT "${LONG_EPUB_FIXTURE}"
     VERBATIM)
 add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
 add_dependencies(crosspod-reader long_epub_fixture)
+add_test(NAME crosspod_reader_txt_and_go_to_percent
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/txt_progress_test.py"
+      "$<TARGET_FILE:crosspod-reader>" "${LONG_EPUB_FIXTURE}")
 add_test(NAME crosspod_reader_incremental_large_chapter
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/incremental_reader_test.py"

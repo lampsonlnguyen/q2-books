@@ -25,6 +25,7 @@
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
+#include "TxtPackage.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -93,6 +94,9 @@ bool installExitHandlers() {
 
 using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
+// Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
+// reading (16), Auto turn (17) and Go to percent (18).
+constexpr int kTypographyItems = 19;
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const crosspod::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -544,6 +548,9 @@ struct RenderPage {
 };
 class Reader {
   std::string bookPath_;
+  // The ZIP the engine opens: the book itself, or for a .txt its cached EPUB
+  // package (TxtPackage.hpp). bookPath_ stays the book's identity.
+  std::string packagePath_;
   ZipFile archive_;
   std::unique_ptr<TempCache> temporary_;
   std::unique_ptr<BookMetadataCache> legacyMetadata_;
@@ -597,6 +604,23 @@ class Reader {
   ReaderRenderSpec upstreamSpec() const {
     return crosspod::makeReaderRenderSpec(preferences_,upstreamFontId_,
         static_cast<uint16_t>(375),static_cast<uint16_t>(BOTTOM-TOP));
+  }
+  static std::string stateCacheDir() {
+    const char* state=std::getenv("CROSSPOD_STATE_DIR");
+    struct stat cardDir{};
+    const bool cardMounted=::stat("/mnt/mmc/.crosspod",&cardDir)==0 &&
+                          S_ISDIR(cardDir.st_mode);
+    const std::string base=state&&*state?state:
+                           (cardMounted?"/mnt/mmc/.crosspod":"/tmp");
+    return base+"/cache";
+  }
+  static std::string resolvePackage(const std::string& book) {
+    if(!crosspod::isTxtFilename(book))return book;
+    ::mkdir(stateCacheDir().c_str(),0755);
+    std::string error;
+    std::string package=crosspod::packageTxtBook(book,stateCacheDir(),error);
+    if(package.empty())std::fprintf(stderr,"CrossPod: TXT: %s\n",error.c_str());
+    return package;
   }
   std::string upstreamCachePath() const {
     struct stat st{};
@@ -809,7 +833,7 @@ class Reader {
     }
     return legacyMetadata_->endContentOpfPass() &&
            legacyMetadata_->beginTocPass() && legacyMetadata_->endTocPass() &&
-           legacyMetadata_->endWrite() && legacyMetadata_->buildBookBin(bookPath_,info) &&
+           legacyMetadata_->endWrite() && legacyMetadata_->buildBookBin(packagePath_,info) &&
            legacyMetadata_->load() && legacyMetadata_->getSpineCount()>0;
   }
   BookMetadataCache& metadata() const {
@@ -817,7 +841,7 @@ class Reader {
   }
  public:
   explicit Reader(std::string path):
-      bookPath_(std::move(path)),archive_(bookPath_),
+      bookPath_(std::move(path)),packagePath_(resolvePackage(bookPath_)),archive_(packagePath_),
       renderer_(display_),
       bodyFont_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
@@ -854,7 +878,7 @@ class Reader {
         selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");
     const char* requestedEngine=std::getenv("CROSSPOD_ENGINE");
     if(!requestedEngine || std::strcmp(requestedEngine,"legacy")!=0) {
-      auto candidate=std::make_shared<Epub>(bookPath_,upstreamCachePath());
+      auto candidate=std::make_shared<Epub>(packagePath_,upstreamCachePath());
       if(candidate->load(true,false)) {
         upstreamEpub_=std::move(candidate);
         ImageBlock::setExtractor(this,&Reader::extractUpstreamImage);
@@ -1045,6 +1069,7 @@ class Reader {
       return static_cast<size_t>(upstreamEpub_->getTocItemsCount());
     return static_cast<size_t>(metadata().getSpineCount());
   }
+  size_t currentPageIndex() const {return currentPage_;}
   int currentChapter() const {
     if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0 &&
        upstreamSection_) {
@@ -1549,9 +1574,24 @@ class Reader {
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
       case 7: next.nightMode=!next.nightMode;break;
+      case 16: next.focusReading=!next.focusReading;break;
+      case 17: {
+        const auto& choices=crosspod::autoTurnChoices;
+        const auto* at=std::find(std::begin(choices),std::end(choices),next.autoTurnSeconds);
+        next.autoTurnSeconds=(at==std::end(choices)||at+1==std::end(choices))?choices[0]:*(at+1);
+        break;
+      }
       default:return false;
     }
     if(!crosspod::validReaderPreferences(next))return false;
+    if(option==17) {
+      // A timer, not layout: nothing to re-lay out or invalidate.
+      preferences_=next;
+      const bool saved=crosspod::saveReaderPreferences(preferences_);
+      typographyNotice_=!saved?"Reading settings not saved":
+          next.autoTurnSeconds?"Over 2 min idle needs Q2 Pod Smart Awake":"";
+      return true;
+    }
     if(option==7) {
       // Inversion is a framebuffer setting; no new Section layout and no
       // SD cache invalidation are necessary.
@@ -1719,22 +1759,35 @@ class Reader {
         fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=
           static_cast<uint8_t>(0x80u>>(px&7));
   }
-  void showTypographyMenu(int selected) {
+  // First visible row of the 9-row settings list for a selected row.
+  static int menuFirstRow(int selectedRow,int count) {
+    return std::max(0,std::min(selectedRow-8,count-9));
+  }
+  // |items|: the menu items to list, in order (default: all of them). The
+  // Books handoff reader lists only the rows it can act on.
+  void showTypographyMenu(int selected,const int* items=nullptr,int count=0) {
     renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
     // The Q2 has a 360x320 logical viewport. Keep the heading and footer
     // outside a bounded list; never paint eleven oversized rows at once.
-    constexpr int kItems=16;
+    constexpr int kItems=kTypographyItems;
     constexpr int kRows=9;
     constexpr int kRowTop=73;
     constexpr int kRowHeight=21;
-    const int first=std::min(std::max(0,selected-kRows+1),kItems-kRows);
+    std::vector<int> rows;
+    if(items && count>0)rows.assign(items,items+count);
+    else for(int i=0;i<kItems;++i)rows.push_back(i);
+    const int listed=static_cast<int>(rows.size());
+    const int selectedRow=static_cast<int>(
+        std::find(rows.begin(),rows.end(),selected)-rows.begin());
+    const int first=menuFirstRow(std::min(selectedRow,listed-1),listed);
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
     drawMenuText(22,47,"Reading settings");
     renderer_.fillRect(18,66,337,1,true);
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
-        "Page links","Return link","Select text","Sync: upload","Sync: download"};
+        "Page links","Return link","Select text","Sync: upload","Sync: download",
+        "Focus read","Auto turn","Go to %"};
     const std::string values[]={
       crosspod::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -1746,10 +1799,15 @@ class Reader {
       preferences_.nightMode?"On":"Off",
       "Save page","Saved pages","Browse book","Footnotes / links",
       hasLinkHistory()?"Go back":"No previous link","Highlight / define",
-      "Save position","Use remote position"
+      "Save position","Use remote position",
+      preferences_.focusReading?"On":"Off",
+      preferences_.autoTurnSeconds?std::to_string(preferences_.autoTurnSeconds)+"s":"Off",
+      std::to_string(bookPercent())+"%"
     };
-    for(int row=0;row<kRows && first+row<kItems;++row) {
-      const int item=first+row;
+    static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
+    static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
+    for(int row=0;row<kRows && first+row<listed;++row) {
+      const int item=rows[first+row];
       const int y=kRowTop+row*kRowHeight;
       const bool active=selected==item;
       // Invert the completed row, including the glyph pixels, after drawing.
@@ -1761,8 +1819,8 @@ class Reader {
       if(active)invertMenuRect(18,y,337,kRowHeight);
     }
     renderer_.fillRect(18,267,337,1,true);
-    const std::string position=std::to_string(selected+1)+"/"+
-      std::to_string(kItems)+"  Wheel: scroll  Center: select";
+    const std::string position=std::to_string(std::min(selectedRow,listed-1)+1)+"/"+
+      std::to_string(listed)+"  Wheel: scroll  Center: select";
     drawMenuText(23,277,clippedLabel(position,48).c_str(),1);
     if(!typographyNotice_.empty()) {
       const std::string notice=clippedLabel(typographyNotice_,46);
@@ -1817,7 +1875,7 @@ class Reader {
       }
       const auto entry=metadata().getSpineEntry(index);
       std::vector<Paragraph> paragraphs;
-      if(parseChapter(archive_,bookPath_,entry.href,paragraphs) &&
+      if(parseChapter(archive_,packagePath_,entry.href,paragraphs) &&
          paginate(paragraphs)) {
         upstreamSection_.reset();
         currentSpine_=index;
@@ -1864,6 +1922,10 @@ class Reader {
   size_t estimatedPages() const {
     return upstreamSection_?upstreamSection_->estimatedTotalPages():pageCount();
   }
+  bool atBookEnd() const {
+    return currentSpine_+1>=metadata().getSpineCount() && !isBuilding() &&
+           currentPage_+1>=pageCount();
+  }
   bool move(int direction) {
     if(direction>0 && currentPage_+1>=pageCount() && isBuilding()) {
       // Lay out until the next page exists, for up to 2 s: a press that came
@@ -1888,16 +1950,87 @@ class Reader {
     for(size_t i=0;i<display_.getBufferSize();++i)
       buffer[i]=static_cast<uint8_t>(~buffer[i]);
   }
+  // Book progress in parts per million, weighted by chapter size as upstream
+  // CrossPoint's Epub::calculateProgress is: the chapters' cumulative XHTML
+  // sizes, plus the place within this chapter (the saved-position fraction).
+  uint32_t bookProgressPpm() const {
+    const int spines=metadata().getSpineCount();
+    if(spines<=0 || currentSpine_<0)return 0;
+    if(atBookEnd())return 1000000u;  // the last page reads 100 %, not 99
+    const uint64_t total=metadata().getCumulativeSize(spines-1);
+    const uint64_t before=currentSpine_>0?metadata().getCumulativeSize(currentSpine_-1):0;
+    const uint64_t here=metadata().getCumulativeSize(currentSpine_);
+    if(total==0) {  // no sizes: chapters weigh the same
+      return static_cast<uint32_t>((static_cast<uint64_t>(currentSpine_)*1000000u+
+          currentPosition().fractionPpm)/spines);
+    }
+    const uint64_t at=before+(here-before)*currentPosition().fractionPpm/1000000u;
+    return static_cast<uint32_t>(std::min<uint64_t>(1000000u,at*1000000u/total));
+  }
+  int bookPercent() const { return static_cast<int>(bookProgressPpm()/10000u); }
+  // RD-01: open the page at a book position (0-100 %). The chapter is the one
+  // holding that share of the book's text, and the page is placed within it
+  // the same way a saved position is carried across a layout change.
+  bool goToBookPercent(int percent) {
+    percent=std::clamp(percent,0,100);
+    const int spines=metadata().getSpineCount();
+    if(spines<=0)return false;
+    const uint64_t total=metadata().getCumulativeSize(spines-1);
+    int spine=0;uint32_t within=0;
+    if(total==0) {
+      const uint64_t scaled=static_cast<uint64_t>(percent)*spines*10000u;  // ppm of spines
+      spine=static_cast<int>(std::min<uint64_t>(spines-1,scaled/1000000u));
+      within=static_cast<uint32_t>(scaled-static_cast<uint64_t>(spine)*1000000u);
+    } else {
+      const uint64_t target=total*static_cast<uint64_t>(percent)/100u;
+      while(spine<spines-1 && metadata().getCumulativeSize(spine)<=target)++spine;
+      const uint64_t before=spine>0?metadata().getCumulativeSize(spine-1):0;
+      const uint64_t size=metadata().getCumulativeSize(spine)-before;
+      within=size?static_cast<uint32_t>(std::min<uint64_t>(999999u,(target-before)*1000000u/size)):0;
+    }
+    if(percent==100) {  // the book's last page, not the last chapter's first
+      if(!loadSpine(spines-1,-1))return false;
+      persistPosition(true);
+      return true;
+    }
+    if(!loadSpine(spine,1) || currentSpine_!=spine)return false;
+    crosspod::ReadingPosition place{spine,0,upstreamSection_?'l':'o',0,within};
+    placeSavedPosition(place);
+    clearRasterCache();
+    persistPosition(true);
+    return true;
+  }
+  void showPercentDialog(int percent) {
+    renderer_.clearScreen(0xff);
+    renderer_.fillRect(10,70,355,170,true);
+    renderer_.fillRect(12,72,351,166,false);
+    drawMenuText(22,82,"Go to percent");
+    renderer_.fillRect(18,101,337,1,true);
+    const std::string value=std::to_string(std::clamp(percent,0,100))+"%";
+    drawMenuText(187-static_cast<int>(value.size())*9,130,value.c_str(),3);
+    renderer_.drawLine(30,180,345,180,true);
+    renderer_.fillRect(30,177,static_cast<int>(3.15f*std::clamp(percent,0,100)),7,true);
+    drawMenuText(22,200,"Wheel: 1%   Keys: 10%",1);
+    drawMenuText(22,215,"Center: go   Back: cancel",1);
+    display_.displayBuffer();
+  }
+  // RD-06: page within the chapter (an estimate while it is still laid out)
+  // and the book percentage, beside a byte-weighted progress bar.
   void drawProgress() {
     const int totalChapters=metadata().getSpineCount();
     if(totalChapters<=0 || currentSpine_<0)return;
-    const size_t localCount=std::max<size_t>(1,estimatedPages());
-    const float local=static_cast<float>(currentPage_+1)/localCount;
-    const float progress=std::clamp(
-      (static_cast<float>(currentSpine_)+local)/totalChapters,0.0f,1.0f);
-    const int filled=static_cast<int>(progress*347.0f);
-    renderer_.drawLine(14,314,361,314,true);
+    const size_t pages=std::max<size_t>(1,estimatedPages());
+    const std::string label=std::to_string(currentPage_+1)+"/"+
+        (isBuilding()?"~":"")+std::to_string(pages)+"  "+std::to_string(bookPercent())+"%";
+    // drawMenuText stops at x 352; the bar takes the width left of the label.
+    const int labelX=352-static_cast<int>(label.size())*6;
+    const int barEnd=std::max(60,labelX-10);
+    const float progress=bookProgressPpm()/1000000.0f;
+    const int filled=static_cast<int>(progress*static_cast<float>(barEnd-14));
+    renderer_.fillRect(0,307,375,13,false);
+    renderer_.drawLine(14,314,barEnd,314,true);
     if(filled>0)renderer_.fillRect(14,312,filled,3,true);
+    drawMenuText(labelX,309,label.c_str(),1);
   }
   void cacheRenderedPage() {
     const uint8_t* framebuffer=display_.getFrameBuffer();
@@ -2547,6 +2680,48 @@ class CardShelf {
   }
 };
 
+// RD-01 go-to-percent dialog input, shared by the card app and the Books
+// handoff reader. Returns true while the dialog stays open.
+enum class PercentResult { Open, Cancelled, Moved, Failed };
+PercentResult handlePercentInput(Reader& reader,crosspod::LogicalAction action,
+                                 const crosspod::PhysicalEvent& event,int& percent) {
+  const bool wheel=event.kind==crosspod::PhysicalKind::WheelStep;
+  if(action==crosspod::LogicalAction::Back ||
+     (event.kind==crosspod::PhysicalKind::TouchUp && event.y<70))
+    return PercentResult::Cancelled;
+  if(action==crosspod::LogicalAction::Previous || action==crosspod::LogicalAction::Next) {
+    const int step=wheel?1:10;
+    percent=std::clamp(percent+(action==crosspod::LogicalAction::Next?step:-step),0,100);
+    reader.showPercentDialog(percent);
+    return PercentResult::Open;
+  }
+  if(event.kind==crosspod::PhysicalKind::TouchUp && event.y>=170 && event.y<=190) {
+    percent=std::clamp((event.x-30)*100/315,0,100);
+    reader.showPercentDialog(percent);
+    return PercentResult::Open;
+  }
+  if(action==crosspod::LogicalAction::Confirm || event.kind==crosspod::PhysicalKind::TouchUp)
+    return reader.goToBookPercent(percent)?PercentResult::Moved:PercentResult::Failed;
+  return PercentResult::Open;
+}
+// RD-02 auto page turn. Called on every idle wake: arms the timer, turns the
+// page when it is due, and returns the deadline to wait for (max() = none).
+ReaderClock::time_point autoTurnTick(Reader& reader,bool allowed,ReaderClock::time_point& next) {
+  const int seconds=reader.preferences().autoTurnSeconds;
+  const auto none=ReaderClock::time_point::max();
+  if(!allowed || seconds<=0){next=none;return none;}
+  const auto now=ReaderClock::now();
+  if(next==none){next=now+std::chrono::seconds(seconds);return next;}
+  if(now<next)return next;
+  if(reader.move(1)) {
+    reader.present();
+    next=ReaderClock::now()+std::chrono::seconds(seconds);
+  } else if(reader.atBookEnd()) {
+    next=none-std::chrono::hours(1);  // stop at the last page until input
+  } else next=ReaderClock::now()+std::chrono::seconds(1);  // still laying out
+  return next;
+}
+
 int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
@@ -2578,6 +2753,10 @@ int runCardApp(const std::string& bookDir) {
   bool selectionActions=false;
   bool dictionaryOverlay=false;
   bool footnoteOverlay=false;
+  bool percentDialog=false;
+  int percentValue=0;
+  // RD-02 auto page turn: the next turn is due at this time; reset by input.
+  auto nextAutoTurn=ReaderClock::time_point::max();
   std::string footnoteHref;
   int selectionAction=0;
   bool touchPressed=false;
@@ -2620,7 +2799,16 @@ int runCardApp(const std::string& bookDir) {
         (void)reader->buildNextPages(2);
         nextBuildTick=ReaderClock::now()+std::chrono::milliseconds(150);
       }
+      const bool canAutoTurn=reader && !typeMenu && !navigationMenu && !linkMenu &&
+          !selectionChoosing && !selectionActions && !dictionaryOverlay &&
+          !footnoteOverlay && !percentDialog;
+      const auto beforeTurn=nextAutoTurn;
+      const auto turnDue=reader?autoTurnTick(*reader,canAutoTurn,nextAutoTurn):
+                                ReaderClock::time_point::max();
+      if(reader && beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
+         beforeTurn<=ReaderClock::now())continue;  // a page was turned: loop again
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
+      deadline=std::min(deadline,turnDue);
       if(!reader && shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
@@ -2645,7 +2833,18 @@ int runCardApp(const std::string& bookDir) {
         std::chrono::milliseconds(800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
+    nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
     if(reader) {
+      if(percentDialog) {
+        const auto result=handlePercentInput(*reader,action,event,percentValue);
+        if(result==PercentResult::Open)continue;
+        percentDialog=false;
+        if(result==PercentResult::Moved) {
+          typeMenu=false;
+          reader->present();
+        } else reader->showTypographyMenu(typeSelection);
+        continue;
+      }
       if(footnoteOverlay) {
         if(action==crosspod::LogicalAction::Back ||
            (event.kind==crosspod::PhysicalKind::TouchUp && event.x<187)) {
@@ -2793,14 +2992,22 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==crosspod::LogicalAction::Previous ||
                   action==crosspod::LogicalAction::Next) {
           typeSelection=(typeSelection+
-              (action==crosspod::LogicalAction::Next?1:15))%16;
+              (action==crosspod::LogicalAction::Next?1:kTypographyItems-1))%kTypographyItems;
           reader->showTypographyMenu(typeSelection);
         } else if(action==crosspod::LogicalAction::Confirm ||
                   event.kind==crosspod::PhysicalKind::TouchUp) {
           if(event.kind==crosspod::PhysicalKind::TouchUp)
             typeSelection=std::clamp(
-                std::max(0,typeSelection-8)+(event.y-73)/21,0,15);
-          if(typeSelection==8) {
+                Reader::menuFirstRow(typeSelection,kTypographyItems)+(event.y-73)/21,
+                0,kTypographyItems-1);
+          if(typeSelection==18) {
+            percentDialog=true;
+            percentValue=reader->bookPercent();
+            reader->showPercentDialog(percentValue);
+            continue;
+          } else if(typeSelection==16 || typeSelection==17) {
+            (void)reader->adjustPreference(typeSelection);
+          } else if(typeSelection==8) {
             (void)reader->rememberPage();
           } else if(typeSelection==14) {
             reader->flushPosition();
@@ -3045,6 +3252,7 @@ void usage() {
     "  crosspod-reader --bench <book.epub>          (latency & memory)\n"
     "  crosspod-reader --list-books <directory>     (card scanner test)\n"
     "  crosspod-reader --test-page-links <book.epub> (real link regression)\n"
+    "  crosspod-reader --test-progress <book>         (go-to-percent regression)\n"
     "  crosspod-reader --index-book <book.epub>     (OPF/cover index test)\n"
     "  crosspod-reader --card-preview <dir> <out.pgm> (menu raster test)\n"
     "  crosspod-reader --card-search-preview <dir> <out.pgm> (search UI test)\n"
@@ -3157,6 +3365,35 @@ int main(int argc,char** argv) {
                 selected.c_str());
     return 0;
   }
+  if(argc==3 && std::strcmp(argv[1],"--test-progress")==0) {
+    // RD-01/02/03/06 regression: go-to-percent lands near the target and the
+    // book percentage only grows; focus reading and auto turn are settings.
+    Reader reader(argv[2]);
+    if(!reader.open())return 3;
+    int last=-1;
+    for(int target:{0,10,25,50,75,90,100}) {
+      if(!reader.goToBookPercent(target))return 4;
+      const int got=reader.bookPercent();
+      std::printf("CrossPod go to %d%%: chapter %d page %zu -> %d%%\n",
+                  target,reader.currentChapter(),reader.currentPageIndex()+1,got);
+      if(got<last)return 5;
+      if(target<100 && std::abs(got-target)>6)return 6;
+      if(target==100 && (!reader.atBookEnd() || got!=100))return 7;
+      last=got;
+    }
+    if(!reader.goToBookPercent(50))return 4;
+    const int before=reader.bookPercent();
+    const bool focusWas=reader.preferences().focusReading;
+    if(!reader.adjustPreference(16) || reader.preferences().focusReading==focusWas)return 8;
+    if(std::abs(reader.bookPercent()-before)>3)return 9;  // re-layout keeps the place
+    if(!reader.adjustPreference(16) || reader.preferences().focusReading!=focusWas)return 8;
+    const int turnWas=reader.preferences().autoTurnSeconds;
+    for(size_t i=0;i<std::size(crosspod::autoTurnChoices);++i)
+      if(!reader.adjustPreference(17))return 10;
+    if(reader.preferences().autoTurnSeconds!=turnWas)return 10;  // cycles back
+    std::puts("CrossPod go-to-percent, progress, focus and auto turn: PASS");
+    return 0;
+  }
   if(argc==3 && std::strcmp(argv[1],"--test-page-links")==0) {
     Reader reader(argv[2]);
     if(!reader.open())return 3;
@@ -3241,8 +3478,8 @@ int main(int argc,char** argv) {
   } else if (argc==2 && argv[1][0] != '-') {
     path=argv[1];
   } else { usage();return 2; }
-  if (path.size()<5 || path.substr(path.size()-5)!=".epub") {
-    std::fputs("CrossPod: only EPUB is supported in this device preview\n",stderr);
+  if (!crosspod::isBookFilename(path)) {
+    std::fputs("CrossPod: open an .epub or .txt book\n",stderr);
     return 2;
   }
   if(!dry && !installExitHandlers())return 5;
@@ -3359,6 +3596,14 @@ int main(int argc,char** argv) {
   reader.present();
   bool typeMenu=false;
   int typeSelection=0;
+  // The Books handoff reader has no shelf, so it offers the settings rows and
+  // the reading actions that need none: not bookmarks, links, selection or sync.
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18};
+  constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
+  int handoffIndex=0;
+  bool percentDialog=false;
+  int percentValue=0;
+  auto nextAutoTurn=ReaderClock::time_point::max();
   crosspod::Q2Controls controls(loadWheelSensitivity());
   // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
   // its own step, before reading the next datagram.
@@ -3368,7 +3613,11 @@ int main(int argc,char** argv) {
     reader.flushPosition(false);
     crosspod::PhysicalEvent event{};
     if (pendingRepeat==0 && !input.receive(event)) {
-      if(waitForReaderInput(input,reader.nextPositionFlush())<0) {
+      const auto beforeTurn=nextAutoTurn;
+      const auto turnDue=autoTurnTick(reader,!typeMenu && !percentDialog,nextAutoTurn);
+      if(beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
+         beforeTurn<=ReaderClock::now())continue;
+      if(waitForReaderInput(input,std::min(reader.nextPositionFlush(),turnDue))<0) {
         std::fputs("CrossPod: input socket poll failed\n",stderr);
         return 5;
       }
@@ -3387,19 +3636,40 @@ int main(int argc,char** argv) {
       if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
     }
     bool changed=false;
+    nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
+    if(percentDialog) {
+      const auto result=handlePercentInput(reader,action,event,percentValue);
+      if(result==PercentResult::Open)continue;
+      percentDialog=false;
+      if(result==PercentResult::Moved){typeMenu=false;reader.present();}
+      else reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
+      continue;
+    }
     if(typeMenu) {
       if(action==crosspod::LogicalAction::Back) {
         typeMenu=false;
         reader.present();
       } else if(action==crosspod::LogicalAction::Previous ||
                 action==crosspod::LogicalAction::Next) {
-        typeSelection=(typeSelection+
-            (action==crosspod::LogicalAction::Next?1:6))%7;
-        reader.showTypographyMenu(typeSelection);
+        handoffIndex=(handoffIndex+
+            (action==crosspod::LogicalAction::Next?1:kHandoffCount-1))%kHandoffCount;
+        typeSelection=kHandoffItems[handoffIndex];
+        reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       } else if(action==crosspod::LogicalAction::Confirm ||
                 event.kind==crosspod::PhysicalKind::TouchUp) {
-        if(event.kind==crosspod::PhysicalKind::TouchUp)
-          typeSelection=std::clamp((event.y-73)/21,0,6);
+        if(event.kind==crosspod::PhysicalKind::TouchUp) {
+          // Map the touched row back to a menu item; rows this reader does
+          // not offer are ignored.
+          const int first=Reader::menuFirstRow(handoffIndex,kHandoffCount);
+          handoffIndex=std::clamp(first+(event.y-73)/21,0,kHandoffCount-1);
+          typeSelection=kHandoffItems[handoffIndex];
+        }
+        if(typeSelection==18) {
+          percentDialog=true;
+          percentValue=reader.bookPercent();
+          reader.showPercentDialog(percentValue);
+          continue;
+        }
         if(typeSelection>=2)(void)reader.adjustPreference(typeSelection);
         else {
           auto next=reader.typography();
@@ -3409,14 +3679,14 @@ int main(int argc,char** argv) {
           else next.size=12; // Only 12pt fonts are verified in the Q2 package.
           (void)reader.configureTypography(next);
         }
-        reader.showTypographyMenu(typeSelection);
+        reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       }
       continue;
     }
     if(action==crosspod::LogicalAction::Confirm ||
        (event.kind==crosspod::PhysicalKind::TouchUp && event.y<45)) {
       typeMenu=true;
-      reader.showTypographyMenu(typeSelection);
+      reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       continue;
     }
     if(action==crosspod::LogicalAction::Back)break;

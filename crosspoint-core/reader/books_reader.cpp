@@ -36,6 +36,7 @@
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
 #include "ShelfSort.hpp"
+#include "ShelfFolders.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
 #include "ShelfIndexer.hpp"
@@ -2409,6 +2410,11 @@ class CardShelf {
   size_t selected_ = 0;  // index within filtered browsing rows
   size_t current_ = 0;   // index within the unfiltered library
   std::vector<size_t> visible_;
+  // Folders mode: the folder shown ("" is Books) and its child folders,
+  // listed before its books.
+  std::string root_;
+  std::string folder_;
+  std::vector<std::string> folders_;
   std::string searchQuery_;
   bool searchEditing_=false;
   size_t searchKey_=0;          // the keypad key the wheel is on
@@ -2463,8 +2469,9 @@ class CardShelf {
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
                      size_t current=0,
-                     books::ShelfSortMode sortMode=books::ShelfSortMode::Title):
-      books_(books),renderer_(display_),font_(&notosans_12_regular),
+                     books::ShelfSortMode sortMode=books::ShelfSortMode::Title,
+                     std::string root={}):
+      books_(books),root_(std::move(root)),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
     cachedDetails_.resize(books_.size());
@@ -2489,10 +2496,35 @@ class CardShelf {
     return true;
   }
   size_t selected() const {
-    return browsing_ && !visible_.empty()?visible_[selected_]:current_;
+    const size_t first=folderRows();
+    return browsing_ && selected_>=first && selected_-first<visible_.size()?
+        visible_[selected_-first]:current_;
+  }
+  bool folderMode() const {
+    return sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
+  }
+  size_t folderRows() const {return folderMode()?folders_.size():0;}
+  size_t rowCount() const {return folderRows()+visible_.size();}
+  bool folderSelected() const {return browsing_ && !searchEditing_ && selected_<folderRows();}
+  void openSelectedFolder() {
+    if(!folderSelected())return;
+    folder_=folder_.empty()?folders_[selected_]:folder_+"/"+folders_[selected_];
+    selected_=0;refreshVisible();notice_.clear();
+  }
+  // Back in a folder: its parent, with the folder just left selected.
+  bool folderUp() {
+    if(!folderMode() || folder_.empty())return false;
+    const auto slash=folder_.rfind('/');
+    const std::string child=slash==std::string::npos?folder_:folder_.substr(slash+1);
+    folder_=books::shelfParentFolder(folder_);
+    refreshVisible();
+    const auto it=std::find(folders_.begin(),folders_.end(),child);
+    selected_=it==folders_.end()?0:static_cast<size_t>(it-folders_.begin());
+    notice_.clear();
+    return true;
   }
   bool empty() const {return books_.empty();}
-  bool hasMatches() const {return !visible_.empty();}
+  bool hasMatches() const {return rowCount()>0;}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
@@ -2774,7 +2806,16 @@ class CardShelf {
     const size_t selected=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
     if(selected<onlineEntries_.size())onlineSelection_=selected;
   }
-  void enterBrowser() {browsing_=true;searchEditing_=false;notice_.clear();}
+  void enterBrowser() {
+    browsing_=true;searchEditing_=false;notice_.clear();
+    if(folderMode() && current_<books_.size()) {  // open the current book's folder, on it
+      std::string where;
+      folder_=books::shelfRelativeFolder(root_,books_[current_].path,where)?where:std::string();
+      refreshVisible();
+      const auto it=std::find(visible_.begin(),visible_.end(),current_);
+      selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
+    }
+  }
   void goHome() {
     browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
@@ -2814,6 +2855,16 @@ class CardShelf {
   }
   void refreshVisible() {
     visible_.clear();
+    folders_.clear();
+    if(folderMode()) {
+      auto view=books::shelfFolderView(books_,root_,folder_);
+      if(view.folders.empty() && view.books.empty() && !folder_.empty()) {
+        folder_.clear();view=books::shelfFolderView(books_,root_,folder_);
+      }
+      folders_=std::move(view.folders);visible_=std::move(view.books);
+      if(selected_>=rowCount())selected_=0;
+      return;
+    }
     for(size_t i=0;i<books_.size();++i) {
       if(searchQuery_.empty()) {visible_.push_back(i);continue;}
       const auto& info=details(i);
@@ -2854,9 +2905,9 @@ class CardShelf {
       homeSelection_=next;
       return true;
     }
-    if(visible_.empty())return false;
+    if(rowCount()==0)return false;
     const auto before=selected_;
-    if(direction>0 && selected_+1<visible_.size())++selected_;
+    if(direction>0 && selected_+1<rowCount())++selected_;
     else if(direction<0 && selected_>0)--selected_;
     return selected_!=before;
   }
@@ -2887,10 +2938,10 @@ class CardShelf {
       if(x>=190)return enterOnline();
       enterSearch();return true;
     }
-    if(visible_.empty()||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+    if(rowCount()==0||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
     const size_t index=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
-    if(index>=visible_.size())return false;
+    if(index>=rowCount())return false;
     selected_=index;
     return true;
   }
@@ -3174,20 +3225,29 @@ class CardShelf {
       std::snprintf(count,sizeof(count),
           books::uiLanguage()==books::UiLanguage::English?"Books: %zu/%zu":"Sách: %zu/%zu",
           visible_.size(),books_.size());
-      drawCompactLabel(16,61,count);
+      if(folderMode()) {  // where you are instead of the count
+        std::string crumb=books::shelfBreadcrumb(folder_,24);
+        if(crumb.compare(0,5,"Books")==0)crumb=books::tr("Books")+crumb.substr(5);
+        drawCompactLabel(16,61,crumb.c_str(),160);
+      } else drawCompactLabel(16,61,count);
       drawCompactLabel(212,61,"Search | Online",133);
       renderer_.drawLine(15,72,359,72,true);
-      if(visible_.empty()) {
+      if(rowCount()==0) {
         renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));
         renderer_.drawText(1,16,144,
             books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
       } else {
         const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
-        for(size_t row=0;row<VISIBLE_ROWS && start+row<visible_.size();++row) {
+        const size_t first=folderRows();
+        for(size_t row=0;row<VISIBLE_ROWS && start+row<rowCount();++row) {
           const size_t filtered=start+row;
-          const size_t index=visible_[filtered];
           const int y=TOP_Y+static_cast<int>(row)*ROW_H;
           const bool active=filtered==selected_;
+          if(filtered<first) {
+            drawListRow(y,clippedLabel("[DIR] "+folders_[filtered],31),"",active);
+            continue;
+          }
+          const size_t index=visible_[filtered-first];
           const auto& info=details(index);
           const std::string label=clippedLabel(
               info.title.empty()?books_[index].label:info.title,26);
@@ -3204,7 +3264,8 @@ class CardShelf {
        serverScreen()?"OK: open   Back: home":
        detailsOpen()?(detailsOnCard_?"OK: show on card   Back: list":"OK: download   Back: list"):
        onlineMode_?"OK: open/get   Back: prev":
-        browsing_?"OK: open   Back: home":"OK: open   Back: exit";
+        browsing_?(folderMode()&&!folder_.empty()?"OK: open   Back: up":"OK: open   Back: home"):
+        "OK: open   Back: exit";
     drawRowLabel(22,269,51,footer.c_str());
     books::paintBar(display_,0,269,375,51);  // the footer strip
   }
@@ -3378,7 +3439,7 @@ int runCardApp(const std::string& bookDir) {
     return 5;
   }
   size_t selection=books::lastOpenedIndex(books,recent);
-  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode));
+  std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode,bookDir));
   if(!shelf->open())return 4;
   if(interrupted)return 0;
   shelf->present();
@@ -3781,7 +3842,7 @@ int runCardApp(const std::string& bookDir) {
         reader.reset(); // close book/cache BEFORE reopening the card shelf
         books::sortShelfBooks(books,sortMode,recent);
         selection=books::lastOpenedIndex(books,recent);
-        shelf.reset(new CardShelf(books,selection,selection,sortMode));
+        shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
         if(!shelf->open())return 6;
         shelf->present();
         continue;
@@ -3900,7 +3961,7 @@ int runCardApp(const std::string& bookDir) {
           [&](const ShelfEntry& entry){return entry.path==saved;});
       selection=found==books.end()?0:
           static_cast<size_t>(found-books.begin());
-      shelf.reset(new CardShelf(books,selection,selection,sortMode));
+      shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
       if(!shelf->open())return 6;
       shelf->enterBrowser();
       shelf->setNotice(already?"Already on the card":"EPUB downloaded to Books/Online");
@@ -3923,6 +3984,7 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(action==books::LogicalAction::Back) {
+      if(shelf->browsing() && shelf->folderUp()) {shelf->present();continue;}
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
     }
@@ -3948,10 +4010,11 @@ int runCardApp(const std::string& bookDir) {
           books::ShelfSortMode::Recent:
           (sortMode==books::ShelfSortMode::Recent?
           books::ShelfSortMode::RecentlyAdded:
-          books::ShelfSortMode::Title);
+          sortMode==books::ShelfSortMode::RecentlyAdded?
+          books::ShelfSortMode::Folders:books::ShelfSortMode::Title);
       books::sortShelfBooks(books,sortMode,recent);
       selection=books::lastOpenedIndex(books,recent);
-      shelf.reset(new CardShelf(books,selection,selection,sortMode));
+      shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
       if(!shelf->open())return 6;
       shelf->present();
       continue;
@@ -3962,6 +4025,7 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(!shelf->hasMatches())continue;
+    if(shelf->folderSelected()) {shelf->openSelectedFolder();shelf->present();continue;}
     selection=shelf->selected();
     const std::string chosen=shelf->bookPath();
     shelf->setNotice("Opening EPUB...");

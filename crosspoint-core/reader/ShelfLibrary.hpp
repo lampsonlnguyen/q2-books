@@ -21,8 +21,10 @@ struct ShelfEntry {
 };
 
 struct ShelfScanLimits {
-  size_t maxBooks=512;
-  size_t maxFolders=256;
+  // M4: a large library. 4000 entries are about 1 MB of RAM; their titles
+  // and covers stay on the card until a row is drawn.
+  size_t maxBooks=4000;
+  size_t maxFolders=1024;
   size_t maxDepth=5;  // Books/<dir1>/.../<dir5>/
 };
 inline bool isEpubFilename(std::string_view name) {
@@ -82,7 +84,8 @@ inline std::vector<ShelfEntry> scanCardBooks(
       }
       if(!S_ISREG(st.st_mode) || !isBookFilename(filename) ||
          books.size()>=limits.maxBooks)continue;
-      books.push_back({path,filename.substr(0,filename.size()-5),st.st_mtime});
+      const size_t extension=isTxtFilename(filename)?4:5;  // ".txt" or ".epub"
+      books.push_back({path,filename.substr(0,filename.size()-extension),st.st_mtime});
     }
     closedir(dir);
     std::sort(nested.begin(),nested.end(),

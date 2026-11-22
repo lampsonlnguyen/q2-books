@@ -7,12 +7,14 @@
 #include <vector>
 
 namespace books {
-enum class ShelfSortMode { Title, Recent, RecentlyAdded };
+// Folders: the card's folders, books A-Z in each (ShelfFolders.hpp).
+enum class ShelfSortMode { Title, Recent, RecentlyAdded, Folders };
 inline const char* shelfSortLabel(ShelfSortMode sort) {
   switch(sort) {
     case ShelfSortMode::Title:return "Title A-Z";
     case ShelfSortMode::Recent:return "Recently read";
     case ShelfSortMode::RecentlyAdded:return "Recently added";
+    case ShelfSortMode::Folders:return "Folders";
   }
   return "Title A-Z";
 }

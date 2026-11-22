@@ -17,7 +17,7 @@ jobs:
       - name: Install compilers
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu qemu-user libexpat1-dev zlib1g-dev
+          sudo apt-get install -y cmake g++ gcc-mipsel-linux-gnu g++-mipsel-linux-gnu binutils-mipsel-linux-gnu qemu-user libexpat1-dev zlib1g-dev libjpeg-dev libcurl4-openssl-dev
       - name: Build original CrossPoint Vietnamese EPUB page on Linux host
         run: |
           cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release

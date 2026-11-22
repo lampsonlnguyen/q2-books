@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Fetch pinned CrossPoint SD fonts for the Q2 reader, with exact SHA-256 verification.
 
-Uses the original CrossPoint project's cpfont v4 release. Never changes
+Uses the original CrossPoint project's pinned 12pt cpfont v4 release.
+Smaller 8–11pt packs are built by build_q2_small_font_assets.py.
+Never changes
 firmware/system fonts or embeds a different Q2-native rendering engine.
 """
 from __future__ import annotations
@@ -14,13 +16,7 @@ from crosspoint_script_fonts import RELEASE as SCRIPT_RELEASE, SCRIPT_FONTS
 RELEASE = "https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4"
 SHA256 = {
     "NotoSansExtended_12.cpfont": "17e2dd57a2507203dcb04e1ce4f7f49c755cd327550c8c8333ac713655b06bd1",
-    "NotoSansExtended_14.cpfont": "3c7eabccb4ed9b4ab909c5a3d973dc6bdc19bfbe061bff54643ca4cf859aa116",
-    "NotoSansExtended_16.cpfont": "5245afdd81e86b2b9827785b379ac2380ff6dde3bbe15b9ddaba666e8b738967",
-    "NotoSansExtended_18.cpfont": "1c0166009a88a567a69d3caadb3a04e2ec2bd91b49b80100211a749e1d02801d",
     "NotoSerifExtended_12.cpfont": "90cbcf43bc504f1ca3dad068e9286d7818dec6522fa2c9810b0e421637944091",
-    "NotoSerifExtended_14.cpfont": "d09be89359a201a0b43bcc05abca305e5358a939294f5d38852c82722cbcdb24",
-    "NotoSerifExtended_16.cpfont": "c269f21a040173777e2b9aa3e80b4e802da8edf9f2a8f5dac32aa68d3df4438a",
-    "NotoSerifExtended_18.cpfont": "5d35e6f0e5216d442106f9a638ed6c40a08e8ed55408b9fdb2844d234cf73b6d",
 }
 # Original upstream CrossPoint CJK-JP bitmap font: shared Han ideographs,
 # Japanese kana and common punctuation. The upstream release currently does
@@ -29,9 +25,6 @@ SHA256 = {
 CJK_RELEASE = "https://github.com/crosspoint-reader/crosspoint-fonts/releases/download/sd-fonts-m1-b4-r13"
 CJK_SHA256 = {
     12: ("08089c8cd141e38c8a6bbe672215a40da4847c524f097e5200ee89eafcdd80d0", 7714459),
-    14: ("e3e5fd4c73077efbb37fed26cd61699f4ae48ef16068029833ce666e45bd294b", 10287882),
-    16: ("e578dfa034b2359165c18ffdccf31ddbdddc3239b871f8e820f3035336cca7d6", 12614374),
-    18: ("3d775063f151b877ee208abc417024e20cdada161bf75a3d1d7645197676616e", 15767535),
 }
 
 
@@ -73,7 +66,7 @@ def main() -> int:
     # Disk-resident .cpfont files: only coverage intervals/needed glyphs
     # are loaded by the Q2 reader, not the full pixel data for all fonts.
     for slug, (family, description, sizes) in SCRIPT_FONTS.items():
-        for point_size in (12, 14, 16, 18):
+        for point_size in (12,):
             expected, expected_size = sizes[str(point_size)]
             source = f"{SCRIPT_RELEASE}/{family}_{point_size}.cpfont"
             dest = out / f"{slug}-{point_size}.cpfont"

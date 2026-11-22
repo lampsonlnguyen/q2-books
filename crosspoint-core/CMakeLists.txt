@@ -44,7 +44,7 @@ add_test(NAME crosspod_advanced_reading_persistence_dictionary_footnote
 
 add_executable(crosspod_connected_tests tests/connected_library_test.cpp)
 target_include_directories(crosspod_connected_tests PRIVATE reader)
-target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT)
+target_link_libraries(crosspod_connected_tests PRIVATE EXPAT::EXPAT curl)
 target_compile_options(crosspod_connected_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspod_opds_kavita_and_koreader_transport_contract
     COMMAND crosspod_connected_tests)
@@ -497,7 +497,7 @@ target_link_libraries(crosspod-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display crosspod_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG)
+    crosspoint_layout_foundation crosspoint_utf8 EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(crosspod-reader epub_fixture vietnamese_epub_fixture)
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.

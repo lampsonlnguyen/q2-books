@@ -26,6 +26,7 @@
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
+#include "T9Keypad.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -2271,7 +2272,8 @@ class CardShelf {
   std::vector<size_t> visible_;
   std::string searchQuery_;
   bool searchEditing_=false;
-  size_t searchKey_=0;
+  size_t searchKey_=0;          // the keypad key the wheel is on
+  crosspod::T9Keypad keypad_;
   crosspod::ShelfSortMode sortMode_=crosspod::ShelfSortMode::Title;
   std::vector<crosspod::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
@@ -2396,7 +2398,8 @@ class CardShelf {
     onlineSearching_=false;searchEditing_=false;
   }
   void enterOnlineSearch() {
-    onlineSearching_=true;searchEditing_=true;searchKey_=0;searchQuery_.clear();
+    onlineSearching_=true;searchEditing_=true;searchKey_=crosspod::T9Keypad::Abc;searchQuery_.clear();
+    keypad_.reset();
     notice_.clear();
   }
   bool onlineSearching() const {return onlineMode_ && onlineSearching_ && searchEditing_;}
@@ -2432,25 +2435,19 @@ class CardShelf {
     searchQuery_.clear();refreshVisible();notice_.clear();
   }
   void enterSearch() {
-    browsing_=true;searchEditing_=true;searchKey_=0;
+    browsing_=true;searchEditing_=true;searchKey_=crosspod::T9Keypad::Abc;keypad_.reset();
     notice_.clear();
   }
   void endSearch() {searchEditing_=false;onlineSearching_=false;notice_.clear();}
-  static constexpr size_t SEARCH_KEY_COUNT=40;
-  static constexpr const char* SEARCH_LETTERS=
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  static constexpr size_t SEARCH_KEY_COUNT=crosspod::kT9Keys;
+  // The keypad: rows of 4 keys under the field (Q2's own T9 layout).
+  static constexpr int KB_X=12, KB_Y=112, KB_W=86, KB_H=37, KB_GAP=2;
   bool applySearchChoice() {
-    if(searchKey_<36) {
-      if(searchQuery_.size()<24)searchQuery_.push_back(SEARCH_LETTERS[searchKey_]);
-    } else if(searchKey_==36) {
-      if(searchQuery_.size()<24)searchQuery_+=' ';
-    } else if(searchKey_==37) {
-      if(!searchQuery_.empty())searchQuery_.pop_back();
-    } else if(searchKey_==38) {
+    const auto result=keypad_.press(static_cast<int>(searchKey_),searchQuery_,
+                                    onlineSearching_?40:24);
+    if(result==crosspod::T9Result::Done) {
       if(onlineSearching_){searchSubmit_=true;return true;}
       endSearch();return true;
-    } else {
-      searchQuery_.clear();
     }
     if(onlineSearching_)return true;  // a catalog query: nothing local to filter
     refreshVisible();
@@ -2506,11 +2503,11 @@ class CardShelf {
     }
     if(searchEditing_) {
       if(y>=269){endSearch();return true;}
-      if(y<88||y>=250||x<12||x>=362)return false;
-      const size_t column=static_cast<size_t>((x-12)/50);
-      const size_t row=static_cast<size_t>((y-88)/27);
-      const size_t option=row*7+column;
-      if(option>=SEARCH_KEY_COUNT)return false;
+      if(y<KB_Y||x<KB_X)return false;
+      const size_t column=static_cast<size_t>((x-KB_X)/(KB_W+KB_GAP));
+      const size_t row=static_cast<size_t>((y-KB_Y)/(KB_H+KB_GAP));
+      if(column>=4||row>=4)return false;
+      const size_t option=row*4+column;
       searchKey_=option;
       return applySearchChoice();
     }
@@ -2729,34 +2726,65 @@ class CardShelf {
           homeSelection_!=2);
       drawRowLabel(HOME_ONLINE_X+10,244,23,"Online",homeSelection_!=3);
     } else if(searchEditing_) {
-      drawCompactLabel(16,59,onlineSearching_?"Search catalog":"Search library",190);
-      const std::string query="Find: "+searchQuery_;
-      drawCompactLabel(16,77,clippedLabel(query,34).c_str(),175);
-      for(size_t key=0;key<SEARCH_KEY_COUNT;++key) {
-        const int column=static_cast<int>(key%7);
-        const int row=static_cast<int>(key/7);
-        const int x=12+column*50, y=88+row*27;
-        const bool active=key==searchKey_;
-        if(!active)renderer_.drawLine(x,y+24,x+47,y+24,true);
-        char single[2]={0,0};
-        const char* label=nullptr;
-        if(key<36) {single[0]=SEARCH_LETTERS[key];label=single;}
-        else if(key==36)label="SP";
-        else if(key==37)label="DEL";
-        else if(key==38)label="DONE";
-        else label="CLR";
-        // 25 px cells: full-size font 1 overran them (the cell rule crossed every
-        // glyph, DONE ran into CLR); the compact scaled label fits, as the header's does.
-        drawCompactLabel(x+5,y+18,label,key<36?176:136);
-        if(auto* fb=active?display_.getFrameBuffer():nullptr)  // selected: inverted cell
-          for(int py=y;py<y+25;++py)for(int px=x;px<x+48;++px)
-            fb[py*HalDisplay::DISPLAY_WIDTH_BYTES+px/8]^=static_cast<uint8_t>(0x80u>>(px&7));
+      // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
+      drawCompactLabel(16,56,onlineSearching_?"Search catalog":"Search library",176);
+      char count[48];
+      if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
+      else std::snprintf(count,sizeof(count),"%zu / %zu books",visible_.size(),books_.size());
+      drawCompactLabel(232,56,count,136);
+      renderer_.drawRect(12,62,351,28,true);
+      const int pending=keypad_.pendingKey();
+      std::string shown=searchQuery_;
+      while(shown.size()>30)shown.erase(0,1);
+      drawCompactLabel(20,84,shown.c_str(),176);
+      // caret, after the text (under the letter still open to the next press)
+      int caretX=20;
+      for(unsigned char ch:shown) {
+        int32_t advance=0;int top=0;
+        if(renderer_.getCodepointMetrics(1,ch,EpdFontFamily::REGULAR,advance,top))
+          caretX+=fp4::toPixel(advance*176/256);
       }
-      char count[72];
-      if(onlineSearching_)std::snprintf(count,sizeof(count),"DONE: search  Back: cancel");
-      else std::snprintf(count,sizeof(count),"%zu matching / %zu books",
-                    visible_.size(),books_.size());
-      drawCompactLabel(16,262,count,165);
+      if(pending>=0 && !shown.empty()) {
+        int32_t advance=0;int top=0;
+        (void)renderer_.getCodepointMetrics(1,static_cast<unsigned char>(shown.back()),
+                                           EpdFontFamily::REGULAR,advance,top);
+        const int w=fp4::toPixel(advance*176/256);
+        renderer_.fillRect(caretX-w,86,w,2,true);
+      } else renderer_.fillRect(caretX+1,66,2,20,true);
+      if(pending>=0) {  // the open key's letters, the typed one inverted
+        const std::string set=keypad_.letters(pending);
+        for(size_t i=0;i<set.size();++i) {
+          const int x=20+static_cast<int>(i)*24;
+          const char one[2]={set[i],0};
+          drawCompactLabel(x+6,106,one,150);
+          if(static_cast<int>(i)==keypad_.pendingIndex())invertRect(x,92,22,18);
+        }
+      } else drawCompactLabel(20,106,"Wheel: key   Centre: press   Again: next letter",120);
+      for(int key=0;key<static_cast<int>(SEARCH_KEY_COUNT);++key) {
+        const int x=KB_X+(key%4)*(KB_W+KB_GAP), y=KB_Y+(key/4)*(KB_H+KB_GAP);
+        const bool fn=crosspod::T9Keypad::functionKey(key);
+        const bool focus=static_cast<size_t>(key)==searchKey_;
+        const std::string label=keypad_.label(key);
+        // Function keys are dark, as Q2's; the wheel's key is inverted.
+        if(!fn) {
+          renderer_.drawRect(x,y,KB_W,KB_H,true);
+          renderer_.drawLine(x+1,y+KB_H,x+KB_W-1,y+KB_H,true);  // the key's foot
+        }
+        int width=0;
+        const int scale=label.size()>3?150:176;
+        for(unsigned char ch:label) {
+          int32_t advance=0;int top=0;
+          if(renderer_.getCodepointMetrics(1,ch,EpdFontFamily::REGULAR,advance,top))
+            width+=fp4::toPixel(advance*scale/256);
+        }
+        const int tx=x+(KB_W-width)/2;
+        drawCompactLabel(tx,y+25,label.c_str(),scale);
+        if(fn)invertRect(x,y,KB_W,KB_H);  // white letters on a dark key
+        if(focus) {
+          invertRect(x,y,KB_W,KB_H);
+          renderer_.drawRect(x-1,y-1,KB_W+2,KB_H+2,true);
+        }
+      }
     } else {
       char count[64];
       std::snprintf(count,sizeof(count),"Books: %zu/%zu",visible_.size(),books_.size());
@@ -2786,8 +2814,8 @@ class CardShelf {
     renderer_.fillRect(0,269,375,51,true);
     const std::string footer=!notice_.empty()
       ?clippedLabel(notice_,24)
-      :onlineMode_?"OK: open/get   Back: prev":
-       searchEditing_?"Wheel: letters   OK: add   Back: results":
+      :searchEditing_?"OK: press   Back: close":
+       onlineMode_?"OK: open/get   Back: prev":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
     drawRowLabel(22,269,51,footer.c_str(),false);
   }

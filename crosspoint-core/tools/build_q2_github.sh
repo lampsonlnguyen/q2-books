@@ -432,7 +432,7 @@ for family in ("bitter","lexenddeca","chareink","literata",
     images=[]
     for size in (10,11,12):
         data=(work/f"{family}-{size}.pgm").read_bytes()
-        assert data.startswith(b"P5\\n375 320\\n255\\n")
+        assert data.startswith(b"P5\n375 320\n255\n")
         assert len(data)==120015 and sum(p<255 for p in data[15:])>50
         images.append(data)
     assert len(set(images))==3, f"Font size raster did not change: {family}"

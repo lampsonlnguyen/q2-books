@@ -471,8 +471,8 @@ struct RenderPage {
 class Reader {
   std::string bookPath_;
   ZipFile archive_;
-  TempCache temporary_;
-  BookMetadataCache metadata_;
+  std::unique_ptr<TempCache> temporary_;
+  std::unique_ptr<BookMetadataCache> legacyMetadata_;
   HalDisplay display_;
   GfxRenderer renderer_;
   EpdFont bodyFont_;
@@ -698,19 +698,9 @@ class Reader {
     if (pages_.empty() || (!totalLines && !totalImages)) return false;
     return true;
   }
- public:
-  explicit Reader(std::string path):
-      bookPath_(std::move(path)),archive_(bookPath_),
-      metadata_(temporary_.path()),renderer_(display_),
-      bodyFont_(&notosans_12_regular),
-      fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
-  ~Reader() {
-    flushPosition();
-    ImageBlock::setExtractor(nullptr,nullptr);
-  }
-  bool open(bool resumeOnOpen=false) {
-    (void)crosspod::loadReaderPreferences(preferences_);
-    if (temporary_.path().empty()) {
+  bool loadLegacyMetadata() {
+    temporary_=std::make_unique<TempCache>();
+    if (temporary_->path().empty()) {
       std::fputs("CrossPod: cannot create temporary cache\n",stderr);return false;
     }
     if (!archive_.loadAllFileStatSlims()) {
@@ -731,10 +721,11 @@ class Reader {
     std::string opfDir;
     const auto slash=opfPath.find_last_of('/');
     if(slash!=std::string::npos) opfDir=opfPath.substr(0,slash+1);
-    if(!metadata_.beginWrite() || !metadata_.beginContentOpfPass())return false;
+    legacyMetadata_=std::make_unique<BookMetadataCache>(temporary_->path());
+    if(!legacyMetadata_->beginWrite() || !legacyMetadata_->beginContentOpfPass())return false;
     BookMetadataCache::BookMetadata info;
     {
-      ContentOpfParser opf(temporary_.path(),opfDir,size,&metadata_,false);
+      ContentOpfParser opf(temporary_->path(),opfDir,size,legacyMetadata_.get(),false);
       if(!opf.setup() || !archive_.readFileToStream(opfPath.c_str(),opf,1024))return false;
       info.title=opf.title;
       info.author=opf.author;
@@ -742,10 +733,26 @@ class Reader {
       info.coverItemHref=opf.coverItemHref;
       info.textReferenceHref=opf.textReferenceHref;
     }
-    if(!metadata_.endContentOpfPass() ||
-       !metadata_.beginTocPass() || !metadata_.endTocPass() ||
-       !metadata_.endWrite() || !metadata_.buildBookBin(bookPath_,info) ||
-       !metadata_.load() || !metadata_.getSpineCount())return false;
+    return legacyMetadata_->endContentOpfPass() &&
+           legacyMetadata_->beginTocPass() && legacyMetadata_->endTocPass() &&
+           legacyMetadata_->endWrite() && legacyMetadata_->buildBookBin(bookPath_,info) &&
+           legacyMetadata_->load() && legacyMetadata_->getSpineCount()>0;
+  }
+  BookMetadataCache& metadata() const {
+    return upstreamEpub_?upstreamEpub_->getBookMetadataCache():*legacyMetadata_;
+  }
+ public:
+  explicit Reader(std::string path):
+      bookPath_(std::move(path)),archive_(bookPath_),
+      renderer_(display_),
+      bodyFont_(&notosans_12_regular),
+      fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
+  ~Reader() {
+    flushPosition();
+    ImageBlock::setExtractor(nullptr,nullptr);
+  }
+  bool open(bool resumeOnOpen=false) {
+    (void)crosspod::loadReaderPreferences(preferences_);
     // These are unmodified upstream CrossPoint layout/render sources.
     display_.begin();
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
@@ -756,17 +763,18 @@ class Reader {
     if (!decompressor_.init()) return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
-    (void)useTypography(typography_); // extended Sans 12 when installed
     crosspod::Typography savedType;
-    if(crosspod::loadTypography(savedType) && !useTypography(savedType))
+    if(!crosspod::loadTypography(savedType)) {
+      (void)useTypography(typography_);
+    } else if(!useTypography(savedType)) {
       typographyNotice_="Selected font file missing";
+      (void)useTypography(typography_);
+    }
     std::printf("CrossPod typeface: %s %dpt%s\n",
         crosspod::typographyFamilyName(typography_.family),typography_.size,
         typographyNotice_.empty()?"":" (saved font unavailable; fallback)");
     std::printf("CrossPod font source: %s\n",
         selectedFont_?"original CrossPoint extended cpfont":"built-in emergency font");
-    std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
-        info.title.c_str(),info.author.c_str(),metadata_.getSpineCount());
     const char* requestedEngine=std::getenv("CROSSPOD_ENGINE");
     if(!requestedEngine || std::strcmp(requestedEngine,"legacy")!=0) {
       auto candidate=std::make_shared<Epub>(bookPath_,upstreamCachePath());
@@ -776,12 +784,16 @@ class Reader {
       } else std::fprintf(stderr,
           "CrossPod: original Section unavailable; using legacy collector\n");
     }
+    if(!upstreamEpub_ && !loadLegacyMetadata())return false;
+    const auto& info=metadata().coreMetadata;
+    std::printf("CrossPod EPUB: %s — %s | %d spine entries\n",
+        info.title.c_str(),info.author.c_str(),metadata().getSpineCount());
     // Load the saved chapter first; the old startup rendered spine 0 and
     // immediately discarded it when resume opened a later chapter.
     crosspod::ReadingPosition saved{};
     const bool hasSaved=resumeOnOpen &&
         crosspod::loadReadingPosition(bookPath_,saved) &&
-        saved.spine>=0 && saved.spine<metadata_.getSpineCount();
+        saved.spine>=0 && saved.spine<metadata().getSpineCount();
     const int firstSpine=hasSaved?saved.spine:0;
     bool loaded=loadSpine(firstSpine,1);
     if(!loaded && firstSpine!=0)loaded=loadSpine(0,1);
@@ -860,14 +872,14 @@ class Reader {
     return true;
   }
   crosspod::ShelfDetails shelfDetails() const {
-    return {metadata_.coreMetadata.title,metadata_.coreMetadata.author};
+    return {metadata().coreMetadata.title,metadata().coreMetadata.author};
   }
   // Generate a tiny cover once, only after the user has already opened
   // the EPUB. Never inflate cover JPEG/PNG for every bookshelf row or turn.
   bool cacheShelfCover() {
     crosspod::ShelfCover existing;
     if(crosspod::loadShelfCover(bookPath_,existing))return true;
-    const std::string& coverPath=metadata_.coreMetadata.coverItemHref;
+    const std::string& coverPath=metadata().coreMetadata.coverItemHref;
     if(coverPath.empty()||coverPath.size()>1024 ||
        coverPath.front()=='/' || coverPath.find("..")!=std::string::npos)
       return false;
@@ -892,7 +904,7 @@ class Reader {
   size_t chapterCount() const {
     if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0)
       return static_cast<size_t>(upstreamEpub_->getTocItemsCount());
-    return static_cast<size_t>(metadata_.getSpineCount());
+    return static_cast<size_t>(metadata().getSpineCount());
   }
   int currentChapter() const {
     if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0 &&
@@ -908,7 +920,7 @@ class Reader {
     if(index>=chapterCount())return {};
     if(upstreamEpub_ && upstreamEpub_->getTocItemsCount()>0)
       return upstreamEpub_->getTocItem(static_cast<int>(index)).title;
-    const auto entry=metadata_.getSpineEntry(static_cast<int>(index));
+    const auto entry=metadata().getSpineEntry(static_cast<int>(index));
     std::string title=entry.href;
     const size_t slash=title.find_last_of('/');
     if(slash!=std::string::npos)title.erase(0,slash+1);
@@ -1016,7 +1028,7 @@ class Reader {
     if(!mapped.hasResolvedSpineIndex ||
        (!mapped.hasVisibleTextOffset && !mapped.hasMappedPage) ||
        mapped.spineIndex<0 ||
-       mapped.spineIndex>=metadata_.getSpineCount()) {
+       mapped.spineIndex>=metadata().getSpineCount()) {
       typographyNotice_="Remote text location unsupported";
       return false;
     }
@@ -1065,12 +1077,12 @@ class Reader {
   std::vector<crosspod::Bookmark> jumpHistory_;
   bool followLink(const std::string& href) {
     if(currentSpine_<0 || !upstreamSection_ || !upstreamEpub_)return false;
-    const auto current=metadata_.getSpineEntry(currentSpine_).href;
+    const auto current=metadata().getSpineEntry(currentSpine_).href;
     const auto destination=crosspod::resolveInternalLink(current,href);
     if(!destination.valid)return false;
     int target=-1;
-    for(int i=0;i<metadata_.getSpineCount();++i) {
-      if(metadata_.getSpineEntry(i).href==destination.path) {
+    for(int i=0;i<metadata().getSpineCount();++i) {
+      if(metadata().getSpineEntry(i).href==destination.path) {
         target=i;break;
       }
     }
@@ -1127,7 +1139,7 @@ class Reader {
   std::string footnotePreview(const std::string& href) {
     if(currentSpine_<0)return {};
     return crosspod::loadFootnotePreview(archive_,
-      metadata_.getSpineEntry(currentSpine_).href,href);
+      metadata().getSpineEntry(currentSpine_).href,href);
   }
   void showFootnotePopup(const std::string& href) {
     std::string note=footnotePreview(href);
@@ -1623,9 +1635,8 @@ class Reader {
     const size_t oldPage=currentPage_;
     auto oldPages=std::move(pages_);
     auto oldSection=std::move(upstreamSection_);
-    const int n=metadata_.getSpineCount();
+    const int n=metadata().getSpineCount();
     while(index>=0 && index<n) {
-      const auto entry=metadata_.getSpineEntry(index);
       if(upstreamEpub_ && index<upstreamEpub_->getSpineItemsCount()) {
         auto section=std::make_unique<Section>(upstreamEpub_,index,renderer_);
         const ReaderRenderSpec spec=upstreamSpec();
@@ -1662,9 +1673,9 @@ class Reader {
           return true;
         }
         std::fprintf(stderr,
-           "CrossPod: original Section could not lay out %s; falling back\n",
-           entry.href.c_str());
+           "CrossPod: original Section could not lay out spine %d; falling back\n",index+1);
       }
+      const auto entry=metadata().getSpineEntry(index);
       std::vector<Paragraph> paragraphs;
       if(parseChapter(archive_,bookPath_,entry.href,paragraphs) &&
          paginate(paragraphs)) {
@@ -1690,8 +1701,9 @@ class Reader {
       std::fprintf(stderr,"CrossPod: incremental Section failed; preserving book via fallback\n");
       const int spine=currentSpine_;
       const size_t page=currentPage_;
-      upstreamEpub_.reset();
+      if(!loadLegacyMetadata())return false;
       upstreamSection_.reset();
+      upstreamEpub_.reset();
       if(loadSpine(spine,1)) {
         currentPage_=std::min(page,pageCount()-1);
         persistPosition();
@@ -1733,7 +1745,7 @@ class Reader {
       buffer[i]=static_cast<uint8_t>(~buffer[i]);
   }
   void drawProgress() {
-    const int totalChapters=metadata_.getSpineCount();
+    const int totalChapters=metadata().getSpineCount();
     if(totalChapters<=0 || currentSpine_<0)return;
     const size_t localCount=std::max<size_t>(1,estimatedPages());
     const float local=static_cast<float>(currentPage_+1)/localCount;
@@ -1876,7 +1888,7 @@ class Reader {
   void report() const {
     std::printf("CrossPod validated %s: page %zu/%zu, spine %d/%d\n",
         bookPath_.c_str(),currentPage_+1,pageCount(),
-        currentSpine_+1,metadata_.getSpineCount());
+        currentSpine_+1,metadata().getSpineCount());
   }
 };
 
@@ -1920,6 +1932,7 @@ class CardShelf {
   int homeSelection_ = 0;
   std::string notice_;
   static constexpr int TOP_Y=80, ROW_H=38, VISIBLE_ROWS=5;
+  static constexpr int HOME_ONLINE_X=252;
 
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
@@ -2102,7 +2115,7 @@ class CardShelf {
     if(!browsing_) {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
-      else if(y>=244&&y<267)homeSelection_=x<195?2:3;
+      else if(y>=244&&y<267)homeSelection_=x<HOME_ONLINE_X?2:3;
       else return false;
       return true;
     }
@@ -2172,12 +2185,15 @@ class CardShelf {
           EpdFontFamily::REGULAR,x,baseline,scale);
     }
   }
+  void drawRowLabel(int x,int y,int height,const char* label,bool black=true) {
+    const int textY=y+(height-renderer_.getLineHeight(1))/2;
+    renderer_.drawText(1,x,textY,label,black);
+  }
   void paint() {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
-    // Draw at 75% of the native 12pt font, then invert only the header
-    // raster so the compact text stays white against the dark title bar.
-    drawCompactLabel(16,23,"CrossPod");
+    // Invert the header raster so its text stays white on the dark title bar.
+    drawRowLabel(16,0,39,"CrossPod");
     uint8_t* fb=display_.getFrameBuffer();
     for(int y=0;y<39;++y)
       for(int byte=0;byte<HalDisplay::DISPLAY_WIDTH_BYTES;++byte)
@@ -2207,7 +2223,7 @@ class CardShelf {
             clippedLabel(entry.author,32).c_str(),!active);
       }
     } else if(!browsing_) {
-      drawCompactLabel(16,61,"Home");
+      drawRowLabel(16,39,35,"Home");
       renderer_.drawLine(15,74,359,74,true);
       // Real EPUB cover thumb is decoded once when leaving the book;
       // shelf startup only reads a 360-byte 1-bit cached image.
@@ -2218,39 +2234,33 @@ class CardShelf {
         renderer_.drawLine(66,85,66,146,true);
         renderer_.drawLine(17,146,66,146,true);
       }
-      renderer_.drawText(1,82,88,"Current book");
+      drawRowLabel(82,85,20,"Current book");
       if(books_.empty())
-        renderer_.drawText(1,82,119,"No books yet");
+        drawRowLabel(82,107,20,"No books yet");
       else {
         const auto& info=details(current_);
-        renderer_.drawText(1,82,110,
-            clippedLabel(info.title.empty()?books_[current_].label:info.title,19).c_str());
+        const auto& title=info.title.empty()?books_[current_].label:info.title;
+        drawRowLabel(82,106,20,renderer_.truncatedText(1,title.c_str(),277).c_str());
         if(!info.author.empty())
-          renderer_.drawText(1,82,132,clippedLabel(info.author,20).c_str());
+          drawRowLabel(82,127,20,renderer_.truncatedText(1,info.author.c_str(),277).c_str());
       }
       renderer_.drawLine(15,149,359,149,true);
       if(!books_.empty()) {
         if(homeSelection_==0)renderer_.fillRect(12,158,350,37,true);
-        renderer_.drawText(1,22,165,"Continue reading",homeSelection_!=0);
+        drawRowLabel(22,158,37,"Continue reading",homeSelection_!=0);
       }
       if(homeSelection_==1 || books_.empty())
         renderer_.fillRect(12,204,350,37,true);
-      renderer_.drawText(1,22,211,"Browse files",
+      drawRowLabel(22,204,37,"Browse files",
           homeSelection_!=1 && !books_.empty());
       std::string sortText="Sort: ";
       sortText+=crosspod::shelfSortLabel(sortMode_);
-      drawCompactLabel(22,259,sortText.c_str(),170);
-      drawCompactLabel(232,259,"Online",170);
-      if(homeSelection_>=2) {
-        // Split the original sort row into wheel-selectable Sort/Online
-        // buttons, preserving the established Browse and Continue positions.
-        auto* pixels=display_.getFrameBuffer();
-        if(pixels)for(int y=244;y<267;++y)
-          for(int x=homeSelection_==2?12:202;
-              x<(homeSelection_==2?192:362);++x)
-            pixels[y*HalDisplay::DISPLAY_WIDTH_BYTES+x/8]^=
-                static_cast<uint8_t>(0x80u>>(x&7));
-      }
+      if(homeSelection_==2)renderer_.fillRect(12,244,HOME_ONLINE_X-22,23,true);
+      if(homeSelection_==3)renderer_.fillRect(HOME_ONLINE_X,244,362-HOME_ONLINE_X,23,true);
+      drawRowLabel(22,244,23,
+          renderer_.truncatedText(1,sortText.c_str(),HOME_ONLINE_X-42).c_str(),
+          homeSelection_!=2);
+      drawRowLabel(HOME_ONLINE_X+10,244,23,"Online",homeSelection_!=3);
     } else if(searchEditing_) {
       drawCompactLabel(16,59,"Search library",190);
       const std::string query="Find: "+searchQuery_;
@@ -2312,7 +2322,7 @@ class CardShelf {
       :onlineMode_?"OK: open/get   Back: prev":
        searchEditing_?"Wheel: letters   OK: add   Back: results":
         browsing_?"OK: open   Back: home":"OK: open   Back: exit";
-    renderer_.drawText(1,22,280,footer.c_str(),false);
+    drawRowLabel(22,269,51,footer.c_str(),false);
   }
   void present() {paint();display_.displayBuffer();}
   bool savePgm(const std::string& out) {
@@ -2783,12 +2793,12 @@ int runCardApp(const std::string& bookDir) {
       // A successful open updates Continue Reading; rejected/corrupt EPUBs
       // never become the current title. Atomic history costs one SD write
       // per opened book, never one write per page turn.
-      (void)crosspod::saveShelfDetails(chosen,next->shelfDetails());
-      if(crosspod::recordRecentBook(chosen))
-        recent=crosspod::loadRecentBooks();
       shelf.reset();
       reader=std::move(next);
       reader->present();
+      (void)crosspod::saveShelfDetails(chosen,reader->shelfDetails());
+      if(crosspod::recordRecentBook(chosen))
+        recent=crosspod::loadRecentBooks();
     }
   }
   input.close();

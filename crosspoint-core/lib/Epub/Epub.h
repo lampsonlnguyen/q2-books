@@ -30,6 +30,7 @@ class Epub {
   std::string tocNavItem;
   // where is the EPUBfile?
   std::string filepath;
+  std::unique_ptr<ZipFile> archive;
   // the base path for items in the EPUB file
   std::string contentBasePath;
   // Uniq cache key based on filepath
@@ -58,7 +59,9 @@ class Epub {
 
  public:
   explicit Epub(std::string filepath, const std::string& cacheDir);
-  ~Epub() = default;
+  ~Epub();
+  BookMetadataCache& getBookMetadataCache() const { return *bookMetadataCache; }
+
   std::string& getBasePath() { return contentBasePath; }
   bool load(bool buildIfMissing = true, bool skipLoadingCss = false);
   bool loadMetadata(std::string& title, std::string& author);

@@ -84,42 +84,39 @@ bool ZipFile::loadAllFileStatSlims() {
 
   if (!loadZipDetails()) return false;
 
-  file.seek(zipDetails.centralDirOffset);
+  if (!file.seek(zipDetails.centralDirOffset)) return false;
 
-  uint32_t sig;
+  uint8_t header[CENTRAL_HEADER_BYTES];
   char itemName[256];
   fileStatSlimCache.clear();
   fileStatSlimCache.reserve(zipDetails.totalEntries);
 
-  while (file.available()) {
-    file.read(&sig, 4);
-    if (sig != 0x02014b50) break;  // End of list
-
-    FileStatSlim fileStat = {};
-
-    file.seekCur(6);
-    file.read(&fileStat.method, 2);
-    file.seekCur(8);
-    file.read(&fileStat.compressedSize, 4);
-    file.read(&fileStat.uncompressedSize, 4);
-    uint16_t nameLen, m, k;
-    file.read(&nameLen, 2);
-    file.read(&m, 2);
-    file.read(&k, 2);
-    file.seekCur(8);
-    file.read(&fileStat.localHeaderOffset, 4);
-
-    if (nameLen < sizeof(itemName)) {
-      file.read(itemName, nameLen);
-      itemName[nameLen] = '\0';
-      fileStatSlimCache.emplace(itemName, fileStat);
-    } else {
-      // Skip over oversized entry names to avoid writing past fixed buffer.
-      file.seekCur(nameLen);
+  for (uint32_t entry = 0; entry < zipDetails.totalEntries; ++entry) {
+    // Read the fixed header in one buffered operation. Repeated seeking
+    // inside each header forces extra repositioning on POSIX SD files.
+    if (file.read(header, sizeof(header)) != sizeof(header) ||
+        readLe32(header) != CENTRAL_HEADER_SIGNATURE) {
+      fileStatSlimCache.clear();
+      return false;
     }
 
-    // Skip the rest of this entry (extra field + comment)
-    file.seekCur(m + k);
+    const auto nameLen = readLe16(header + 28);
+    size_t skip = static_cast<size_t>(readLe16(header + 30)) + readLe16(header + 32);
+    if (nameLen < sizeof(itemName)) {
+      if (file.read(itemName, nameLen) != nameLen) {
+        fileStatSlimCache.clear();
+        return false;
+      }
+      fileStatSlimCache.emplace(std::string(itemName, nameLen),
+                                FileStatSlim{readLe16(header + 10), readLe32(header + 20),
+                                             readLe32(header + 24), readLe32(header + 42)});
+    } else {
+      skip += nameLen;
+    }
+    if (skip && !file.seekCur(skip)) {
+      fileStatSlimCache.clear();
+      return false;
+    }
   }
 
   // Set cursor to start of central directory for sequential access

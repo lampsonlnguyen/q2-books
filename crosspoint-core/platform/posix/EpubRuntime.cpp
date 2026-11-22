@@ -17,9 +17,11 @@
 #include <sys/stat.h>
 
 Epub::Epub(std::string path,const std::string& cacheDir)
-  : filepath(std::move(path)),cachePath(cacheDir),
+  : filepath(std::move(path)),archive(std::make_unique<ZipFile>(filepath)),cachePath(cacheDir),
     bookMetadataCache(std::make_unique<BookMetadataCache>(cacheDir)),
     cssParser(std::make_unique<CssParser>(cacheDir)) {}
+
+Epub::~Epub() = default;
 
 const std::string& Epub::getCachePath() const {return cachePath;}
 const std::string& Epub::getPath() const {return filepath;}
@@ -36,7 +38,7 @@ void Epub::setupCacheDir() const {
 bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
   setupCacheDir();
   if(!buildIfMissing)return bookMetadataCache->load();
-  ZipFile zip(filepath);
+  auto& zip=*archive;
   if(!zip.loadAllFileStatSlims())return false;
   // Protected books require an implementation of FreeInk's protected read
   // path. Never silently render encrypted EPUB data as if it were plain.
@@ -123,12 +125,20 @@ bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
   return true;
 }
 
+uint8_t* Epub::readItemContentsToBytes(const std::string& itemHref,size_t* size,
+                                       bool trailingNullByte) const {
+  if(itemHref.empty()||itemHref.front()=='/' ||
+     itemHref.find("..")!=std::string::npos || itemHref.find('\\')!=std::string::npos)
+    return nullptr;
+  return archive->readFileToMemory(itemHref.c_str(),size,trailingNullByte);
+}
+
 bool Epub::readItemContentsToStream(const std::string& itemHref,Print& output,
                                     size_t chunkSize,bool earlyStop) const {
   if(itemHref.empty()||itemHref.front()=='/' ||
      itemHref.find("..")!=std::string::npos || itemHref.find('\\')!=std::string::npos)
     return false;
-  ZipFile zip(filepath);
+  auto& zip=*archive;
   if(zip.readFileToStream(itemHref.c_str(),output,chunkSize,earlyStop))return true;
   if(!contentBasePath.empty() && itemHref.rfind(contentBasePath,0)!=0)
     return zip.readFileToStream((contentBasePath+itemHref).c_str(),output,chunkSize,earlyStop);
@@ -150,8 +160,7 @@ int Epub::getTocIndexForSpineIndex(int n) const {
 }
 bool Epub::getItemSize(const std::string& itemHref,size_t* size) const {
   if(!size || itemHref.empty())return false;
-  ZipFile zip(filepath);
-  return zip.getInflatedFileSize(itemHref.c_str(),size);
+  return archive->getInflatedFileSize(itemHref.c_str(),size);
 }
 // The upstream CrossPoint size-progress helpers were unnecessary before
 // KOSync and previously stubbed out. Use the exact original metadata LUT,

@@ -1,4 +1,6 @@
 #pragma once
+
+#include <cstdlib>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -38,6 +40,8 @@ class Section {
   // doubling past 1024 pages needs 24 KB contiguous, and a failed allocation aborts. The deque
   // (like the parser's anchor list) takes one ~0.5 KB node as soon as the build starts.
   struct BuildContext {
+    // The parser's FILE stream borrows this buffer and must close before it.
+    std::unique_ptr<uint8_t, decltype(&std::free)> htmlBytes{nullptr, &std::free};
     std::unique_ptr<ChapterHtmlSlimParser> parser;
     std::deque<PageLutEntry> lut;
     std::string parsePath;

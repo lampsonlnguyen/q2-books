@@ -243,6 +243,9 @@ class ChapterHtmlSlimParser {
   // boundaries.
   XML_Parser xmlParser_ = nullptr;
   HalFile parseFile_;
+  uint8_t* inputBytes_ = nullptr;
+  size_t inputSize_ = 0;
+  bool openInput(HalFile& file) const;
   uint32_t parseStartTime_ = 0;
 
   void updateEffectiveInlineStyle();
@@ -339,7 +342,7 @@ class ChapterHtmlSlimParser {
   // Pages are emitted via completePageFn as they complete during parseStep(), so
   // the caller can stop once enough pages are built and resume on a later tick.
   enum class ParseStatus { More, Done, Error };
-  bool beginParse();
+  bool beginParse(uint8_t* inputBytes = nullptr, size_t inputSize = 0);
   ParseStatus parseStep();
   bool finishParse();  // flush the trailing page and tear down; false on OOM/stop
   void abortParse();   // tear down without flushing (error / abandon)

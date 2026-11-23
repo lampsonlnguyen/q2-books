@@ -48,7 +48,12 @@ EXPECT = {
         "M5-ENTITY-END": ["α"]}}),
     # Unclosed and mismatched tags are repaired: the text still shows.
     "broken-xml": (OK, {"OEBPS/chapter1.xhtml": {
-        "M5-BROKEN-XML-OK": [], "second paragraph": []}}),
+        "M5-BROKEN-XML-OK": ["bold=1", "italic=1"],
+        "M5-BROKEN-XML-PLAIN": ["bold=0", "italic=0"]}}),
+    "chemistry-table": (OK, {"OEBPS/chapter1.xhtml": {m: [] for m in [
+        "Atomic weights of the elements", "Simple bodies", "Sp. vol."]}}),
+    "rashomon-ruby": (OK, {"OEBPS/chapter1.xhtml": {
+        "鴉": ["からす"], "たくさん集って来た。": []}}),
 }
 
 
@@ -89,6 +94,18 @@ def main():
                         assert needle in line, (name, marker, needle, line)
                     checked += 1
             print(f"  {name}: {sum(len(m) for m in chapters.values())} markers OK")
+
+        # Inspect-styles uses a host sink. Compare the Q2 reader's actual page
+        # render with explicitly closed XHTML to cover its layout path too.
+        renders = []
+        for name in ("broken-xml", "broken-xml-reference"):
+            image = Path(tmp) / f"{name}.pgm"
+            render_env = {**env, "BOOKS_STATE_DIR": str(Path(tmp) / name)}
+            result = run(["--render", str(corpus / f"{name}.epub"), str(image)], render_env)
+            assert result.returncode == 0, (name, "render", result.returncode, result.stderr)
+            renders.append(image.read_bytes())
+        assert renders[0] == renders[1], "repaired XHTML renders differently from explicitly closed XHTML"
+        checked += 1
     print(f"M5 corpus: {checked} checks passed across {len(EXPECT)} books")
 
 

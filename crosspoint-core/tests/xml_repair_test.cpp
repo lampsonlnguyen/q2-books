@@ -81,11 +81,17 @@ int main() {
   expectEq(repairOnce("a < b"), "a &lt; b", "bare less-than is text");
   expectEq(repairOnce("<a><b>x"), "<a><b>x</b></a>", "open at end closed");
   expectEq(repairOnce("</zzz>text"), "text", "stray end tag dropped");
-  expectEq(repairOnce("<p>one<p>two</body>"), "<p>one<p>two</p></p>", "end tag matching nothing dropped");
+  expectEq(repairOnce("<body><p>one<b>bold<i>italic<p class='next'>two</body>"),
+           "<body><p>one<b>bold<i>italic</i></b></p><p class='next'>two</p></body>",
+           "new paragraph closes the old paragraph and its formatting");
+  expectEq(repairOnce("<body><p><em>one<hr>two</body>"),
+           "<body><p><em>one</em></p><hr></hr>two</body>", "a void block closes the paragraph");
+  const std::string nestedLink = "<body><a href='#x'><div><p>linked</p></div></a></body>";
+  expectEq(repairOnce(nestedLink), nestedLink, "valid link wrapping a block is preserved");
   expectEq(repairOnce("<a href='x>y'>t</a>"), "<a href='x>y'>t</a>", "'>' inside a quoted attribute");
 
   // Read boundaries never change the result.
-  const std::string broken = "<p>a<b>c</p>d<br>e & f<!-- x -->&nbsp;</body>";
+  const std::string broken = "<body><p>a<b>c<div>d<br>e & f<!-- x -->&nbsp;</body>";
   const std::string brokenWhole = repairOnce(broken);
   for (size_t p = 0; p <= broken.size(); ++p) {
     expectEq(repairChunks({broken.substr(0, p), broken.substr(p)}), brokenWhole, "broken split");

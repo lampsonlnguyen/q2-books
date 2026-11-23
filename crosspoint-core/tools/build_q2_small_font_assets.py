@@ -99,7 +99,11 @@ def write_license_bundle(out: pathlib.Path, upstream: pathlib.Path,
 # glyphs from their TrueType sources at full coverage, over CrossPoint's own
 # layout. The files ship unmodified (no subsetting: the OFL counts a subset
 # as a modified font), named <slug>-<style>.ttf.
-READING_SLUGS = {"NotoSansExtended": "sans", "NotoSerifExtended": "serif", **CROSSINK_FAMILIES}
+# Bitter is left out: its variable source does not draw where its .cpfont does
+# (the device build measured a 2-3 px vertical shift), so it keeps CrossPoint's
+# 2-bit glyphs until the matching source is found.
+READING_SLUGS = {"NotoSansExtended": "sans", "NotoSerifExtended": "serif",
+                 **{name: slug for name, slug in CROSSINK_FAMILIES.items() if slug != "bitter"}}
 
 
 def _style_key(name: str) -> str:

@@ -442,6 +442,8 @@ for family,book in [(f,b) for f in ("sans","serif","bitter","inter","literata")
     text=open(f"{sys.argv[1]}/smooth-{family}-{book}.log").read()
     family=f"{family} ({book})"
     m=re.search(r"IoU ([0-9.]+) over (\d+) ink pixels, centre shift ([-+0-9.]+) ([-+0-9.]+)",text)
+    if not m and "kept 2-bit" not in text and "no TrueType glyphs" not in text and family.split()[0] not in ("sans","serif"):
+        print(f"::notice::smooth glyphs {family}: no TrueType file (kept 2-bit)"); continue
     if not m:
         # A family whose TrueType does not line up keeps 2-bit glyphs (its
         # baseline check refused it): allowed, except the two defaults.

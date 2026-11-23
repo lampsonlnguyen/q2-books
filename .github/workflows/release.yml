@@ -1,98 +1,188 @@
-name: Release CrossPoint Core Development Build
+name: Build, test and publish Books for Q2
 
 on:
   push:
-    tags:
-      - "core-v*"
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing tag to build and publish, such as v1.2.2'
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: crosspoint-core-release-${{ github.ref }}
+  group: q2-books-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+
 jobs:
-  release:
-    name: Test, package and publish core development release
+  validate:
     runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.validate.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
-
-      - name: Verify tag belongs to main
+          persist-credentials: false
+      - name: Validate version tag, history and notes
+        id: validate
+        shell: bash
         run: |
           set -euo pipefail
-          git fetch origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
-            echo "Refusing to publish: tag must point to a commit on main" >&2
-            exit 1
-          }
+          tag="$RELEASE_TAG"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]] || { echo "::error::Invalid tag"; exit 1; }
+          git fetch -q origin main
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "refs/tags/$tag")"
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::Release tag must be on main"; exit 1; }
+          version="$(head -n 1 crosspoint-core/VERSION | tr -d '\r')"
+          [[ "$tag" == "v$version" || "$tag" == "v$version-"* ]] || { echo "::error::Tag $tag disagrees with version $version"; exit 1; }
+          test -s "docs/release-notes/$tag.md" || { echo "::error::Missing release notes for $tag"; exit 1; }
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Install host XML dependency
-        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev zlib1g-dev
+  host-tests:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libexpat1-dev zlib1g-dev libjpeg-dev libcurl4-openssl-dev openssl libfreetype-dev fonts-liberation
+      - name: Configure and build
+        run: |
+          cmake -S crosspoint-core -B build/core-host -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          cmake --build build/core-host --parallel 2
+      - name: Run full host regression suite
+        run: ctest --test-dir build/core-host --output-on-failure
 
-      - name: Configure
-        run: cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
-
-      - name: Build
-        run: cmake --build build/crosspoint-core --parallel 2
-
-      - name: Test
-        run: ctest --test-dir build/crosspoint-core --output-on-failure
-
-      - name: Package tagged source and tested host components
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
+  build-q2:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - name: Install Shanling Q2 build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm cmake git curl zip unzip squashfs-tools qemu-user binutils-mipsel-linux-gnu gcc-mipsel-linux-gnu g++-mipsel-linux-gnu libc6-dev-mipsel-cross python3-venv
+      - name: Build and run all Q2 MIPS/QEMU regressions
+        shell: bash
+        run: bash crosspoint-core/tools/build_q2_github.sh
+      - name: Verify installable SD card ZIP
+        shell: bash
         run: |
           set -euo pipefail
-          folder="books-${RELEASE_TAG}-core-devkit"
-          mkdir -p "dist/$folder/lib" "dist/$folder/platform"
-          cp build/crosspoint-core/libcrosspoint_utf8.a build/crosspoint-core/libcrosspoint_txt.a build/crosspoint-core/libcrosspoint_epub_container.a build/crosspoint-core/libcrosspoint_zip.a build/crosspoint-core/libcrosspoint_opf.a build/crosspoint-core/libcrosspoint_book_cache.a build/crosspoint-core/libbooks_q2_input.a build/crosspoint-core/libbooks_q2_framebuffer.a build/crosspoint-core/libcrosspoint_layout_foundation.a build/crosspoint-core/libcrosspoint_font_metrics.a build/crosspoint-core/libcrosspoint_linebreak.a "dist/$folder/lib/"
-          cp crosspoint-core/platform/q2/Q2Controls.hpp crosspoint-core/platform/q2/Q2Display.hpp crosspoint-core/platform/q2/Q2BookHandoff.hpp crosspoint-core/platform/q2/Q2SocketInput.hpp crosspoint-core/platform/q2/Q2Framebuffer.hpp crosspoint-core/platform/q2/Q2PagePresenter.hpp "dist/$folder/platform/"
-          cp -R crosspoint-core/lib crosspoint-core/tests crosspoint-core/platform/posix "dist/$folder/"
-          cp crosspoint-core/CMakeLists.txt crosspoint-core/README.md "dist/$folder/"
-          cp crosspoint-core/LICENSE-CROSSPOINT crosspoint-core/LICENSE-BORROWED-CODE "dist/$folder/"
-          cp build/crosspoint-core/books-epub-check "dist/$folder/"
-          cat > "dist/$folder/NOT-FLASHABLE.txt" <<'NOTICE'
-          Books — CrossPoint Core development release
-          Contains tested Linux x86_64 host static libraries, source code and Q2 adapter headers.
-          This is NOT a Shanling Q2 app, NOT a MIPS executable, and NOT installable on Q2.
-          The upstream EPUB rendering and Linux HAL integration remain under development.
-          No ESP32 bootloader, firmware image, FreeRTOS binary, or e-ink driver is included.
-          NOTICE
-          (
-            cd dist
-            zip -qr "$folder.zip" "$folder"
-            sha256sum "$folder.zip" > "$folder.zip.sha256"
-          )
-          cat > dist/RELEASE_NOTES.md <<'NOTES'
-          Books CrossPoint core development release.
+          zip=dist/books-q2-reader-alpha.zip
+          test -s "$zip" && test -s "$zip.sha256"
+          expected="$(awk 'NR==1 {print $1}' "$zip.sha256")"
+          actual="$(sha256sum "$zip" | cut -d ' ' -f 1)"
+          test -n "$expected" && test "$expected" = "$actual"
+          unzip -t "$zip"
+          unzip -Z1 "$zip" > dist/archive-contents.txt
+          for path in .books/books-engine .books/q2-books .books/q2app .books/fonts/ttf/sans-regular.ttf .books/fonts/ttf/serif-regular.ttf; do
+            grep -Fxq "$path" dist/archive-contents.txt || { echo "::error::Missing $path"; exit 1; }
+          done
+          unzip -p "$zip" .books/q2app | grep -Fxq 'row=library'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-q2-books-card
+          path: |
+            dist/books-q2-reader-alpha.zip
+            dist/books-q2-reader-alpha.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: q2-release-failure-logs
+          path: build/q2-device/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
-          **Not installable on the Shanling Q2.** This prerelease provides tested
-          upstream CrossPoint Unicode/NFC and TXT conversion components,
-          Q2 click-wheel/touch and LCD adapters, and their source code.
-          It is a Linux x86_64 development build, not a MIPS device binary.
-
-          A Q2 Linux reader application package will only be published when the original CrossPoint
-          EPUB engine, typography, reader activities and POSIX device HAL
-          have been integrated and validated on hardware.
-          NOTES
-
-      - name: Publish GitHub prerelease
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+  publish:
+    needs: [validate, host-tests, build-q2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-q2-books-card
+          path: dist
+      - name: Validate exact tested output and prepare versioned files
+        shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release already exists: $RELEASE_TAG" >&2
-            exit 1
+          sudo apt-get update
+          sudo apt-get install -y binutils-mipsel-linux-gnu
+          archive=dist/books-q2-reader-alpha.zip
+          test -s "$archive" && test -s "$archive.sha256"
+          expected="$(awk 'NR==1 {print $1}' "$archive.sha256")"
+          actual="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          test -n "$expected" && test "$expected" = "$actual"
+          unzip -t "$archive"
+          unzip -Z1 "$archive" > dist/archive-contents.txt
+          for path in .books/books-engine .books/q2-books .books/q2app .books/fonts/ttf/sans-regular.ttf; do
+            grep -Fxq "$path" dist/archive-contents.txt
+          done
+          if grep -Ei '(^|/)(update\.tar|[^/]+\.(img|bin))$' dist/archive-contents.txt; then
+            echo "::error::Firmware payload included in card app"; exit 1
           fi
-          gh release create "$RELEASE_TAG" dist/books-*.zip dist/books-*.zip.sha256 \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --prerelease \
-            --title "Books $RELEASE_TAG (CrossPoint Core Dev Build)" \
-            --notes-file dist/RELEASE_NOTES.md
+          mkdir -p build/verified
+          (cd build/verified && unzip -oq ../../dist/books-q2-reader-alpha.zip .books/books-engine)
+          python3 crosspoint-core/tools/check_q2_elf.py build/verified/.books/books-engine mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
+          cp "$archive" "dist/books-q2-$RELEASE_TAG.zip"
+          (cd dist && sha256sum "books-q2-$RELEASE_TAG.zip" > "books-q2-$RELEASE_TAG.zip.sha256")
+          (cd dist && sha256sum -c "books-q2-$RELEASE_TAG.zip.sha256")
+      - name: Publish release with ZIP and SHA-256
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          zip="dist/books-q2-$tag.zip"
+          sha="$zip.sha256"
+          notes="docs/release-notes/$tag.md"
+          title="Books $tag (Shanling Q2)"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Recover only empty web-created releases; never replace published assets.
+            count="$(gh release view "$tag" --json assets --jq '.assets | length')"
+            test "$count" = 0 || { echo "::error::Release already contains assets"; exit 1; }
+            gh release upload "$tag" "$zip" "$sha"
+            if [[ "$tag" == *-* ]]; then
+              gh release edit "$tag" --title "$title" --notes-file "$notes" --prerelease
+            else
+              gh release edit "$tag" --title "$title" --notes-file "$notes"
+            fi
+          elif [[ "$tag" == *-* ]]; then
+            gh release create "$tag" "$zip" "$sha" --verify-tag --prerelease --title "$title" --notes-file "$notes"
+          else
+            gh release create "$tag" "$zip" "$sha" --verify-tag --latest --title "$title" --notes-file "$notes"
+          fi
+          echo "Published https://github.com/$GH_REPO/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

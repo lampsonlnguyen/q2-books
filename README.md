@@ -24,7 +24,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 | M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, menus in Q2 Pod's language | Done. Menus follow Q2 Pod's language (released in 1.1.2). Open: CJK and Thai menus, native review of the tables |
 | M4 — Library and servers (v0.12) | OPDS paging and catalog search; several saved servers with credentials; offline catalog copy and retry; book details with network covers; folders with breadcrumbs; 4000-book libraries; sync conflict choice | Done and released in 1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md). Open: highlight sync |
 | M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Implemented on a branch, not released: 12-book corpus, entity and element repair; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, real books, Q2 measurement |
-| M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
+| M6 — Optional polish (v0.14) | Only features with a Q2 use case: smooth (anti-aliased) text, clock and battery while reading, Q2 Pod's 32 px list layout in menus | Started on a branch, not released; see [the M6 notes](docs/v0.14-polish.md). Open: Q2 page-turn measurement, a smooth-text switch |
 | M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.1.2 (1.0.0 was the first stable tag); the criteria below are not all met yet |
 
 ## What still needs doing
@@ -51,6 +51,11 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - Compare the corpus with upstream CrossPoint pixel for pixel, using the same settings, and document the allowed differences (ruby and tables are not laid out as upstream will show them).
 - Add real public-domain books with tables, ruby, CJK and Indic text to the corpus; the current books are generated.
 - Measure the M5 parse change on a Q2: page-turn time and RAM while a chapter is laid out.
+
+**Polish (M6)**
+- Measure page-turn time and battery with smooth text on a Q2; add a Reading settings switch for it (today `BOOKS_SMOOTH_TEXT=0`).
+- The clock is 24-hour only: Q2 Pod's 12/24-hour setting is not readable by a card app.
+- Refresh the menu bar's clock while a menu stays open; CJK and Thai menu letters; time left in the chapter.
 
 **Release and packaging (M7)**
 - Compatibility and test report from the device, a troubleshooting guide and a user manual.

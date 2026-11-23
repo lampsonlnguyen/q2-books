@@ -33,6 +33,8 @@
 #include "Clippings.hpp"
 #include "UiLanguage.hpp"
 #include "Q2Theme.hpp"
+#include "StatusBar.hpp"
+#include "MenuLayout.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -598,8 +600,10 @@ class Reader {
     int spine=-1;
     size_t page=0;
     std::vector<uint8_t> pixels;
+    std::vector<uint8_t> grayLsb,grayMsb;  // empty: no smooth-text planes
   };
   std::array<CachedRaster,3> rasterCache_{};
+  books::DeviceStatus status_{};  // what the footer last showed
   size_t nextRasterSlot_=0;
   bool lastRenderOk_=true;
   void clearRasterCache() {
@@ -1687,45 +1691,42 @@ class Reader {
     persistPosition();
     return true;
   }
-  // Chapter/bookmark list geometry. Rows are as tall as the list font's
-  // line (they were a fixed 25 px, shorter than the 12pt line, so each row's
-  // text was cut by the next row and the selection bar).
-  static constexpr int kNavTop=76, kNavFooter=270;
-  int navRowHeight() const {return std::max(20,renderer_.getLineHeight(1)+2);}
-  int navRows() const {return std::max(1,(kNavFooter-4-kNavTop)/navRowHeight());}
-  int navRowAt(int selected,int y) const {
-    const int rows=navRows();
-    return (std::max(0,selected)/rows)*rows+std::max(0,(y-kNavTop)/navRowHeight());
+  // Chapter/bookmark list: Q2 Pod's list layout (MenuLayout). The names use
+  // the reading font, so chapters in any script show.
+  int navCount(bool showingBookmarks) const {
+    return static_cast<int>(showingBookmarks?bookmarks().size():chapterCount());
+  }
+  // The item tapped at y, or -1 off the rows.
+  int navRowAt(bool showingBookmarks,int selected,int y) const {
+    const int count=navCount(showingBookmarks);
+    return books::MenuLayout::itemAt(books::MenuLayout::first(selected,count),count,y);
   }
   void showNavigationMenu(bool showingBookmarks,int selected) {
-    render();
-    renderer_.fillRect(9,38,357,255,true);
-    renderer_.fillRect(11,40,353,251,false);
-    books::paintFrame(display_,9,38,357,255,2);
-    renderer_.drawText(1,23,44,books::tr(showingBookmarks?"Bookmarks":"Chapters"));
-    renderer_.fillRect(18,72,337,1,true);
+    using L=books::MenuLayout;
+    paintListBar(showingBookmarks?"Bookmarks":"Chapters");
     const auto marks=showingBookmarks?bookmarks():
       std::vector<books::Bookmark>{};
     const size_t count=showingBookmarks?marks.size():chapterCount();
-    if(!count)renderer_.drawText(1,25,120,books::tr(showingBookmarks?"No bookmarks yet":"No chapters"));
-    const int rows=navRows(),height=navRowHeight();
-    const int start=selected<0?0:(selected/rows)*rows;
-    for(int row=0;row<rows && start+row<static_cast<int>(count);++row) {
+    if(!count)renderer_.drawText(1,L::kTextX,L::textTop(L::rowY(0),renderer_.getLineHeight(1)),
+                                 books::tr(showingBookmarks?"No bookmarks yet":"No chapters"));
+    const int height=renderer_.getLineHeight(1);
+    const int start=L::first(selected,static_cast<int>(count));
+    for(int row=0;row<L::kRows && start+row<static_cast<int>(count);++row) {
       const int item=start+row;
-      const int y=kNavTop+row*height;
+      const int y=L::rowY(row);
       std::string label;
       if(showingBookmarks) {
         const auto& mark=marks[item];
         label="Ch "+std::to_string(mark.spine+1)+
           " - Page "+std::to_string(mark.page+1);
       } else label=std::to_string(item+1)+". "+chapterName(item);
-      renderer_.drawText(1,24,y+1,renderer_.truncatedText(1,label.c_str(),325).c_str());
-      if(item==selected)invertMenuRect(17,y,341,height);
+      renderer_.drawText(1,L::kTextX,L::textTop(y,height),
+          renderer_.truncatedText(1,label.c_str(),L::kValueRight-L::kTextX).c_str());
+      if(item==selected)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    renderer_.fillRect(18,kNavFooter,337,1,true);
     std::string footer=std::to_string(count?std::max(0,selected)+1:0)+"/"+std::to_string(count)+
         "  "+books::tr("Wheel: select  Center: go  Back: settings");
-    drawMenuText(23,kNavFooter+8,clippedLabel(footer,54).c_str(),1);
+    paintListFooter(footer);
     display_.displayBuffer();
   }
 
@@ -1957,20 +1958,16 @@ class Reader {
   // The chosen row of a menu: Q2 Pod's selection when a theme is set,
   // else inverted.
   void invertMenuRect(int x,int y,int w,int h) {books::paintSelection(display_,x,y,w,h);}
-  // First visible row of the 9-row settings list for a selected row.
+  // First visible row of the settings list for a selected row.
   static int menuFirstRow(int selectedRow,int count) {
-    return std::max(0,std::min(selectedRow-8,count-9));
+    return books::MenuLayout::first(selectedRow,count);
   }
   // |items|: the menu items to list, in order (default: all of them). The
   // Books handoff reader lists only the rows it can act on.
   void showTypographyMenu(int selected,const int* items=nullptr,int count=0) {
-    renderer_.clearScreen(0xff); // Do not reload and render the EPUB on each wheel step.
-    // The Q2 has a 360x320 logical viewport. Keep the heading and footer
-    // outside a bounded list; never paint eleven oversized rows at once.
+    // Q2 Pod's list layout (MenuLayout); the page is not rendered under it.
+    using L=books::MenuLayout;
     constexpr int kItems=kTypographyItems;
-    constexpr int kRows=9;
-    constexpr int kRowTop=73;
-    constexpr int kRowHeight=21;
     std::vector<int> rows;
     if(items && count>0)rows.assign(items,items+count);
     else for(int i=0;i<kItems;++i)rows.push_back(i);
@@ -1978,12 +1975,7 @@ class Reader {
     const int selectedRow=static_cast<int>(
         std::find(rows.begin(),rows.end(),selected)-rows.begin());
     const int first=menuFirstRow(std::min(selectedRow,listed-1),listed);
-    renderer_.fillRect(10,37,355,258,true);
-    renderer_.fillRect(12,39,351,254,false);
-    books::paintFrame(display_,10,37,355,258,2);
-    drawMenuText(22,47,"Reading settings");
-    renderer_.fillRect(18,66,337,1,true);
-    if(books::uiTheme().style==books::UiTheme::Style::Classic)books::paintBar(display_,12,39,351,27);
+    paintListBar("Reading settings");
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
@@ -2009,9 +2001,9 @@ class Reader {
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
-    for(int row=0;row<kRows && first+row<listed;++row) {
+    for(int row=0;row<L::kRows && first+row<listed;++row) {
       const int item=rows[first+row];
-      const int y=kRowTop+row*kRowHeight;
+      const int y=L::rowY(row);
       const bool active=selected==item;
       // Invert the completed row, including the glyph pixels, after drawing.
       // Separate columns prevent long values from colliding with labels.
@@ -2020,18 +2012,18 @@ class Reader {
       const bool english=!books::uiTranslated() && !books::uiTheme().active();
       const std::string label=english?clippedLabel(labels[item],12):books::tr(labels[item]);
       const std::string value=english?clippedLabel(values[item],12):books::tr(values[item]);
-      drawMenuText(24,y+3,label.c_str(),2,186);
-      drawMenuText(192,y+3,value.c_str(),2,352);
-      if(active)invertMenuRect(18,y,337,kRowHeight);
+      // The value sits on the right, as Q2 Pod's rows; a long one starts
+      // just after its label and is cut at the right edge.
+      const int labelEnd=L::kTextX+menuTextWidth(label.c_str(),2);
+      const int valueX=std::max(labelEnd+12,L::kValueRight-menuTextWidth(value.c_str(),2));
+      drawMenuText(L::kTextX,y+8,label.c_str(),2,valueX-8);
+      drawMenuText(valueX,y+8,value.c_str(),2,L::kValueRight+4);
+      if(active)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    renderer_.fillRect(18,267,337,1,true);
     const std::string position=std::to_string(std::min(selectedRow,listed-1)+1)+"/"+
       std::to_string(listed)+"  "+books::tr("Wheel: scroll  Center: select");
-    drawMenuText(23,277,clippedLabel(position,48).c_str(),1);
-    if(!typographyNotice_.empty()) {
-      const std::string notice=books::tr(typographyNotice_);
-      drawMenuText(23,292,clippedLabel(notice,48).c_str(),1);
-    }
+    paintListFooter(position,typographyNotice_.empty()?std::string():
+                             std::string(books::tr(typographyNotice_)));
     display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {
@@ -2155,6 +2147,7 @@ class Reader {
     if(!buffer)return;
     for(size_t i=0;i<display_.getBufferSize();++i)
       buffer[i]=static_cast<uint8_t>(~buffer[i]);
+    display_.setGrayInverted(true);
   }
   // Book progress in parts per million, weighted by chapter size as upstream
   // CrossPoint's Epub::calculateProgress is: the chapters' cumulative XHTML
@@ -2209,30 +2202,27 @@ class Reader {
   }
   // Reading settings -> Dictionaries: each installed dictionary, on or off.
   void showDictionaryList(int selected) {
+    using L=books::MenuLayout;
     const auto names=books::dictionaryNames();
     const auto off=books::disabledDictionaries();
-    renderer_.clearScreen(0xff);
-    renderer_.fillRect(10,37,355,258,true);
-    renderer_.fillRect(12,39,351,254,false);
-    books::paintFrame(display_,10,37,355,258,2);
-    drawMenuText(22,47,"Dictionaries");
-    renderer_.fillRect(18,66,337,1,true);
-    if(books::uiTheme().style==books::UiTheme::Style::Classic)books::paintBar(display_,12,39,351,27);
+    paintListBar("Dictionaries");
     if(names.empty()) {
-      drawMenuText(22,90,"None installed.",1);
-      drawMenuText(22,106,"Put StarDict folders in",1);
-      drawMenuText(22,120,".books/dictionaries or Dictionaries",1);
+      drawMenuText(L::kTextX,L::rowY(0)+8,"None installed.",1);
+      drawMenuText(L::kTextX,L::rowY(0)+24,"Put StarDict folders in",1);
+      drawMenuText(L::kTextX,L::rowY(0)+38,".books/dictionaries or Dictionaries",1);
     }
-    constexpr int kRows=9;
-    const int first=std::max(0,std::min(selected-kRows+1,static_cast<int>(names.size())-kRows));
-    for(int row=0;row<kRows && first+row<static_cast<int>(names.size());++row) {
-      const int item=first+row,y=73+row*21;
+    const int count=static_cast<int>(names.size());
+    const int first=L::first(selected,count);
+    for(int row=0;row<L::kRows && first+row<count;++row) {
+      const int item=first+row,y=L::rowY(row);
       const bool on=std::find(off.begin(),off.end(),names[item])==off.end();
-      drawMenuText(24,y+3,clippedLabel(names[item],22).c_str());
-      drawMenuText(300,y+3,on?"On":"Off");
-      if(item==selected)invertMenuRect(18,y,337,21);
+      const char* value=on?"On":"Off";
+      const int valueX=L::kValueRight-menuTextWidth(value,2);
+      drawMenuText(L::kTextX,y+8,clippedLabel(names[item],22).c_str(),2,valueX-8);
+      drawMenuText(valueX,y+8,value,2,L::kValueRight+4);
+      if(item==selected)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    drawMenuText(23,277,"Center: on/off   Back: settings",1);
+    paintListFooter("Center: on/off   Back: settings");
     display_.displayBuffer();
   }
   // Toggle dictionary |index| of dictionaryNames(); false if none.
@@ -2301,16 +2291,73 @@ class Reader {
     const size_t pages=std::max<size_t>(1,estimatedPages());
     const std::string label=std::to_string(currentPage_+1)+"/"+
         (isBuilding()?"~":"")+std::to_string(pages)+"  "+std::to_string(bookPercent())+"%";
-    // drawMenuText stops at x 352; the bar takes the width left of the label.
-    const int labelX=352-menuTextWidth(label.c_str(),1);
-    const int barEnd=std::max(60,labelX-10);
+    // Footer: clock | progress bar | page label | battery, as Q2 Pod's bar
+    // shows the time and battery. drawMenuText stops at x 352.
+    status_=books::readDeviceStatus();
+    const std::string clock=books::clockLabel(status_);
+    const std::string battery=books::batteryLabel(status_);
+    constexpr int kIconW=16;  // 14 px body and a 2 px tip
+    int right=352;
+    if(!battery.empty())right-=kIconW+4+menuTextWidth(battery.c_str(),1)+8;
+    const int labelX=right-menuTextWidth(label.c_str(),1);
+    const int barStart=14+menuTextWidth(clock.c_str(),1)+8;
+    const int barEnd=std::max(barStart+20,labelX-10);
     const float progress=bookProgressPpm()/1000000.0f;
-    const int filled=static_cast<int>(progress*static_cast<float>(barEnd-14));
+    const int filled=static_cast<int>(progress*static_cast<float>(barEnd-barStart));
     renderer_.fillRect(0,307,375,13,false);
-    renderer_.drawLine(14,314,barEnd,314,true);
-    if(filled>0)renderer_.fillRect(14,312,filled,3,true);
+    drawMenuText(14,309,clock.c_str(),1);
+    renderer_.drawLine(barStart,314,barEnd,314,true);
+    if(filled>0)renderer_.fillRect(barStart,312,filled,3,true);
     drawMenuText(labelX,309,label.c_str(),1);
+    if(!battery.empty()) {
+      const int textX=352-kIconW-4-menuTextWidth(battery.c_str(),1);
+      drawMenuText(textX,309,battery.c_str(),1);
+      drawBatteryIcon(352-kIconW,310,status_);
+    }
   }
+  // A 16x9 battery: body, tip, fill, and a bolt while charging (each bolt
+  // pixel the opposite of what is under it, so it shows on fill or not).
+  void drawBatteryIcon(int x,int y,const books::DeviceStatus& status) {
+    renderer_.drawRect(x,y,14,9,true);
+    renderer_.fillRect(x+14,y+2,2,5,true);
+    const int fill=books::batteryFill(status.battery,10);
+    if(fill>0)renderer_.fillRect(x+2,y+2,fill,5,true);
+    if(status.charging) {
+      static constexpr int8_t kBolt[][2]={{8,1},{7,2},{6,3},{5,4},{6,4},{7,4},{8,4},
+                                          {9,4},{8,5},{7,6},{6,7}};
+      for(const auto& p:kBolt)renderer_.drawPixel(x+p[0],y+p[1],p[0]>=2+fill);
+    }
+  }
+  // Q2 Pod's list page (MenuLayout): a clear screen and the bar, with the
+  // title on the left and the clock and battery on the right. Q2 Pod centres
+  // its clock, but makes way for a title; Books' titles need the room.
+  void paintListBar(const char* title) {
+    using L=books::MenuLayout;
+    renderer_.clearScreen(0xff);
+    const auto status=books::readDeviceStatus();
+    const std::string clock=books::clockLabel(status);
+    int right=L::kWidth-14;
+    if(status.battery>=0) {
+      right-=16;
+      drawBatteryIcon(right,12,status);
+      right-=8;
+    }
+    const int clockX=right-menuTextWidth(clock.c_str(),2);
+    drawMenuText(clockX,8,clock.c_str(),2,right+4);
+    drawMenuText(L::kTextX,8,title,2,clockX-10);
+    books::paintBar(display_,0,0,L::kWidth,L::kBarH);
+  }
+  // The footer under the rows: a rule, then one or two small lines.
+  void paintListFooter(const std::string& line,const std::string& notice=std::string()) {
+    using L=books::MenuLayout;
+    renderer_.fillRect(0,L::kFooterY,L::kWidth,1,true);
+    drawMenuText(L::kTextX,notice.empty()?L::kFooterY+10:L::kFooterY+4,
+                 clippedLabel(line,56).c_str(),1);
+    if(!notice.empty())drawMenuText(L::kTextX,L::kFooterY+17,clippedLabel(notice,56).c_str(),1);
+  }
+  // True when the clock's minute or the battery changed since the footer was
+  // drawn: the idle loop then presents the page again.
+  bool statusChanged() const {return books::readDeviceStatus()!=status_;}
   void cacheRenderedPage() {
     const uint8_t* framebuffer=display_.getFrameBuffer();
     if(!framebuffer || currentSpine_<0)return;
@@ -2318,6 +2365,38 @@ class Reader {
     slot.spine=currentSpine_;
     slot.page=currentPage_;
     slot.pixels.assign(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
+    slot.grayLsb.clear();
+    slot.grayMsb.clear();
+    if(display_.grayValid()) {
+      slot.grayLsb.assign(display_.grayLsb(),display_.grayLsb()+HalDisplay::BUFFER_SIZE);
+      slot.grayMsb.assign(display_.grayMsb(),display_.grayMsb()+HalDisplay::BUFFER_SIZE);
+    }
+  }
+  // Smooth text: renders the page twice more in the engine's grayscale modes
+  // (as upstream CrossPoint does for e-ink anti-aliasing) and keeps the two
+  // planes, so the LCD can show each glyph edge at its true coverage instead
+  // of solid ink. The BW page is put back unchanged. BOOKS_SMOOTH_TEXT=0
+  // turns it off.
+  template<typename PagePtr>
+  void captureGrayPlanes(const PagePtr& page) {
+    static const bool enabled=[]{
+      const char* v=std::getenv("BOOKS_SMOOTH_TEXT");
+      return !(v && std::strcmp(v,"0")==0);
+    }();
+    uint8_t* framebuffer=display_.getFrameBuffer();
+    if(!enabled || !framebuffer)return;
+    std::vector<uint8_t> bw(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
+    renderer_.clearScreen(0x00);
+    renderer_.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+    page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+    renderer_.copyGrayscaleLsbBuffers();
+    renderer_.clearScreen(0x00);
+    renderer_.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+    page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+    renderer_.copyGrayscaleMsbBuffers();
+    renderer_.setRenderMode(GfxRenderer::BW);
+    std::memcpy(framebuffer,bw.data(),bw.size());
+    display_.setGrayPage(framebuffer);
   }
   void render() {
     display_.clearZones();  // a cached page is copied, not cleared
@@ -2328,6 +2407,9 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
+          if(cached.grayLsb.size()==kBytes && cached.grayMsb.size()==kBytes)
+            display_.restoreGray(framebuffer,cached.grayLsb.data(),cached.grayMsb.data());
+          else display_.cleanupGrayscaleBuffers(nullptr);
           lastRenderOk_=true;
           drawProgress();
           applyNightMode();
@@ -2358,6 +2440,7 @@ class Reader {
         page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
       }
       lastRenderOk_=pageHasVisibleInk();
+      if(lastRenderOk_)captureGrayPlanes(page);
       if(lastRenderOk_)cacheRenderedPage();
       else {
         // Direct bitmap menu glyphs work even when the SD-book font has
@@ -2402,16 +2485,24 @@ class Reader {
     render();
     display_.displayBuffer();
   }
-  bool savePgm(const std::string& path) {
+  // smooth: write each pixel at its smooth-text level (as the LCD shows it)
+  // instead of plain black and white.
+  bool savePgm(const std::string& path,bool smooth=false) {
     render();
     auto* pixels=display_.getFrameBuffer();
+    std::vector<uint8_t> levels;
+    if(smooth) {
+      levels.resize(static_cast<size_t>(375)*SCREEN_H);
+      if(!display_.currentLevels(levels.data()))levels.clear();
+    }
     std::FILE* file=std::fopen(path.c_str(),"wb");
     if(!file) return false;
     bool ok=std::fprintf(file,"P5\n375 320\n255\n")>0;
     for (int y=0;ok && y<SCREEN_H;++y) {
       for (int x=0;x<375;++x) {
         bool paper=(pixels[y*47+x/8]&(0x80u>>(x&7)))!=0;
-        const unsigned char c=paper?255:0;
+        unsigned char c=paper?255:0;
+        if(!levels.empty())c=static_cast<unsigned char>(255-85*levels[static_cast<size_t>(y)*375+x]);
         if(std::fwrite(&c,1,1,file)!=1){ok=false;break;}
       }
     }
@@ -3541,6 +3632,7 @@ int runCardApp(const std::string& bookDir) {
   int navigationSelection=0;
   int typeSelection=0;
   auto nextBuildTick=std::chrono::steady_clock::now();
+  auto nextStatusCheck=std::chrono::steady_clock::now();
   size_t nextShelfIndex=0;
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
@@ -3577,6 +3669,14 @@ int runCardApp(const std::string& bookDir) {
       const bool canAutoTurn=reader && !typeMenu && !navigationMenu && !linkMenu &&
           !selectionChoosing && !selectionActions && !dictionaryOverlay &&
           !footnoteOverlay && !percentDialog;
+      // A new minute or battery level: show the footer again, but only
+      // while a page shows with nothing over it.
+      const bool pageShowing=canAutoTurn && !syncDialog && !aboutShown && !dictionaryList &&
+          !selectionExtending;
+      if(pageShowing && now>=nextStatusCheck) {
+        nextStatusCheck=now+std::chrono::seconds(1);
+        if(reader->statusChanged())reader->present();
+      }
       const auto beforeTurn=nextAutoTurn;
       const auto turnDue=reader?autoTurnTick(*reader,canAutoTurn,nextAutoTurn):
                                 ReaderClock::time_point::max();
@@ -3766,10 +3866,11 @@ int runCardApp(const std::string& bookDir) {
           reader->showNavigationMenu(showingBookmarks,navigationSelection);
         } else if(action==books::LogicalAction::Confirm ||
                   event.kind==books::PhysicalKind::TouchUp) {
-          if(event.kind==books::PhysicalKind::TouchUp)
-            navigationSelection=std::clamp(
-              reader->navRowAt(navigationSelection,event.y),
-              0,std::max(0,count-1));
+          if(event.kind==books::PhysicalKind::TouchUp) {
+            const int tapped=reader->navRowAt(showingBookmarks,navigationSelection,event.y);
+            if(tapped<0)continue;  // the bar, the footer or below the list
+            navigationSelection=tapped;
+          }
           bool changed=false;
           if(count && showingBookmarks) {
             const auto marks=reader->bookmarks();
@@ -3793,9 +3894,11 @@ int runCardApp(const std::string& bookDir) {
           reader->showDictionaryList(dictionarySelection);
         } else if(action==books::LogicalAction::Confirm || event.kind==books::PhysicalKind::TouchUp) {
           if(event.kind==books::PhysicalKind::TouchUp) {
-            if(event.y<66){dictionaryList=false;reader->showTypographyMenu(typeSelection);continue;}
-            const int first=std::max(0,std::min(dictionarySelection-8,count-9));
-            dictionarySelection=std::clamp(first+(event.y-73)/21,0,std::max(0,count-1));
+            using L=books::MenuLayout;
+            if(event.y<L::kBarH){dictionaryList=false;reader->showTypographyMenu(typeSelection);continue;}
+            const int tapped=L::itemAt(L::first(dictionarySelection,count),count,event.y);
+            if(tapped<0)continue;
+            dictionarySelection=tapped;
           }
           (void)reader->toggleDictionary(dictionarySelection);
           reader->showDictionaryList(dictionarySelection);
@@ -3821,10 +3924,12 @@ int runCardApp(const std::string& bookDir) {
           reader->showTypographyMenu(typeSelection);
         } else if(action==books::LogicalAction::Confirm ||
                   event.kind==books::PhysicalKind::TouchUp) {
-          if(event.kind==books::PhysicalKind::TouchUp)
-            typeSelection=std::clamp(
-                Reader::menuFirstRow(typeSelection,kTypographyItems)+(event.y-73)/21,
-                0,kTypographyItems-1);
+          if(event.kind==books::PhysicalKind::TouchUp) {
+            const int tapped=books::MenuLayout::itemAt(
+                Reader::menuFirstRow(typeSelection,kTypographyItems),kTypographyItems,event.y);
+            if(tapped<0)continue;  // the bar or the footer
+            typeSelection=tapped;
+          }
           if(typeSelection==19) {
             aboutShown=true;
             reader->showAbout();
@@ -4513,7 +4618,7 @@ int main(int argc,char** argv) {
     shelf.enterSearch();
     return shelf.savePgm(argv[3])?0:4;
   }
-  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false;
+  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false,smooth=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
@@ -4526,6 +4631,8 @@ int main(int argc,char** argv) {
     dry=true;benchmark=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
     dry=true;render=true;path=argv[2];output=argv[3];
+  } else if(argc==4 && std::strcmp(argv[1],"--render-smooth")==0) {
+    dry=true;render=true;smooth=true;path=argv[2];output=argv[3];
   } else if (argc==2 && argv[1][0] != '-') {
     path=argv[1];
   } else { usage();return 2; }
@@ -4638,7 +4745,7 @@ int main(int argc,char** argv) {
           forward,backward);
     }
     reader.report();
-    if (render && !reader.savePgm(output)) return 4;
+    if (render && !reader.savePgm(output,smooth)) return 4;
     return 0;
   }
   if(!input.open()) {
@@ -4657,6 +4764,7 @@ int main(int argc,char** argv) {
   bool percentDialog=false;
   int percentValue=0;
   auto nextAutoTurn=ReaderClock::time_point::max();
+  auto nextStatusCheck=ReaderClock::now();
   books::Q2Controls controls(loadWheelSensitivity());
   // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
   // its own step, before reading the next datagram.
@@ -4666,6 +4774,10 @@ int main(int argc,char** argv) {
     reader.flushPosition(false);
     books::PhysicalEvent event{};
     if (pendingRepeat==0 && !input.receive(event)) {
+      if(!typeMenu && !percentDialog && !aboutShown && ReaderClock::now()>=nextStatusCheck) {
+        nextStatusCheck=ReaderClock::now()+std::chrono::seconds(1);
+        if(reader.statusChanged())reader.present();
+      }
       const auto beforeTurn=nextAutoTurn;
       const auto turnDue=autoTurnTick(reader,!typeMenu && !percentDialog,nextAutoTurn);
       if(beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
@@ -4721,8 +4833,10 @@ int main(int argc,char** argv) {
         if(event.kind==books::PhysicalKind::TouchUp) {
           // Map the touched row back to a menu item; rows this reader does
           // not offer are ignored.
-          const int first=Reader::menuFirstRow(handoffIndex,kHandoffCount);
-          handoffIndex=std::clamp(first+(event.y-73)/21,0,kHandoffCount-1);
+          const int tapped=books::MenuLayout::itemAt(
+              Reader::menuFirstRow(handoffIndex,kHandoffCount),kHandoffCount,event.y);
+          if(tapped<0)continue;
+          handoffIndex=tapped;
           typeSelection=kHandoffItems[handoffIndex];
         }
         if(typeSelection==19) {

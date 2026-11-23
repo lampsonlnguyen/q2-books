@@ -2959,11 +2959,15 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
     return ParseStatus::Error;
   }
 
-  const int done = parseFile_.available() == 0;
-  // Stray "&nbsp;" or a bare "&" would fail expat for the whole chapter.
-  const size_t repaired = entityRepair_.process(readChunk_, len, done != 0, repairedChunk_);
+  const bool done = parseFile_.available() == 0;
+  // Stray "&nbsp;", a bare "&", unclosed or mismatched tags would each fail
+  // expat for the whole chapter. The pipeline makes them well-formed first.
+  const bool fed = repair_.push(readChunk_, len, done, [this](const char* data, size_t n) {
+    return XML_Parse(xmlParser_, data, static_cast<int>(n), XML_FALSE) != XML_STATUS_ERROR;
+  });
+  const bool ok = fed && (!done || XML_Parse(xmlParser_, nullptr, 0, XML_TRUE) != XML_STATUS_ERROR);
 
-  if (XML_Parse(xmlParser_, repairedChunk_, static_cast<int>(repaired), done) == XML_STATUS_ERROR) {
+  if (!ok) {
     if (stopRequested) return ParseStatus::Error;
     if (htmlEnded_) {
       LOG_DBG("EHP", "Ignoring trailing data after </html>: %s", XML_ErrorString(XML_GetErrorCode(xmlParser_)));

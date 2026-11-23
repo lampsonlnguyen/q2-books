@@ -428,20 +428,24 @@ grep -q 'Books font source: original CrossPoint extended cpfont' "$work/default-
 test -s "$card/.books/fonts/ttf/sans-regular.ttf"
 for family in sans serif bitter inter literata; do
   echo "BOOKS-TYPE1 $family 12" > "$card/.books/typography.conf"
-  BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
-    --smooth-check "$work/reader/vietnamese-prose.epub" > "$work/smooth-$family.log" 2>&1 || true
-  grep "Books smooth glyph" "$work/smooth-$family.log" || true
+  for book in vietnamese-prose long-chapter; do
+    BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
+      --smooth-check "$work/reader/$book.epub" > "$work/smooth-$family-$book.log" 2>&1 || true
+    grep "Books smooth glyph" "$work/smooth-$family-$book.log" || true
+  done
 done
 python3 - "$work" <<'PY'
 import re,sys
 bad=[]
-for family in ("sans","serif","bitter","inter","literata"):
-    text=open(f"{sys.argv[1]}/smooth-{family}.log").read()
+for family,book in [(f,b) for f in ("sans","serif","bitter","inter","literata")
+                    for b in ("vietnamese-prose","long-chapter")]:
+    text=open(f"{sys.argv[1]}/smooth-{family}-{book}.log").read()
+    family=f"{family} ({book})"
     m=re.search(r"IoU ([0-9.]+) over (\d+) ink pixels, centre shift ([-+0-9.]+) ([-+0-9.]+)",text)
     if not m:
         # A family whose TrueType does not line up keeps 2-bit glyphs (its
         # baseline check refused it): allowed, except the two defaults.
-        if family in ("sans","serif"): bad.append(f"{family}: no agreement line")
+        if family.split()[0] in ("sans","serif"): bad.append(f"{family}: no agreement line")
         else: print(f"::notice::smooth glyphs {family}: kept 2-bit")
         continue
     iou,pixels,dx,dy=float(m[1]),int(m[2]),float(m[3]),float(m[4])

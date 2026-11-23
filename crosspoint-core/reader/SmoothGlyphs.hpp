@@ -74,8 +74,13 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
 #endif
   }
   bool empty() const { return entries_.empty(); }
-  // The baseline correction found by the last registerStyle (pixels up).
-  int lastShift() const { return lastShift_; }
+  static bool combining(uint32_t cp) {
+    return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) || (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+           (cp >= 0x20D0 && cp <= 0x20FF) || (cp >= 0xFE20 && cp <= 0xFE2F);
+  }
+  // The last registerStyle's mean letter-top difference (CrossPoint minus
+  // FreeType, pixels).
+  double lastTopDiff() const { return lastTopDiff_; }
   size_t size() const { return entries_.size(); }
 
   // Registers the reading font's style (CrossPoint data pointer and the
@@ -113,8 +118,8 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
     entry.face = face;
     entry.size26 = static_cast<FT_F26Dot6>(std::lround(em * 64));
     // Baseline check: the tops of a few letters as CrossPoint and FreeType
-    // place them. A small whole-pixel difference (a font whose converter put
-    // its baseline elsewhere) is corrected; a large one keeps CrossPoint's.
+    // place them must agree within 1.5 px (hinting moves them by up to one);
+    // a font that does not keeps CrossPoint's glyphs.
     double diff = 0;
     int samples = 0;
     for (const char* c = "HEIxo"; *c; ++c) {
@@ -128,13 +133,8 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
       ++samples;
     }
     if (samples == 0) return 0;
-    const int shift = static_cast<int>(std::lround(diff / samples));
-    if (shift < -4 || shift > 4) {
-      lastShift_ = shift;
-      return 0;
-    }
-    entry.shiftY = shift;
-    lastShift_ = shift;
+    lastTopDiff_ = diff / samples;
+    if (std::fabs(lastTopDiff_) > 1.5) return 0;
     entry.id = static_cast<uint32_t>(entries_.size() + 1);
     entries_[data] = entry;
     return em;
@@ -147,7 +147,9 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
   bool wants(const EpdFontData* font, uint32_t cp) override {
 #if BOOKS_HAVE_FREETYPE
     auto it = entries_.find(font);
-    return it != entries_.end() && cp > 0x20 && FT_Get_Char_Index(it->second.face, cp) != 0;
+    // Combining marks stay CrossPoint's: it places them over their base
+    // letter itself, which FreeType's own mark offsets would not match.
+    return it != entries_.end() && cp > 0x20 && !combining(cp) && FT_Get_Char_Index(it->second.face, cp) != 0;
 #else
     (void)font, (void)cp;
     return false;
@@ -160,8 +162,7 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
     if (it == entries_.end()) return;
     const Glyph* g = glyph(it->second, cp);
     if (g && !g->pixels.empty())
-      display_.drawCoverage(penX + g->left, baselineY - g->top - it->second.shiftY, g->width, g->height,
-                            g->pixels.data(), g->width);
+      display_.drawCoverage(penX + g->left, baselineY - g->top, g->width, g->height, g->pixels.data(), g->width);
 #else
     (void)font, (void)cp, (void)penX, (void)baselineY;
 #endif
@@ -186,7 +187,6 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
     FT_Face face = nullptr;
     FT_F26Dot6 size26 = 0;
     uint32_t id = 0;
-    int shiftY = 0;  // pixels up, from the baseline check
   };
   // One face per file and weight: a variable font's weight axis is set on
   // the face (its other axes stay at their defaults).
@@ -248,7 +248,7 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
   std::unordered_map<const EpdFontData*, int> entries_;
 #endif
   static constexpr size_t kCacheMax = 2048;
-  int lastShift_ = 0;
+  double lastTopDiff_ = 0;
   const HalDisplay& display_;
 };
 

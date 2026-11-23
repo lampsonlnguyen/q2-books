@@ -23,7 +23,8 @@ with tempfile.TemporaryDirectory(prefix="books-stream-") as td:
     assert marker in chapter
     for mode, extra, should_pass in [
         ("large", b"<!--" + b"x" * (3 * 1024 * 1024) + b"-->", True),
-        ("truncated", b"<unclosed>", False),
+        # A chapter cut off mid-document is now repaired (open elements are
+        # closed at the end) rather than failing; see xml_repair_test.cpp.
         ("too-large", b"<!--" + b"x" * (4 * 1024 * 1024) + b"-->", False),
     ]:
         target = root / (mode + ".epub")

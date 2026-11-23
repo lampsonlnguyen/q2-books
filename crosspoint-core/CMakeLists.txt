@@ -146,6 +146,12 @@ add_test(NAME books_m5_difficult_epub_checks
       "$<TARGET_FILE:books-reader>" "${CMAKE_CURRENT_BINARY_DIR}/m5-corpus")
 set_tests_properties(books_m5_difficult_epub_checks PROPERTIES DEPENDS books_m5_difficult_epub_corpus)
 
+add_executable(books_xml_repair_tests tests/xml_repair_test.cpp lib/Epub/htmlEntities.cpp)
+target_include_directories(books_xml_repair_tests PRIVATE lib)
+target_link_libraries(books_xml_repair_tests PRIVATE EXPAT::EXPAT)
+target_compile_options(books_xml_repair_tests PRIVATE -UNDEBUG)
+add_test(NAME books_xml_element_repair COMMAND books_xml_repair_tests)
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 

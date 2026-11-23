@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""M5 difficult-EPUB corpus: the reader must open each book, show its text
-and styles, and fail cleanly (no crash, no hang) on the malformed one.
+"""M5 difficult-EPUB corpus: the reader must open each book and show its text
+and styles. A book that cannot be repaired must fail cleanly (no crash, no hang).
 
 Usage: m5_corpus_test.py <books-reader> <corpus-directory>
 The corpus is written by make_m5_corpus.py into the same directory.
@@ -46,8 +46,9 @@ EXPECT = {
         "M5-ENTITY-NBSP": [], "M5-ENTITY-COPY": ["©"],
         "M5-ENTITY-BARE": ["Tom & Jerry"], "M5-ENTITY-UNKNOWN": ["&undefined;"],
         "M5-ENTITY-END": ["α"]}}),
-    # Unclosed and mismatched tags are a known limit: fail cleanly.
-    "broken-xml": (CLEAN_FAIL, {}),
+    # Unclosed and mismatched tags are repaired: the text still shows.
+    "broken-xml": (OK, {"OEBPS/chapter1.xhtml": {
+        "M5-BROKEN-XML-OK": [], "second paragraph": []}}),
 }
 
 

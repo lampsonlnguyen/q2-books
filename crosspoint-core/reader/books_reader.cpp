@@ -18,8 +18,7 @@
 #include <Page.h>
 #include <Section.h>
 #include <ReaderRenderSpec.h>
-#include <Epub/XmlEntityRepair.h>
-#include <vector>
+#include <Epub/XmlRepairPipeline.h>
 #include <Epub/blocks/ImageBlock.h>
 #include <Q2Controls.hpp>
 #include <SdCardFont.h>
@@ -472,8 +471,7 @@ class ChapterXmlSink final : public Print {
   XML_Parser parser_;
   size_t seen_=0;
   bool failed_=false;
-  XmlEntityRepair repair_;
-  std::vector<char> repaired_;
+  XmlRepairPipeline pipeline_;
  public:
   explicit ChapterXmlSink(XML_Parser parser):parser_(parser) {}
   size_t write(uint8_t byte) override {return write(&byte,1);}
@@ -485,10 +483,11 @@ class ChapterXmlSink final : public Print {
     }
     if(!len)return 0;
     seen_+=len;
-    repaired_.resize(XmlEntityRepair::maxOutput(len));
-    const size_t n=repair_.process(reinterpret_cast<const char*>(data),len,false,
-                                   repaired_.data());
-    if(XML_Parse(parser_,repaired_.data(),static_cast<int>(n),XML_FALSE)!=XML_STATUS_OK) {
+    const bool fed=pipeline_.push(reinterpret_cast<const char*>(data),len,false,
+        [this](const char* d,size_t n){
+          return XML_Parse(parser_,d,static_cast<int>(n),XML_FALSE)!=XML_STATUS_ERROR;
+        });
+    if(!fed) {
       failed_=true;
       return 0;
     }
@@ -496,12 +495,12 @@ class ChapterXmlSink final : public Print {
   }
   bool finish() {
     if(failed_ || seen_==0)return false;
-    // Flush an entity still waiting for its ';' when the chapter ended.
-    repaired_.resize(XmlEntityRepair::maxOutput(0));
-    const size_t n=repair_.process(nullptr,0,true,repaired_.data());
-    if(n && XML_Parse(parser_,repaired_.data(),static_cast<int>(n),XML_FALSE)!=XML_STATUS_OK)
-      return false;
-    return XML_Parse(parser_,nullptr,0,XML_TRUE)==XML_STATUS_OK;
+    // Flushes repair state held back at the end of the chapter (an unfinished
+    // entity, open elements) before the final expat call.
+    const bool fed=pipeline_.push(nullptr,0,true,[this](const char* d,size_t n){
+      return XML_Parse(parser_,d,static_cast<int>(n),XML_FALSE)!=XML_STATUS_ERROR;
+    });
+    return fed && XML_Parse(parser_,nullptr,0,XML_TRUE)==XML_STATUS_OK;
   }
 };
 

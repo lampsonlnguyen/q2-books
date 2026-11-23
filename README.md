@@ -23,7 +23,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 | M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt, your own fonts (RD-05) | Done |
 | M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, menus in Q2 Pod's language | Done. Menus follow Q2 Pod's language (released in 1.1.2). Open: CJK and Thai menus, native review of the tables |
 | M4 — Library and servers (v0.12) | OPDS paging and catalog search; several saved servers with credentials; offline catalog copy and retry; book details with network covers; folders with breadcrumbs; 4000-book libraries; sync conflict choice | Done and released in 1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md). Open: highlight sync |
-| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities repaired | First slice on a branch, not released: 12-book corpus and entity repair; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: unclosed-tag recovery, upstream pixel comparison |
+| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Implemented on a branch, not released: 12-book corpus, entity and element repair; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, real books, Q2 measurement |
 | M6 — Optional polish (v0.14) | Only features with a Q2 use case | Not started |
 | M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.1.2 (1.0.0 was the first stable tag); the criteria below are not all met yet |
 
@@ -47,7 +47,7 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - Measure the 4000-book scan and folder browsing on a Q2's SD card.
 
 **EPUB fidelity (M5)**
-- Unclosed or mismatched tags still blank the chapter (the reader reports "not supported"); a tolerant parser is needed. The `broken-xml` corpus book pins this as a clean failure for now.
+- Unclosed inline formatting (an unclosed `<b>`) carries on into later paragraphs; close it at the end of each block, as browsers do.
 - Compare the corpus with upstream CrossPoint pixel for pixel, using the same settings, and document the allowed differences (ruby and tables are not laid out as upstream will show them).
 - Add real public-domain books with tables, ruby, CJK and Indic text to the corpus; the current books are generated.
 - Measure the M5 parse change on a Q2: page-turn time and RAM while a chapter is laid out.

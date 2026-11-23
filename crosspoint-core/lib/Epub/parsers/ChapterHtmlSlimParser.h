@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "Epub/FootnoteEntry.h"
-#include "Epub/XmlEntityRepair.h"
+#include "Epub/XmlRepairPipeline.h"
 #include "Epub/ParsedText.h"
 #include "Epub/blocks/ImageBlock.h"
 #include "Epub/blocks/TextBlock.h"
@@ -250,11 +250,10 @@ class ChapterHtmlSlimParser {
   // boundaries.
   XML_Parser xmlParser_ = nullptr;
   HalFile parseFile_;
-  // Chunk read from parseFile_ and its entity-repaired copy for expat. Sizes
-  // match the 1024-byte parse step; the repaired copy can expand 5x.
-  XmlEntityRepair entityRepair_;
+  // Chunk read from parseFile_, and the entity and element repair that makes
+  // it well-formed before expat (see Epub/XmlRepairPipeline.h).
+  XmlRepairPipeline repair_;
   char readChunk_[1024];
-  char repairedChunk_[XmlEntityRepair::maxOutput(1024)];
   uint8_t* inputBytes_ = nullptr;
   size_t inputSize_ = 0;
   bool openInput(HalFile& file) const;

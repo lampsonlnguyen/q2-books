@@ -109,7 +109,9 @@ with tempfile.TemporaryDirectory(prefix='books-markup-') as tmp:
         return render(book, state)
 
     def line_band(width, height, pixels):
-        rows = ink_rows(width, height, pixels)
+        # The page's text area (y 40 to 282): the bands above and below hold
+        # the clock, battery and progress.
+        rows = [y for y in ink_rows(width, height, pixels) if 40 <= y < 282]
         top = rows[0]
         end = top
         while end + 1 < height and end + 1 in rows:

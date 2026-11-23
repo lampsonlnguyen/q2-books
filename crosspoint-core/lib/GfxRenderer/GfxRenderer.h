@@ -36,6 +36,15 @@ enum Color : uint8_t { Clear = 0x00, White = 0x01, LightGray = 0x05, DarkGray = 
 class GfxRenderer {
  public:
   enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
+  // Q2 port (Books): see setGlyphHook.
+  class GlyphHook {
+   public:
+    virtual ~GlyphHook() = default;
+    virtual bool wants(const EpdFontData* font, uint32_t cp) = 0;
+    virtual void draw(const EpdFontData* font, uint32_t cp, int penX, int baselineY) = 0;
+  };
+  enum class GlyphHookMode : uint8_t { Off, Erase, Draw };
+
   enum class DitherMode { Replace, PreserveInk };
 
   // Logical screen orientation from the perspective of callers
@@ -51,6 +60,8 @@ class GfxRenderer {
 
   HalDisplay& display;
   RenderMode renderMode;
+  GlyphHook* glyphHook_ = nullptr;
+  GlyphHookMode glyphHookMode_ = GlyphHookMode::Off;
   mutable bool absoluteGrayPlanes = false;
   bool ditherImagesInBw = false;
   Orientation orientation;
@@ -432,6 +443,16 @@ class GfxRenderer {
 
   // Grayscale functions
   void setRenderMode(RenderMode mode);
+  // Q2 port (Books): an optional hook that draws upright glyphs itself
+  // (smooth text from TrueType, over CrossPoint's own layout). Erase paints
+  // the glyphs it wants in paper; Draw hands them to the hook instead of
+  // painting. Off (the default), or without a hook, nothing changes.
+  void setGlyphHook(GlyphHook* hook, GlyphHookMode mode) {
+    glyphHook_ = hook;
+    glyphHookMode_ = hook ? mode : GlyphHookMode::Off;
+  }
+  GlyphHook* glyphHook() const { return glyphHookMode_ == GlyphHookMode::Off ? nullptr : glyphHook_; }
+  GlyphHookMode glyphHookMode() const { return glyphHookMode_; }
   RenderMode getRenderMode() const { return renderMode; }
   // Settle the full frame after displaying the B/W base and before writing
   // the grayscale planes (no-op on X4).

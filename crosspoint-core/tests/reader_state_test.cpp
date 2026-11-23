@@ -77,8 +77,36 @@ int main() {
     defaults=books::ReaderPreferences{};
     defaults.focusReading=true;defaults.autoTurnSeconds=10;
     assert(books::loadReaderPreferences(defaults));
-    assert(defaults.margin==30 && defaults.nightMode && !defaults.focusReading &&
+    assert(defaults.margin==30 && defaults.night==books::kNightOn && !defaults.focusReading &&
            defaults.autoTurnSeconds==0);
+  }
+  // Night mode follows Q2 Pod's theme until the reader picks the other look,
+  // and following it again goes back to following.
+  {
+    books::ReaderPreferences p;
+    assert(p.night==books::kNightAuto);
+    assert(!books::nightActive(p,false) && books::nightActive(p,true));
+    books::toggleNight(p,true);   // dark theme, reader wants light pages
+    assert(p.night==books::kNightOff && !books::nightActive(p,true));
+    assert(books::saveReaderPreferences(p));
+    books::ReaderPreferences back;
+    assert(books::loadReaderPreferences(back) && back.night==books::kNightOff);
+    books::toggleNight(p,true);   // back to the theme's look
+    assert(p.night==books::kNightAuto && books::nightActive(p,true));
+    books::toggleNight(p,false);  // light theme, reader wants night
+    assert(p.night==books::kNightOn && books::nightActive(p,false));
+    assert(books::saveReaderPreferences(p));
+    assert(books::loadReaderPreferences(back) && back.night==books::kNightOn);
+    p.night=books::kNightAuto;
+    assert(books::saveReaderPreferences(p));
+    assert(books::loadReaderPreferences(back) && back.night==books::kNightAuto);
+    // A v3 file: 0 was the default (follow the theme now), 1 night on.
+    FILE* v3=std::fopen(books::readerPreferencesFile().c_str(),"wb");
+    assert(v3 && std::fputs("BOOKS-SETTINGS3 14 100 0 0 1 0 0 0\n",v3)>0 && std::fclose(v3)==0);
+    assert(books::loadReaderPreferences(back) && back.night==books::kNightAuto);
+    FILE* bad=std::fopen(books::readerPreferencesFile().c_str(),"wb");
+    assert(bad && std::fputs("BOOKS-SETTINGS4 14 100 0 0 1 3 0 0\n",bad)>0 && std::fclose(bad)==0);
+    assert(!books::loadReaderPreferences(back));
   }
 
   assert(books::loadBookmarks(book).empty());

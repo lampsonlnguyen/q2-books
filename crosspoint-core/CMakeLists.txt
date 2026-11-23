@@ -583,6 +583,28 @@ target_link_libraries(books-reader PRIVATE
     crosspoint_font_metrics crosspoint_bidi
     crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(books-reader epub_fixture vietnamese_epub_fixture)
+# Smooth menu text in Q2 Pod's TrueType faces (reader/UiText.hpp). Optional:
+# without FreeType the menus keep the built-in bitmap font.
+option(BOOKS_REQUIRE_FREETYPE "Fail without FreeType (the Q2 device build)" OFF)
+if(BOOKS_REQUIRE_FREETYPE)
+  find_package(Freetype REQUIRED)
+else()
+  find_package(Freetype QUIET)
+endif()
+if(FREETYPE_FOUND)
+  target_compile_definitions(books-reader PRIVATE BOOKS_HAVE_FREETYPE=1)
+  target_link_libraries(books-reader PRIVATE Freetype::Freetype)
+  message(STATUS "Books: FreeType ${FREETYPE_VERSION_STRING}: smooth menu text on")
+  add_executable(books_ui_text_tests tests/ui_text_test.cpp)
+  target_include_directories(books_ui_text_tests PRIVATE reader platform/posix platform/q2)
+  target_compile_definitions(books_ui_text_tests PRIVATE BOOKS_HAVE_FREETYPE=1)
+  target_compile_options(books_ui_text_tests PRIVATE -UNDEBUG)
+  target_link_libraries(books_ui_text_tests PRIVATE crosspoint_q2_hal_display books_q2_framebuffer Freetype::Freetype)
+  add_test(NAME books_ui_text_truetype COMMAND books_ui_text_tests)
+  set_tests_properties(books_ui_text_truetype PROPERTIES SKIP_RETURN_CODE 77)
+else()
+  message(STATUS "Books: no FreeType: menus use the built-in bitmap font")
+endif()
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
 add_test(NAME books_reader_unopened_shelf_index
@@ -908,6 +930,10 @@ target_compile_options(crosspoint_original_engine_link_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_original_engine_real_layout
     COMMAND crosspoint_original_engine_link_tests "${EPUB_FIXTURE}")
 
+add_test(NAME books_smooth_glyphs_truetype
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/smooth_glyphs_test.py"
+      "$<TARGET_FILE:books-reader>" "${VIETNAMESE_EPUB_FIXTURE}")
+set_tests_properties(books_smooth_glyphs_truetype PROPERTIES SKIP_RETURN_CODE 77)
 # Smooth text through the real reader (needs the Vietnamese fixture above).
 add_test(NAME books_smooth_text_render
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/smooth_text_render_test.py"

@@ -4,6 +4,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 namespace books {
 class Q2Display {
@@ -12,13 +13,21 @@ public:
     static constexpr std::size_t RowBytes=(Width+7)/8;
 
     // ---- Smooth text -------------------------------------------------------
-    // CrossPoint fonts store 2-bit coverage (0 white, 1 light, 2 dark, 3
-    // black). The BW pass paints levels 1-3 as solid ink, which is what makes
-    // text jagged on an LCD. The engine's two grayscale passes (made for
-    // e-ink) set a bit where a pixel is grey: the MSB plane for levels 1 and
-    // 2, the LSB plane for level 2 only. Solid ink sets neither. So for an
-    // ink pixel of the BW page:  MSB 0 -> 3,  MSB 1 LSB 1 -> 2,  MSB 1 LSB 0 -> 1.
-    // Images use the same two planes for their dark and light greys.
+    // Each pixel can carry a coverage (alpha, 0..255 of ink) and the ink or
+    // paper state it was drawn with ("expect": 0 none, 1 paper, 2 ink). The
+    // coverage shows only while the 1-bit image still has that state, so
+    // anything drawn over it later (a menu, a highlight, the progress bar)
+    // shows as plain ink or paper.
+    //
+    // Book pages: CrossPoint fonts store 2-bit coverage (0 white, 1 light,
+    // 2 dark, 3 black) and the BW pass paints levels 1-3 as solid ink. The
+    // engine's two grayscale passes (made for e-ink) set a bit where a pixel
+    // is grey: the MSB plane for levels 1 and 2, the LSB plane for level 2
+    // only; solid ink sets neither. So for an ink pixel of the BW page:
+    // MSB 0 -> 3, MSB 1 LSB 1 -> 2, MSB 1 LSB 0 -> 1. Images use the same
+    // planes for their two greys. Text drawn from TrueType (UiText) writes
+    // its full 8-bit coverage directly.
+    static constexpr uint8_t kExpectNone=0,kExpectPaper=1,kExpectInk=2;
     static unsigned bitAt(const uint8_t* plane,int x,int y) {
         return (plane[std::size_t(y)*RowBytes+unsigned(x)/8u]>>(7-(unsigned(x)&7u)))&1u;
     }
@@ -27,30 +36,38 @@ public:
         if(!msb)return 3;
         return lsb?2:1;
     }
-    // Fills levels (Width*Height bytes, 0..3 = share of ink) for the 1-bit
-    // image ink (1 = ink). A pixel takes its grey level only while it still
-    // shows the rendered page: pageInk equal to ink, or inverted when the
-    // whole page was inverted (night mode), where the level flips to 3-L.
-    // Anything drawn over the page since (menus, highlights, the progress
-    // bar) keeps plain ink or paper.
-    static void computeLevels(const uint8_t* ink,const uint8_t* pageInk,const uint8_t* lsb,
-                              const uint8_t* msb,bool inverted,uint8_t* levels) {
+    static uint8_t planeAlpha(unsigned pageInk,unsigned lsb,unsigned msb) {
+        return static_cast<uint8_t>(coverage(pageInk,lsb,msb)*85u);
+    }
+    // Final ink share per pixel (Width*Height) for the 1-bit image ink
+    // (1 = ink), from the coverage layer where it still applies.
+    static void computeAlpha(const uint8_t* ink,const uint8_t* alpha,const uint8_t* expect,
+                             uint8_t* out) {
         for(int y=0;y<Height;y++)
             for(int x=0;x<Width;x++){
-                const unsigned now=bitAt(ink,x,y),page=bitAt(pageInk,x,y);
-                uint8_t level=static_cast<uint8_t>(now?3:0);
-                if(!inverted&&now==page)level=static_cast<uint8_t>(coverage(page,bitAt(lsb,x,y),bitAt(msb,x,y)));
-                else if(inverted&&now!=page)level=static_cast<uint8_t>(3-coverage(page,bitAt(lsb,x,y),bitAt(msb,x,y)));
-                levels[std::size_t(y)*Width+unsigned(x)]=level;
+                const std::size_t i=std::size_t(y)*Width+unsigned(x);
+                const unsigned now=bitAt(ink,x,y);
+                const uint8_t e=expect[i];
+                out[i]=(e!=kExpectNone && now==(e==kExpectInk?1u:0u))?alpha[i]:static_cast<uint8_t>(now*255u);
             }
     }
-    // Share of ink (of 255) for each level. Slightly above an even split, so
-    // small text keeps its weight on the Q2's LCD.
-    static constexpr uint8_t kInkShare[4]={0,104,184,255};
-    static uint32_t blend(uint32_t paper,uint32_t ink,unsigned level) {
-        if(level==0)return 0xff000000u|paper;
-        if(level>=3)return 0xff000000u|ink;
-        const unsigned a=kInkShare[level];
+    // Coverage is linear; an LCD shows sRGB. Blending straight in sRGB makes
+    // thin strokes look washed out, worst for light text on a dark page.
+    // Each edge share is raised by a gamma: 1.25 for dark text on light,
+    // 1.6 for light text on dark (full ink and paper stay exact).
+    static uint8_t boost(uint8_t a,bool lightOnDark) {
+        struct Table {
+            uint8_t v[256];
+            explicit Table(double gamma){for(int i=0;i<256;i++)v[i]=static_cast<uint8_t>(255.0*std::pow(i/255.0,1.0/gamma)+0.5);}
+        };
+        static const Table dark(1.25),light(1.6);
+        return (lightOnDark?light:dark).v[a];
+    }
+    static unsigned luma(uint32_t c){return (((c>>16)&255u)*299u+((c>>8)&255u)*587u+(c&255u)*114u)/1000u;}
+    static uint32_t blend(uint32_t paper,uint32_t ink,unsigned alpha) {
+        if(alpha==0)return 0xff000000u|paper;
+        if(alpha>=255)return 0xff000000u|ink;
+        const unsigned a=boost(static_cast<uint8_t>(alpha),luma(ink)>luma(paper));
         auto mix=[a](uint32_t p,uint32_t i,int shift){
             const unsigned pc=(p>>shift)&0xffu,ic=(i>>shift)&0xffu;
             return ((pc*(255u-a)+ic*a+127u)/255u)<<shift;
@@ -62,7 +79,7 @@ public:
     // Bit 1 is dark ink, bit 0 light paper. Use only after the page changes.
     static bool presentBW(const uint8_t *bw,std::size_t bytes,uint32_t *frame,
                           std::size_t pixels,unsigned warmth,bool night,
-                          const uint8_t* levels=nullptr) {
+                          const uint8_t* alpha=nullptr) {
         if(!bw||!frame||bytes<RowBytes*Height||pixels<Width*Height)return false;
         if(warmth>100)warmth=100;
         auto lerp=[warmth](unsigned cold,unsigned warm) {
@@ -83,8 +100,7 @@ public:
         for(int y=0;y<Height;y++){
             for(int x=0;x<Width;x++){
                 const std::size_t i=std::size_t(y)*Width+unsigned(x);
-                const unsigned level=levels?levels[i]:bitAt(bw,x,y)*3u;
-                frame[i]=blend(paper,ink,level);
+                frame[i]=blend(paper,ink,alpha?alpha[i]:bitAt(bw,x,y)*255u);
             }
         }
         return true;
@@ -111,10 +127,10 @@ public:
     }
     static bool presentThemed(const uint8_t *bw,std::size_t bytes,uint32_t *frame,std::size_t pixels,
                               uint32_t baseInk,uint32_t basePaper,const Zone* zones,std::size_t count,
-                              const uint8_t* levels=nullptr) {
+                              const uint8_t* alpha=nullptr) {
         if(!bw||!frame||bytes<RowBytes*Height||pixels<Width*Height)return false;
-        auto level=[bw,levels](int x,int y){
-            return levels?unsigned(levels[std::size_t(y)*Width+unsigned(x)]):bitAt(bw,x,y)*3u;
+        auto level=[bw,alpha](int x,int y){
+            return alpha?unsigned(alpha[std::size_t(y)*Width+unsigned(x)]):bitAt(bw,x,y)*255u;
         };
         for(int y=0;y<Height;y++)
             for(int x=0;x<Width;x++)

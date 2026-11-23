@@ -80,6 +80,21 @@ cp "$work/jpeg-build/libjpeg.a" "$prefix/lib/libjpeg.a"
 cp "$work/libjpeg/jpeglib.h" "$work/libjpeg/jmorecfg.h" "$work/libjpeg/jerror.h" "$prefix/include/"
 cp "$work/jpeg-build/jconfig.h" "$prefix/include/jconfig.h"
 test -s "$prefix/lib/libjpeg.a"
+# Pinned FreeType for smooth menu text in Q2 Pod's TrueType faces (the Q2's
+# firmware has no FreeType). TrueType/CFF rendering only: no zlib, PNG,
+# HarfBuzz, bzip2 or Brotli.
+git clone --quiet --depth 1 --branch VER-2-13-3 https://github.com/freetype/freetype.git "$work/freetype"
+cmake -S "$work/freetype" -B "$work/freetype-build" -DCMAKE_SYSTEM_NAME=Linux \
+  -DCMAKE_SYSTEM_PROCESSOR=mipsel -DCMAKE_C_COMPILER=clang \
+  "-DCMAKE_C_FLAGS=$flags" -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY \
+  -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=$prefix" \
+  -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF \
+  -DFT_DISABLE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON \
+  -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON
+cmake --build "$work/freetype-build" --parallel 2
+cmake --install "$work/freetype-build"
+test -s "$prefix/lib/libfreetype.a"
+test -s "$prefix/include/freetype2/ft2build.h"
 printf '#include <vector>\nint main(){std::vector<int> x(2);return x[0];}\n' > "$work/probe.cpp"
 clang++ $flags "$work/probe.cpp" $link -o "$work/probe"
 python3 crosspoint-core/tools/check_q2_elf.py "$work/probe" mipsel-linux-gnu-readelf mipsel-linux-gnu-objdump
@@ -91,7 +106,11 @@ cmake -S crosspoint-core -B "$work/reader" -DCMAKE_SYSTEM_NAME=Linux \
   "-DCMAKE_CXX_FLAGS_RELEASE=-O2 -DNDEBUG -DBOOKS_Q2_RUNTIME=1" \
   "-DZLIB_LIBRARY=$prefix/lib/libz.a" "-DZLIB_INCLUDE_DIR=$prefix/include" \
   "-DEXPAT_LIBRARY=$prefix/lib/libexpat.a" "-DEXPAT_INCLUDE_DIR=$prefix/include" \
-  "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include"
+  "-DJPEG_LIBRARY=$prefix/lib/libjpeg.a" "-DJPEG_INCLUDE_DIR=$prefix/include" \
+  "-DFREETYPE_LIBRARY=$prefix/lib/libfreetype.a" \
+  "-DFREETYPE_INCLUDE_DIR_ft2build=$prefix/include/freetype2" \
+  "-DFREETYPE_INCLUDE_DIR_freetype2=$prefix/include/freetype2" \
+  -DBOOKS_REQUIRE_FREETYPE=ON
 cmake --build "$work/reader" --target books-reader --parallel 2
 cmake --build "$work/reader" --target books_png_formats_tests --parallel 2
 timeout 30s qemu-mipsel -L "$root" "$work/reader/books_png_formats_tests"
@@ -403,6 +422,42 @@ BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
   --render "$work/reader/vietnamese-prose.epub" "$work/default-extended.pgm" \
   | tee "$work/default-extended.log"
 grep -q 'Books font source: original CrossPoint extended cpfont' "$work/default-extended.log"
+# Smooth book text on the MIPS app: each family's TrueType glyphs must land
+# on CrossPoint's own (same font, same layout). The calibrated sizes and the
+# agreement are logged; a wrong size or offset drops the IoU and fails.
+test -s "$card/.books/fonts/ttf/sans-regular.ttf"
+for family in sans serif bitter inter literata; do
+  echo "BOOKS-TYPE1 $family 12" > "$card/.books/typography.conf"
+  for book in vietnamese-prose long-chapter; do
+    BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
+      --smooth-check "$work/reader/$book.epub" > "$work/smooth-$family-$book.log" 2>&1 || true
+    grep "Books smooth glyph" "$work/smooth-$family-$book.log" || true
+  done
+done
+python3 - "$work" <<'PY'
+import re,sys
+bad=[]
+for family,book in [(f,b) for f in ("sans","serif","bitter","inter","literata")
+                    for b in ("vietnamese-prose","long-chapter")]:
+    text=open(f"{sys.argv[1]}/smooth-{family}-{book}.log").read()
+    family=f"{family} ({book})"
+    m=re.search(r"IoU ([0-9.]+) over (\d+) ink pixels, centre shift ([-+0-9.]+) ([-+0-9.]+)",text)
+    if not m and "kept 2-bit" not in text and "no TrueType glyphs" not in text and family.split()[0] not in ("sans","serif"):
+        print(f"::notice::smooth glyphs {family}: no TrueType file (kept 2-bit)"); continue
+    if not m:
+        # A family whose TrueType does not line up keeps 2-bit glyphs (its
+        # baseline check refused it): allowed, except the two defaults.
+        if family.split()[0] in ("sans","serif"): bad.append(f"{family}: no agreement line")
+        else: print(f"::notice::smooth glyphs {family}: kept 2-bit")
+        continue
+    iou,pixels,dx,dy=float(m[1]),int(m[2]),float(m[3]),float(m[4])
+    print(f"::notice::smooth glyphs {family}: IoU {iou:.3f}, shift {dx:+.2f} {dy:+.2f} px, {pixels} px")
+    # Hinting snaps lines to whole pixels, so up to 3/4 px vertically.
+    if pixels<2000 or iou<0.75 or abs(dx)>0.5 or abs(dy)>0.75:
+        bad.append(f"{family}: IoU {iou:.3f} shift {dx:+.2f} {dy:+.2f}")
+assert not bad, "TrueType glyphs do not land on CrossPoint's: "+"; ".join(bad)
+PY
+rm -f "$card/.books/typography.conf"
 # Render *every* allowed point size using the actual Q2 MIPS ELF and
 # original CrossPoint font files. Each size must retain all 14 scripts,
 # produce distinct paginated pixels, and never fall back to the 12pt bitmap.
@@ -488,7 +543,8 @@ BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
   ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
-find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
+find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
+find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
 # The test books in $card/Books were only for the checks above: the release
 # carries the app alone, never books in the user's Books folder.
@@ -498,9 +554,12 @@ unzip -t "$base/dist/books-q2-reader-alpha.zip"
 # Verify the allow-list held: nothing but the app's own files (no books).
 unzip -Z1 "$base/dist/books-q2-reader-alpha.zip" | python3 -c '
 import re,sys
-bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
-  r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
+names_all=sys.stdin.read().split()
+bad=[n for n in names_all if not re.fullmatch(
+  r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/fonts/ttf/|\.books/fonts/ttf/[a-z]+-(regular|bold|italic|bolditalic)\.ttf|\.books/fonts/ttf/books-ttf\.txt|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
   r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
+names=set(n for n in names_all)
+assert ".books/fonts/ttf/sans-regular.ttf" in names and ".books/fonts/ttf/serif-regular.ttf" in names, "smooth text TrueType files missing from the ZIP"
 print("Release ZIP contents: PASS")'

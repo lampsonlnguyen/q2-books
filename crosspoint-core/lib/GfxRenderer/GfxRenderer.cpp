@@ -594,6 +594,18 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
 
   const EpdFontData* fontData = fontFamily.getData(style);
   const bool is2Bit = fontData->is2Bit;
+  // Q2 port: a glyph hook (smooth text) erases or draws the glyphs it wants.
+  bool state = pixelState;
+  if constexpr (rotation == TextRotation::None) {
+    GfxRenderer::GlyphHook* hook = renderer.glyphHook();
+    if (hook && pixelState && glyph != &solidFallback && hook->wants(fontData, cp)) {
+      if (renderer.glyphHookMode() == GfxRenderer::GlyphHookMode::Draw) {
+        hook->draw(fontData, cp, cursorX, cursorY);
+        return;
+      }
+      state = false;  // Erase: CrossPoint's own glyph, in paper
+    }
+  }
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
   const int left = glyph->left;
@@ -618,9 +630,9 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
 
   if (glyph == &solidFallback) {
     if constexpr (rotation == TextRotation::Rotated90CW) {
-      renderer.fillRect(cursorX + fontData->ascender - top, cursorY - left - width + 1, height, width, pixelState);
+      renderer.fillRect(cursorX + fontData->ascender - top, cursorY - left - width + 1, height, width, state);
     } else {
-      renderer.fillRect(cursorX + left, cursorY - top, width, height, pixelState);
+      renderer.fillRect(cursorX + left, cursorY - top, width, height, state);
     }
     return;
   }
@@ -636,7 +648,7 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
   } else {
     frame = {cursorX + left, cursorY - top, 1, 0, 0, 1};
   }
-  renderer.drawGlyphBitmap(bitmap, width, height, frame, is2Bit, renderMode, pixelState);
+  renderer.drawGlyphBitmap(bitmap, width, height, frame, is2Bit, renderMode, state);
 }
 
 // Draw an unscaled glyph placed by a logical frame. Equivalent to calling

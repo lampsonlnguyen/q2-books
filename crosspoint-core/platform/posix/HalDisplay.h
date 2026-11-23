@@ -42,23 +42,26 @@ class HalDisplay {
   void preconditionGrayscale(uint16_t,uint16_t,uint16_t,uint16_t) {}
   bool displayGrayscaleBase(GrayscaleMode,RefreshMode=HALF_REFRESH,bool=false) {return false;}
   void displayGrayscaleBase(RefreshMode=HALF_REFRESH,bool=false) {}
-  // Smooth text: the engine's two grayscale passes are kept as planes and
-  // blended with the BW page at present time (see Q2Display::computeLevels).
+  // Smooth text (see Q2Display): a coverage layer over the 1-bit canvas.
+  // Book pages: the engine's two grayscale passes are kept as planes and,
+  // with setGrayPage, become each pixel's coverage. Text drawn from TrueType
+  // writes its coverage with drawCoverage. A cleared screen has none.
   void copyGrayscaleLsbBuffers(const uint8_t* plane) const {copyPlane(grayLsb_.get(),plane);}
   void copyGrayscaleMsbBuffers(const uint8_t* plane) const {copyPlane(grayMsb_.get(),plane);}
-  void cleanupGrayscaleBuffers(const uint8_t*) const {grayValid_=false;}
-  // Marks the planes as belonging to this BW page, which the reader puts
-  // back in the framebuffer after the grey passes.
+  void cleanupGrayscaleBuffers(const uint8_t*) const {}
+  // Every pixel of this BW page takes its coverage from the planes.
   void setGrayPage(const uint8_t* bwPage) const;
-  // Restores planes kept with a cached page.
-  void restoreGray(const uint8_t* bwPage,const uint8_t* lsb,const uint8_t* msb) const;
-  void setGrayInverted(bool inverted) const {grayInverted_=inverted;}
-  bool grayValid() const {return grayValid_;}
-  const uint8_t* grayLsb() const {return grayLsb_.get();}
-  const uint8_t* grayMsb() const {return grayMsb_.get();}
-  // Coverage levels (Width*Height bytes, 0..3) of the framebuffer as it would
-  // be shown now; false when there are no valid grey planes.
-  bool currentLevels(uint8_t* levels) const;
+  // Coverage cov[0..w*h) (row stride `stride`) at x,y: a pixel at or over
+  // half coverage is ink in the 1-bit canvas too, so 1-bit readers see it.
+  void drawCoverage(int x,int y,int w,int h,const uint8_t* cov,int stride) const;
+  // The layer (Width*Height bytes each), for the reader's page cache.
+  static constexpr uint32_t PIXELS=uint32_t(DISPLAY_WIDTH)*DISPLAY_HEIGHT;
+  const uint8_t* coverageAlpha() const {return alpha_.get();}
+  const uint8_t* coverageExpect() const {return expect_.get();}
+  void restoreCoverage(const uint8_t* alpha,const uint8_t* expect) const;
+  void clearCoverage() const {if(expect_)for(uint32_t i=0;i<PIXELS;++i)expect_[i]=0;}
+  // Ink share 0..255 per pixel as it would be shown now.
+  bool currentAlpha(uint8_t* out) const;
   void displayGrayBuffer(bool=false) {}
   bool displayRetainedGrayscaleOverlay(uint16_t,uint16_t,uint16_t,uint16_t,bool) {return false;}
   void writeGrayscalePlaneStrip(bool,const uint8_t*,uint16_t,uint16_t) {}
@@ -91,8 +94,7 @@ class HalDisplay {
   mutable int zoneCount_=0;
   mutable std::unique_ptr<uint8_t[]> raster_;
   std::unique_ptr<uint8_t[]> inkRaster_;
-  std::unique_ptr<uint8_t[]> grayPage_,grayLsb_,grayMsb_,levels_;
-  mutable bool grayValid_=false,grayInverted_=false;
+  std::unique_ptr<uint8_t[]> grayLsb_,grayMsb_,alpha_,expect_,shown_;
   void copyPlane(uint8_t* dest,const uint8_t* src) const {
     if(dest&&src) for(uint32_t i=0;i<BUFFER_SIZE;++i)dest[i]=src[i];
   }

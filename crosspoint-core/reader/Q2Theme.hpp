@@ -72,6 +72,19 @@ inline const UiTheme& uiTheme() {
   return theme;
 }
 
+}  // namespace books
+#include "UiText.hpp"
+namespace books {
+// Q2 Pod's list face for the theme (assets/themes/*/theme.xml row font):
+// Classic's own, Modern's bold, Minimal's (and no theme's) stock regular.
+inline UiText::Face uiTextFace() {
+  switch (uiTheme().style) {
+    case UiTheme::Style::Classic: return UiText::Face::Classic;
+    case UiTheme::Style::Modern: return UiText::Face::Bold;
+    default: return UiText::Face::Regular;
+  }
+}
+
 // The page colours: Classic's paper and ink, a dark theme's box and title.
 // |list|: a list page (the shelf), where Minimal shows unchosen rows in its
 // quiet grey, as Q2 Pod's own lists.

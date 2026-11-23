@@ -24,6 +24,10 @@ with tempfile.TemporaryDirectory(prefix="books-smooth-") as state:
     smooth = pixels("--render-smooth", os.path.join(state, "smooth.pgm"))
     off = pixels("--render-smooth", os.path.join(state, "off.pgm"), {"BOOKS_SMOOTH_TEXT": "0"})
     assert len(bw) == len(smooth) == 375 * 320
+    # The page's text area only (the bands above and below hold the status
+    # and progress, which may be drawn in TrueType at any coverage).
+    area = slice(40 * 375, 282 * 375)
+    bw, smooth, off = bw[area], smooth[area], off[area]
     levels = Counter(smooth)
     assert set(levels) <= {0, 85, 170, 255}, levels
     assert levels[85] > 100 and levels[170] > 100, levels   # real grey edges

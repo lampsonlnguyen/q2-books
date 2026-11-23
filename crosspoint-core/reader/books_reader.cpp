@@ -587,7 +587,7 @@ class Reader {
   GfxRenderer renderer_;
   EpdFont bodyFont_;
   books::SmoothGlyphs smoothGlyphs_;  // book text from the fonts' TrueType files
-  std::vector<uint8_t> cpfontPage_;   // the last page as CrossPoint drew it
+  std::vector<uint8_t> cpfontAlpha_;  // the last page's coverage as CrossPoint drew it
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   std::unique_ptr<SdCardFont> selectedFont_;
@@ -666,8 +666,8 @@ class Reader {
   template<typename PagePtr>
   void drawSmoothGlyphs(const PagePtr& page) {
     if(smoothGlyphs_.empty())return;
-    if(const uint8_t* fb=display_.getFrameBuffer())  // for smoothGlyphAgreement
-      cpfontPage_.assign(fb,fb+HalDisplay::BUFFER_SIZE);
+    cpfontAlpha_.resize(HalDisplay::PIXELS);  // for smoothGlyphAgreement
+    if(!display_.currentAlpha(cpfontAlpha_.data()))cpfontAlpha_.clear();
     renderer_.setGlyphHook(&smoothGlyphs_,GfxRenderer::GlyphHookMode::Erase);
     page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
     renderer_.setGlyphHook(&smoothGlyphs_,GfxRenderer::GlyphHookMode::Draw);
@@ -2616,24 +2616,30 @@ class Reader {
     return ok;
   }
   const std::vector<books::SelectedWord>& selectableWordsForTest() const {return selectedWords_;}
-  // How closely the TrueType glyphs cover CrossPoint's own (intersection
-  // over union of ink in the text area): a wrong size or offset shows here.
+  // How closely the TrueType glyphs land on CrossPoint's own, like for like:
+  // the intersection over union of pixels at least half covered (CrossPoint's
+  // from its 4-level planes), and the shift of the coverage-weighted ink
+  // centre (dx, dy in pixels). A wrong size or offset shows in both.
   // -1 when the page has no smooth glyphs.
-  double smoothGlyphAgreement(size_t* pixels=nullptr) {
-    cpfontPage_.clear();
+  double smoothGlyphAgreement(size_t* pixels=nullptr,double* dx=nullptr,double* dy=nullptr) {
+    cpfontAlpha_.clear();
     clearRasterCache();
     render();
-    const uint8_t* now=display_.getFrameBuffer();
-    if(!now || cpfontPage_.size()!=HalDisplay::BUFFER_SIZE)return -1;
+    std::vector<uint8_t> now(HalDisplay::PIXELS);
+    if(cpfontAlpha_.size()!=HalDisplay::PIXELS || !display_.currentAlpha(now.data()))return -1;
     size_t both=0,either=0;
+    double wa=0,xa=0,ya=0,wb=0,xb=0,yb=0;
     for(int y=TOP;y<BOTTOM;++y)
       for(int x=0;x<375;++x) {
-        const size_t byte=static_cast<size_t>(y)*HalDisplay::DISPLAY_WIDTH_BYTES+x/8;
-        const uint8_t mask=static_cast<uint8_t>(0x80u>>(x&7));
-        const bool a=!(cpfontPage_[byte]&mask),b=!(now[byte]&mask);
-        both+=a&&b;either+=a||b;
+        const size_t i=static_cast<size_t>(y)*375+x;
+        const unsigned a=cpfontAlpha_[i],b=now[i];
+        both+=(a>=128)&&(b>=128);either+=(a>=128)||(b>=128);
+        wa+=a;xa+=double(a)*x;ya+=double(a)*y;
+        wb+=b;xb+=double(b)*x;yb+=double(b)*y;
       }
     if(pixels)*pixels=either;
+    if(dx)*dx=wa>0&&wb>0?xb/wb-xa/wa:0;
+    if(dy)*dy=wa>0&&wb>0?yb/wb-ya/wa:0;
     return either?static_cast<double>(both)/static_cast<double>(either):-1;
   }
   // Ink bounding box of the book area of the rendered page (no footer).
@@ -4922,10 +4928,11 @@ int main(int argc,char** argv) {
     reader.report();
     if (render && !reader.savePgm(output,smooth)) return 4;
     if (smoothCheck) {
-      size_t pixels=0;
-      const double iou=reader.smoothGlyphAgreement(&pixels);
+      size_t pixels=0;double dx=0,dy=0;
+      const double iou=reader.smoothGlyphAgreement(&pixels,&dx,&dy);
       if(iou<0){std::puts("Books smooth glyph agreement: no TrueType glyphs on the page");return 6;}
-      std::printf("Books smooth glyph agreement: IoU %.3f over %zu ink pixels\n",iou,pixels);
+      std::printf("Books smooth glyph agreement: IoU %.3f over %zu ink pixels, centre shift %+.2f %+.2f px\n",
+                  iou,pixels,dx,dy);
     }
     return 0;
   }

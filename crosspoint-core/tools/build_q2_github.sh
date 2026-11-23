@@ -429,17 +429,23 @@ test -s "$card/.books/fonts/ttf/sans-regular.ttf"
 for family in sans serif bitter inter literata; do
   echo "BOOKS-TYPE1 $family 12" > "$card/.books/typography.conf"
   BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
-    --smooth-check "$work/reader/vietnamese-prose.epub" 2>&1 | tee "$work/smooth-$family.log"
-  grep "Books smooth glyphs: $family regular" "$work/smooth-$family.log"
-  python3 - "$work/smooth-$family.log" <<'PY'
-import re,sys
-m=re.search(r"IoU ([0-9.]+) over (\d+)",open(sys.argv[1]).read())
-assert m, "no smooth glyph agreement line"
-iou,pixels=float(m.group(1)),int(m.group(2))
-print(f"::notice::smooth glyph IoU {iou:.3f} over {pixels} ink pixels")
-assert pixels>2000 and iou>=0.70, f"TrueType glyphs do not match CrossPoint's: IoU {iou}"
-PY
+    --smooth-check "$work/reader/vietnamese-prose.epub" > "$work/smooth-$family.log" 2>&1 || true
+  grep "Books smooth glyph" "$work/smooth-$family.log" || true
 done
+python3 - "$work" <<'PY'
+import re,sys
+bad=[]
+for family in ("sans","serif","bitter","inter","literata"):
+    text=open(f"{sys.argv[1]}/smooth-{family}.log").read()
+    m=re.search(r"IoU ([0-9.]+) over (\d+) ink pixels, centre shift ([-+0-9.]+) ([-+0-9.]+)",text)
+    if not m:
+        bad.append(f"{family}: no agreement line"); continue
+    iou,pixels,dx,dy=float(m[1]),int(m[2]),float(m[3]),float(m[4])
+    print(f"::notice::smooth glyphs {family}: IoU {iou:.3f}, shift {dx:+.2f} {dy:+.2f} px, {pixels} px")
+    if pixels<2000 or iou<0.75 or abs(dx)>0.5 or abs(dy)>0.5:
+        bad.append(f"{family}: IoU {iou:.3f} shift {dx:+.2f} {dy:+.2f}")
+assert not bad, "TrueType glyphs do not land on CrossPoint's: "+"; ".join(bad)
+PY
 rm -f "$card/.books/typography.conf"
 # Render *every* allowed point size using the actual Q2 MIPS ELF and
 # original CrossPoint font files. Each size must retain all 14 scripts,

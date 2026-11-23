@@ -426,7 +426,7 @@ grep -q 'Books font source: original CrossPoint extended cpfont' "$work/default-
 # on CrossPoint's own (same font, same layout). The calibrated sizes and the
 # agreement are logged; a wrong size or offset drops the IoU and fails.
 test -s "$card/.books/fonts/ttf/sans-regular.ttf"
-for family in sans serif; do
+for family in sans serif bitter inter literata; do
   echo "BOOKS-TYPE1 $family 12" > "$card/.books/typography.conf"
   BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
     --smooth-check "$work/reader/vietnamese-prose.epub" 2>&1 | tee "$work/smooth-$family.log"

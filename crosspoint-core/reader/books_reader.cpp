@@ -644,9 +644,19 @@ class Reader {
       const EpdFontData* data=family.getData(style);
       // A style the family lacks falls back to regular's data: skip it.
       if(!data || (style!=EpdFontFamily::REGULAR && data==regular))continue;
-      const std::string path=root+"/"+slug+"-"+books::SmoothGlyphs::styleName(style)+".ttf";
-      if(::access(path.c_str(),R_OK)!=0)continue;
-      const double em=smoothGlyphs_.registerStyle(renderer_,fontId,style,data,path);
+      // The style's own file; a variable font ships one file per slant, so
+      // bold uses regular's and bold italic italic's, at weight 700.
+      const bool bold=style==EpdFontFamily::BOLD || style==EpdFontFamily::BOLD_ITALIC;
+      const auto file=[&](EpdFontFamily::Style s){
+        return root+"/"+slug+"-"+books::SmoothGlyphs::styleName(s)+".ttf";
+      };
+      std::string path=file(style);
+      bool own=::access(path.c_str(),R_OK)==0;
+      if(!own && bold) {
+        path=file(style==EpdFontFamily::BOLD?EpdFontFamily::REGULAR:EpdFontFamily::ITALIC);
+        if(::access(path.c_str(),R_OK)!=0)continue;
+      } else if(!own)continue;
+      const double em=smoothGlyphs_.registerStyle(renderer_,fontId,style,data,path,bold?700:400,own);
       if(em>0)std::fprintf(stderr,"Books smooth glyphs: %s %s at %.2f px em\n",slug,
                            books::SmoothGlyphs::styleName(style),em);
     }

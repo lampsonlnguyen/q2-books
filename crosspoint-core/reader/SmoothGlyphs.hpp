@@ -19,6 +19,7 @@
 #include <GfxRenderer.h>
 #include <HalDisplay.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -32,6 +33,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_ADVANCES_H
+#include FT_MULTIPLE_MASTERS_H
 #endif
 
 namespace books {
@@ -75,14 +77,18 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
   size_t size() const { return entries_.size(); }
 
   // Registers the reading font's style (CrossPoint data pointer and the
-  // renderer font id it is drawn with) to the TrueType file at path.
+  // renderer font id it is drawn with) to the TrueType file at path. weight
+  // (400, 700) sets a variable font's weight axis; a static file is used only
+  // when ownFile (its own style's file), never to stand in for another style.
   // Returns the calibrated em size in pixels, or 0 when not registered.
   double registerStyle(const GfxRenderer& renderer, int fontId, EpdFontFamily::Style style,
-                       const EpdFontData* data, const std::string& path) {
+                       const EpdFontData* data, const std::string& path, int weight = 400,
+                       bool ownFile = true) {
 #if BOOKS_HAVE_FREETYPE
     if (!data || !enabled()) return 0;
-    FT_Face face = openFace(path);
+    FT_Face face = openFace(path, weight);
     if (!face) return 0;
+    if (!ownFile && !FT_HAS_MULTIPLE_MASTERS(face)) return 0;
     // Calibrate: CrossPoint's advance (px, 12.4 fixed) against the TrueType
     // advance (font units) over the letters both have.
     static const char kSample[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -155,8 +161,11 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
     FT_F26Dot6 size26 = 0;
     uint32_t id = 0;
   };
-  FT_Face openFace(const std::string& path) {
-    auto it = faces_.find(path);
+  // One face per file and weight: a variable font's weight axis is set on
+  // the face (its other axes stay at their defaults).
+  FT_Face openFace(const std::string& path, int weight) {
+    const std::string key = path + "@" + std::to_string(weight);
+    auto it = faces_.find(key);
     if (it != faces_.end()) return it->second;
     if (!library_ && FT_Init_FreeType(&library_) != 0) {
       library_ = nullptr;
@@ -164,7 +173,22 @@ class SmoothGlyphs final : public GfxRenderer::GlyphHook {
     }
     FT_Face face = nullptr;
     if (FT_New_Face(library_, path.c_str(), 0, &face) != 0) return nullptr;
-    faces_[path] = face;
+    if (FT_HAS_MULTIPLE_MASTERS(face)) {
+      FT_MM_Var* mm = nullptr;
+      if (FT_Get_MM_Var(face, &mm) == 0 && mm) {
+        std::vector<FT_Fixed> coords(mm->num_axis);
+        for (FT_UInt i = 0; i < mm->num_axis; ++i) {
+          coords[i] = mm->axis[i].def;
+          if (mm->axis[i].tag == FT_MAKE_TAG('w', 'g', 'h', 't')) {
+            const FT_Fixed w = static_cast<FT_Fixed>(weight) << 16;
+            coords[i] = std::clamp(w, mm->axis[i].minimum, mm->axis[i].maximum);
+          }
+        }
+        FT_Set_Var_Design_Coordinates(face, mm->num_axis, coords.data());
+        FT_Done_MM_Var(library_, mm);
+      }
+    }
+    faces_[key] = face;
     return face;
   }
   const Glyph* glyph(const Entry& entry, uint32_t cp) {

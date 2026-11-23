@@ -133,16 +133,42 @@ def _style_source(entry, roots, cache: pathlib.Path):
     return None
 
 
+_NOTO_FILES = {"NotoSansExtended": "NotoSans", "NotoSerifExtended": "NotoSerif"}
+_STYLE_SUFFIX = {"regular": "Regular", "bold": "Bold", "italic": "Italic", "bolditalic": "BoldItalic"}
+
+
+def _noto_fallback(name: str, style: str, roots):
+    """Noto's own file for an entry that names no single file: in the pinned
+    checkouts, then the CI host's fonts-noto-core package."""
+    base = _NOTO_FILES.get(name)
+    if not base:
+        return None
+    wanted = f"{base}-{_STYLE_SUFFIX[style]}.ttf"
+    for root in list(roots) + [pathlib.Path("/usr/share/fonts/truetype/noto")]:
+        if (root / wanted).is_file():
+            return root / wanted
+        if root.is_dir() and root != pathlib.Path("/usr/share/fonts/truetype/noto"):
+            for found in root.rglob(wanted):
+                return found
+    return None
+
+
 def ship_reading_ttfs(catalog: dict, out: pathlib.Path, roots, cache: pathlib.Path) -> None:
+    """One file per distinct source: a variable font's bold reuses its regular
+    (the reader sets the weight axis), so it is not shipped twice."""
     out.mkdir(parents=True, exist_ok=True)
     manifest, total = [], 0
     for name, slug in READING_SLUGS.items():
         styles = catalog.get(name, {}).get("styles", {})
+        shipped = {}
         for key, entry in styles.items():
             style = _style_key(key)
-            source = _style_source(entry, roots, cache)
+            source = _style_source(entry, roots, cache) or _noto_fallback(name, style, roots)
             if source is None:
-                print(f"Smooth text: no TrueType source for {name} {key}; it keeps 2-bit glyphs")
+                print(f"Smooth text: no TrueType source for {name} {key} ({entry!r}); it keeps 2-bit glyphs")
+                continue
+            if source.resolve() in shipped:
+                print(f"Smooth text: {slug}-{style} uses {shipped[source.resolve()]} (variable font)")
                 continue
             data = source.read_bytes()
             if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true"):
@@ -150,6 +176,7 @@ def ship_reading_ttfs(catalog: dict, out: pathlib.Path, roots, cache: pathlib.Pa
                 continue
             dest = out / f"{slug}-{style}.ttf"
             dest.write_bytes(data)
+            shipped[source.resolve()] = dest.name
             total += len(data)
             digest = hashlib.sha256(data).hexdigest()
             manifest.append(f"{digest}  {dest.name}  {name} {key} from {source.name}")

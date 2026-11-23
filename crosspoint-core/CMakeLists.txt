@@ -132,6 +132,20 @@ target_include_directories(books_t9_keypad_tests PRIVATE reader)
 target_compile_options(books_t9_keypad_tests PRIVATE -UNDEBUG)
 add_test(NAME books_t9_search_keypad COMMAND books_t9_keypad_tests)
 
+add_executable(books_xml_entity_tests tests/xml_entity_repair_test.cpp lib/Epub/htmlEntities.cpp)
+target_include_directories(books_xml_entity_tests PRIVATE lib)
+target_compile_options(books_xml_entity_tests PRIVATE -UNDEBUG)
+add_test(NAME books_xml_entity_repair COMMAND books_xml_entity_tests)
+
+# M5 difficult-EPUB corpus: generated here, opened and inspected by the real reader.
+add_test(NAME books_m5_difficult_epub_corpus
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/make_m5_corpus.py"
+      "${CMAKE_CURRENT_BINARY_DIR}/m5-corpus")
+add_test(NAME books_m5_difficult_epub_checks
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/m5_corpus_test.py"
+      "$<TARGET_FILE:books-reader>" "${CMAKE_CURRENT_BINARY_DIR}/m5-corpus")
+set_tests_properties(books_m5_difficult_epub_checks PROPERTIES DEPENDS books_m5_difficult_epub_corpus)
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 

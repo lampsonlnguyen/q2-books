@@ -2952,13 +2952,7 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
     return ParseStatus::Error;
   }
 
-  void* const buf = XML_GetBuffer(xmlParser_, PARSE_BUFFER_SIZE);
-  if (!buf) {
-    LOG_ERR("EHP", "Couldn't allocate memory for buffer");
-    return ParseStatus::Error;
-  }
-
-  const size_t len = parseFile_.read(buf, PARSE_BUFFER_SIZE);
+  const size_t len = parseFile_.read(readChunk_, PARSE_BUFFER_SIZE);
 
   if (len == 0 && parseFile_.available() > 0) {
     LOG_ERR("EHP", "File read error");
@@ -2966,8 +2960,10 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
   }
 
   const int done = parseFile_.available() == 0;
+  // Stray "&nbsp;" or a bare "&" would fail expat for the whole chapter.
+  const size_t repaired = entityRepair_.process(readChunk_, len, done != 0, repairedChunk_);
 
-  if (XML_ParseBuffer(xmlParser_, static_cast<int>(len), done) == XML_STATUS_ERROR) {
+  if (XML_Parse(xmlParser_, repairedChunk_, static_cast<int>(repaired), done) == XML_STATUS_ERROR) {
     if (stopRequested) return ParseStatus::Error;
     if (htmlEnded_) {
       LOG_DBG("EHP", "Ignoring trailing data after </html>: %s", XML_ErrorString(XML_GetErrorCode(xmlParser_)));

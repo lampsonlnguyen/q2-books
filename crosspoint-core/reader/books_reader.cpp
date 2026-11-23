@@ -659,8 +659,8 @@ class Reader {
       const double em=smoothGlyphs_.registerStyle(renderer_,fontId,style,data,path,bold?700:400,own);
       if(em>0)std::fprintf(stderr,"Books smooth glyphs: %s %s at %.2f px em, tops %+.2f px\n",slug,
                            books::SmoothGlyphs::styleName(style),em,smoothGlyphs_.lastTopDiff());
-      else std::fprintf(stderr,"Books smooth glyphs: %s %s kept 2-bit (tops differ %+.2f px)\n",slug,
-                        books::SmoothGlyphs::styleName(style),smoothGlyphs_.lastTopDiff());
+      else std::fprintf(stderr,"Books smooth glyphs: %s %s kept 2-bit (no matching TrueType)\n",slug,
+                        books::SmoothGlyphs::styleName(style));
     }
   }
   // After the grey passes: CrossPoint's glyphs that have TrueType are painted

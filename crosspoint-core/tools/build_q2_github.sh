@@ -543,7 +543,8 @@ BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
   ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
-find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' -exec rm -rf -- {} +
+find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
+find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
 # The test books in $card/Books were only for the checks above: the release
 # carries the app alone, never books in the user's Books folder.
@@ -553,9 +554,12 @@ unzip -t "$base/dist/books-q2-reader-alpha.zip"
 # Verify the allow-list held: nothing but the app's own files (no books).
 unzip -Z1 "$base/dist/books-q2-reader-alpha.zip" | python3 -c '
 import re,sys
-bad=[n for n in sys.stdin.read().split() if not re.fullmatch(
+names_all=sys.stdin.read().split()
+bad=[n for n in names_all if not re.fullmatch(
   r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/fonts/ttf/|\.books/fonts/ttf/[a-z]+-(regular|bold|italic|bolditalic)\.ttf|\.books/fonts/ttf/books-ttf\.txt|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
   r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
+names=set(n for n in names_all)
+assert ".books/fonts/ttf/sans-regular.ttf" in names and ".books/fonts/ttf/serif-regular.ttf" in names, "smooth text TrueType files missing from the ZIP"
 print("Release ZIP contents: PASS")'

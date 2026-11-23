@@ -16,16 +16,14 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 
 ## Milestones
 
+Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, fonts and languages (0.11; menus follow Q2 Pod's language since 1.1.2) and M4 library and servers (1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md)). Their remaining follow-ups are listed below.
+
 | Milestone | Scope | Status |
 |---|---|---|
-| M0 — HTTPS transport (v0.9) | HTTPS OPDS and KOReader sync through Q2 Pod's libcurl, mandatory certificate and hostname checks, same-origin redirects, stall timeouts | Code done and released. Open: tests against a real HTTPS Kavita server from a Q2 |
 | M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
-| M2 — Reader essentials (v0.10) | Go to percent, auto page turn, focus reading, TXT books, page counter and percent, 9 fonts at 10–12 pt, your own fonts (RD-05) | Done |
-| M3 — Dictionary, fonts, languages (v0.11) | StarDict, paged definitions, Unicode case lookups, dictionary on/off, vocabulary log, clippings export, menus in Q2 Pod's language | Done. Menus follow Q2 Pod's language (released in 1.1.2). Open: CJK and Thai menus, native review of the tables |
-| M4 — Library and servers (v0.12) | OPDS paging and catalog search; several saved servers with credentials; offline catalog copy and retry; book details with network covers; folders with breadcrumbs; 4000-book libraries; sync conflict choice | Done and released in 1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md). Open: highlight sync |
-| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Implemented on a branch, not released: 12-book corpus, entity and element repair; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, real books, Q2 measurement |
-| M6 — Optional polish (v0.14) | Only features with a Q2 use case: smooth (anti-aliased) text, clock and battery while reading, Q2 Pod's 32 px list layout in menus | Started on a branch, not released; see [the M6 notes](docs/v0.14-polish.md). Open: Q2 page-turn measurement, a smooth-text switch |
-| M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.1.2 (1.0.0 was the first stable tag); the criteria below are not all met yet |
+| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Repair and corpus released in 1.2.0; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, real books, Q2 measurement |
+| M6 — Optional polish (v0.14) | Only features with a Q2 use case: smooth (anti-aliased) text, clock and battery while reading, Q2 Pod's 32 px list layout in menus | First items released in 1.2.0; see [the M6 notes](docs/v0.14-polish.md). Open: Q2 page-turn measurement, a smooth-text switch |
+| M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.2.0 (1.0.0 was the first stable tag); the criteria below are not all met yet |
 
 ## What still needs doing
 
@@ -38,11 +36,11 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 - Idle and active RAM, CPU, SD writes, battery drain and heat over a 30-minute session.
 - Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
 
-**Reader and languages (M3 follow-ups)**
-- Menus follow Q2 Pod's language, with tables for de, es, fr, it, pl, ru, uk (and vi) in `crosspoint-core/lang/`; a native speaker's review of each. Q2 Pod's ja, ko, th, zh_CN and zh_HK need CJK and Thai letters in the menu font first (book text has them); until then those show English.
+**Reader and languages (from M3)**
+- A native speaker's review of each menu table (de, es, fr, it, pl, ru, uk, vi in `crosspoint-core/lang/`). Q2 Pod's ja, ko, th, zh_CN and zh_HK need CJK and Thai letters in the menu font first (book text has them); until then those show English.
 - Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 
-**Library and servers (M4 follow-ups)**
+**Library and servers (from M4)**
 - Syncing highlights: KOReader sync stores only a position; Kavita 0.8.8+ keeps highlights in its own REST API (its own sign-in, chapter ids and format), not used yet.
 - Measure the 4000-book scan and folder browsing on a Q2's SD card.
 

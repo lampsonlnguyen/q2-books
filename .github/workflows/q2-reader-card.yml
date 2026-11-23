@@ -1,14 +1,8 @@
-name: Books Q2 card build and release
+name: Books Q2 card CI
 on:
-  # Every push to main builds and tests the card ZIP. A release is published
-  # only by a manual run on main that names its tag; the tag must be new and
-  # docs/release-notes/<tag>.md must exist.
+  # Main pushes and manual runs build/test an unsigned SD card app.
+  # All versioned release publishing is owned by release.yml.
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Publish this tag from the verified build (e.g. v0.9.0-beta); leave empty to only build"
-        required: false
-        default: ""
   push:
     branches: [main]
     paths:
@@ -29,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 jobs:
   host-tests:
     name: Host GCC and Clang tests
@@ -86,59 +80,3 @@ jobs:
             build/q2-device/reader/CMakeFiles/CMakeOutput.log
           if-no-files-found: ignore
           retention-days: 7
-  publish-release:
-    name: Publish ${{ inputs.release_tag }} from the verified MIPS package
-    needs: [host-tests, build-q2-reader]
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.release_tag != ''
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: books-q2-reader-alpha
-          path: dist
-      - name: Verify package and prepare versioned artifacts
-        shell: bash
-        env:
-          TAG: ${{ inputs.release_tag }}
-        run: |
-          set -euo pipefail
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]] || { echo "::error::bad tag $TAG"; exit 1; }
-          version=$(head -n1 crosspoint-core/VERSION)
-          [[ "$TAG" == "v$version" || "$TAG" == "v$version-"* ]] || { echo "::error::tag $TAG does not match crosspoint-core/VERSION ($version)"; exit 1; }
-          test -s "docs/release-notes/$TAG.md" || { echo "::error::docs/release-notes/$TAG.md is missing"; exit 1; }
-          test -s dist/books-q2-reader-alpha.zip
-          expected=$(awk 'NR==1 {print $1}' dist/books-q2-reader-alpha.zip.sha256)
-          actual=$(sha256sum dist/books-q2-reader-alpha.zip | cut -d ' ' -f1)
-          test -n "$expected" && test "$expected" = "$actual"
-          unzip -t dist/books-q2-reader-alpha.zip
-          unzip -Z1 dist/books-q2-reader-alpha.zip | grep -Fxq '.books/books-engine'
-          unzip -Z1 dist/books-q2-reader-alpha.zip | grep -Fxq '.books/q2-books'
-          cp dist/books-q2-reader-alpha.zip "dist/books-q2-$TAG.zip"
-          (cd dist && sha256sum "books-q2-$TAG.zip" > "books-q2-$TAG.zip.sha256")
-          (cd dist && sha256sum -c "books-q2-$TAG.zip.sha256")
-      - name: Publish immutable tag and release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TARGET_COMMIT: ${{ github.sha }}
-          TAG: ${{ inputs.release_tag }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # v1.2.3 is a full release and becomes the latest (what Q2 Pod's App
-          # Store installs); v1.2.3-alpha/-beta/-rc tags are pre-releases.
-          if [[ "$TAG" == *-* ]]; then kind=--prerelease; else kind=--latest; fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::$TAG already exists; refusing to overwrite a published release"
-            exit 1
-          fi
-          gh release create "$TAG" \
-            "dist/books-q2-$TAG.zip" \
-            "dist/books-q2-$TAG.zip.sha256" \
-            --target "$TARGET_COMMIT" \
-            --title "Books $TAG (Shanling Q2)" \
-            $kind \
-            --notes-file "docs/release-notes/$TAG.md"

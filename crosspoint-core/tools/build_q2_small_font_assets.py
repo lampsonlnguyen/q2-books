@@ -95,6 +95,71 @@ def write_license_bundle(out: pathlib.Path, upstream: pathlib.Path,
     out.write_text("\n".join(lines) + "\n")
 
 
+# Smooth book text (reader/SmoothGlyphs.hpp) draws the reading families'
+# glyphs from their TrueType sources at full coverage, over CrossPoint's own
+# layout. The files ship unmodified (no subsetting: the OFL counts a subset
+# as a modified font), named <slug>-<style>.ttf.
+READING_SLUGS = {"NotoSansExtended": "sans", "NotoSerifExtended": "serif", **CROSSINK_FAMILIES}
+
+
+def _style_key(name: str) -> str:
+    n = name.lower().replace("_", "").replace("-", "")
+    bold, italic = "bold" in n, "italic" in n or "oblique" in n
+    return "bolditalic" if bold and italic else "bold" if bold else "italic" if italic else "regular"
+
+
+def _style_source(entry, roots, cache: pathlib.Path):
+    """A style's source file: a path (absolute, or under one of the roots)
+    or a URL (downloaded once). Lists take their first item."""
+    if isinstance(entry, list):
+        entry = entry[0] if entry else {}
+    if isinstance(entry, str):
+        entry = {"path": entry}
+    path = entry.get("path") if isinstance(entry, dict) else None
+    url = entry.get("url") if isinstance(entry, dict) else None
+    if path:
+        for candidate in [pathlib.Path(path)] + [root / path for root in roots]:
+            if candidate.is_file():
+                return candidate
+    if url:
+        import urllib.parse
+        import urllib.request
+        dest = cache / pathlib.Path(urllib.parse.urlparse(url).path).name
+        if not dest.is_file():
+            cache.mkdir(parents=True, exist_ok=True)
+            with urllib.request.urlopen(url, timeout=120) as response:
+                dest.write_bytes(response.read())
+        return dest
+    return None
+
+
+def ship_reading_ttfs(catalog: dict, out: pathlib.Path, roots, cache: pathlib.Path) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    manifest, total = [], 0
+    for name, slug in READING_SLUGS.items():
+        styles = catalog.get(name, {}).get("styles", {})
+        for key, entry in styles.items():
+            style = _style_key(key)
+            source = _style_source(entry, roots, cache)
+            if source is None:
+                print(f"Smooth text: no TrueType source for {name} {key}; it keeps 2-bit glyphs")
+                continue
+            data = source.read_bytes()
+            if data[:4] not in (b"\x00\x01\x00\x00", b"OTTO", b"true"):
+                print(f"Smooth text: {source.name} is not TrueType/OpenType; skipped")
+                continue
+            dest = out / f"{slug}-{style}.ttf"
+            dest.write_bytes(data)
+            total += len(data)
+            digest = hashlib.sha256(data).hexdigest()
+            manifest.append(f"{digest}  {dest.name}  {name} {key} from {source.name}")
+            print(f"Smooth text: {dest.name} ({len(data)} bytes) from {source.name}")
+    if not any(line.split()[1].startswith(("sans-regular", "serif-regular")) for line in manifest):
+        raise RuntimeError("No TrueType source for Noto Sans or Noto Serif regular")
+    (out / "books-ttf.txt").write_text("\n".join(manifest) + "\n")
+    print(f"Smooth text: {len(manifest)} TrueType files, {total} bytes")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: build_q2_small_font_assets.py OUTPUT_DIRECTORY", file=sys.stderr)
@@ -203,6 +268,9 @@ def main() -> int:
             "\n".join(checksums) + "\n")
         write_license_bundle(target / "CrossPoint-font-licenses.txt",
                              upstream, crossink, catalog)
+        ship_reading_ttfs(catalog, target / "ttf",
+                          [upstream, scripts, crossink, crossink / "lib/EpdFont/scripts"],
+                          workspace / "ttf-sources")
         # Validate these sizes exist for *all* 14 scripts and both primary
         # families, or fail the package rather than silently drop glyphs.
         assert len(checksums) == (len(FAMILIES) - len(CROSSINK_FAMILIES))*len(SIZES) + len(CROSSINK_FAMILIES)*3

@@ -5,6 +5,7 @@
 // One place for the painters and the touch mapping, so they cannot drift.
 #pragma once
 #include <algorithm>
+#include <cmath>
 
 namespace books {
 struct MenuLayout {
@@ -31,6 +32,19 @@ struct MenuLayout {
     const int item = firstItem + (y - kTop) / kRowH;
     return item < count ? item : -1;
   }
+  // The Q2's glass rounds its corners. Q2 Pod's calibration (tools/ipod.py
+  // CORNER_R, fitted to device photos): an 80 px radius, and text keeps 4 px
+  // more (CORNER_SLACK). cornerInset(y): the width hidden at each end of row y.
+  static constexpr int kCornerR = 80;
+  static constexpr int kCornerSlack = 4;
+  static constexpr int kScreenH = 320;
+  static int cornerInset(int y) {
+    const int d = std::clamp(std::max(kCornerR - y, y - (kScreenH - kCornerR)), 0, kCornerR);
+    return static_cast<int>(std::ceil(kCornerR - std::sqrt(double(kCornerR * kCornerR - d * d))));
+  }
+  // Side inset, slack included, for content spanning rows y to y + h.
+  static int cornerX(int y, int h) { return std::max(cornerInset(y), cornerInset(y + h)) + kCornerSlack; }
+
   // Vertical offset that centres text of height h in a row.
   static int textTop(int rowTop, int h) { return rowTop + std::max(0, (kRowH - h) / 2); }
 };

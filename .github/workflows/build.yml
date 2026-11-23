@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install host XML dependency
-        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev zlib1g-dev libjpeg-dev libcurl4-openssl-dev openssl
+        run: sudo apt-get update && sudo apt-get install -y libexpat1-dev zlib1g-dev libjpeg-dev libcurl4-openssl-dev openssl libfreetype-dev fonts-liberation
 
       - name: Configure CrossPoint core
         run: cmake -S crosspoint-core -B build/crosspoint-core -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}

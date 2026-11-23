@@ -35,6 +35,8 @@
 #include "Q2Theme.hpp"
 #include "StatusBar.hpp"
 #include "MenuLayout.hpp"
+#include "UiText.hpp"
+#include "SmoothGlyphs.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
 #include "ShelfHistory.hpp"
@@ -87,8 +89,11 @@ constexpr size_t MAX_XML_BYTES = 4 * 1024 * 1024;
 constexpr size_t MAX_TEXT_BYTES = 2 * 1024 * 1024;
 constexpr size_t MAX_BLOCKS = 16000;
 constexpr size_t MAX_PAGES_PER_SPINE = 512;
-constexpr int SCREEN_H = 320, LEFT = 14, TOP = 16;
-constexpr int TEXT_WIDTH = 345, BOTTOM = 306;
+// The page's text area. The Q2's glass rounds its corners (80 px radius, as
+// Q2 Pod calibrates it): between y 40 and 282 a 14 px margin clears them; the
+// bands above and below hold the status and the progress (drawProgress).
+constexpr int SCREEN_H = 320, LEFT = 14, TOP = 40;
+constexpr int TEXT_WIDTH = 345, BOTTOM = 282;
 volatile std::sig_atomic_t interrupted = 0;
 std::string clippedLabel(const std::string&,size_t);
 void exitOnSignal(int) { interrupted = 1; }
@@ -581,6 +586,8 @@ class Reader {
   HalDisplay display_;
   GfxRenderer renderer_;
   EpdFont bodyFont_;
+  books::SmoothGlyphs smoothGlyphs_;  // book text from the fonts' TrueType files
+  std::vector<uint8_t> cpfontPage_;   // the last page as CrossPoint drew it
   FontDecompressor decompressor_;
   FontCacheManager fontCache_;
   std::unique_ptr<SdCardFont> selectedFont_;
@@ -600,7 +607,7 @@ class Reader {
     int spine=-1;
     size_t page=0;
     std::vector<uint8_t> pixels;
-    std::vector<uint8_t> grayLsb,grayMsb;  // empty: no smooth-text planes
+    std::vector<uint8_t> alpha,expect;  // smooth text's coverage layer (empty: none)
   };
   std::array<CachedRaster,3> rasterCache_{};
   books::DeviceStatus status_{};  // what the footer last showed
@@ -622,6 +629,40 @@ class Reader {
   int lineHeight() const { return std::max(22,typography_.size*2); }
   size_t pageCount() const {
     return upstreamSection_?upstreamSection_->pageCount:pages_.size();
+  }
+  // Smooth book text: each style of a built-in reading family with its
+  // TrueType file in .books/fonts/ttf (or BOOKS_TTF_DIR).
+  void registerSmoothGlyphs(books::Typography settings,SdCardFont& font,int fontId) {
+    const char* slug=books::typographyFamilySlug(settings.family);
+    if(!slug || !books::SmoothGlyphs::enabled())return;
+    const char* dir=std::getenv("BOOKS_TTF_DIR");
+    const std::string root=dir&&*dir?dir:books::typographyRoot()+"/fonts/ttf";
+    const EpdFontFamily family=books::sdCardFontFamily(static_cast<uint16_t>(settings.size),font);
+    const EpdFontData* regular=family.getData(EpdFontFamily::REGULAR);
+    for(auto style:{EpdFontFamily::REGULAR,EpdFontFamily::BOLD,EpdFontFamily::ITALIC,
+                    EpdFontFamily::BOLD_ITALIC}) {
+      const EpdFontData* data=family.getData(style);
+      // A style the family lacks falls back to regular's data: skip it.
+      if(!data || (style!=EpdFontFamily::REGULAR && data==regular))continue;
+      const std::string path=root+"/"+slug+"-"+books::SmoothGlyphs::styleName(style)+".ttf";
+      if(::access(path.c_str(),R_OK)!=0)continue;
+      const double em=smoothGlyphs_.registerStyle(renderer_,fontId,style,data,path);
+      if(em>0)std::fprintf(stderr,"Books smooth glyphs: %s %s at %.2f px em\n",slug,
+                           books::SmoothGlyphs::styleName(style),em);
+    }
+  }
+  // After the grey passes: CrossPoint's glyphs that have TrueType are painted
+  // out, then drawn again from TrueType at their own pen positions.
+  template<typename PagePtr>
+  void drawSmoothGlyphs(const PagePtr& page) {
+    if(smoothGlyphs_.empty())return;
+    if(const uint8_t* fb=display_.getFrameBuffer())  // for smoothGlyphAgreement
+      cpfontPage_.assign(fb,fb+HalDisplay::BUFFER_SIZE);
+    renderer_.setGlyphHook(&smoothGlyphs_,GfxRenderer::GlyphHookMode::Erase);
+    page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+    renderer_.setGlyphHook(&smoothGlyphs_,GfxRenderer::GlyphHookMode::Draw);
+    page->render(renderer_,upstreamFontId_,preferences_.margin,TOP);
+    renderer_.setGlyphHook(nullptr,GfxRenderer::GlyphHookMode::Off);
   }
   int fontIdForTypography(books::Typography value) const {
     return 100+static_cast<int>(value.family)*3+(value.size-10);
@@ -704,6 +745,7 @@ class Reader {
     // Drop SD glyph registrations BEFORE their owning font handles. Rebuild
     // this size's script-coverage index without loading font bitmaps into RAM.
     scriptFonts_.clear(renderer_);
+    smoothGlyphs_.clear();  // its keys are the old font's data
     renderer_.removeFont(1);
     if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
     const int nextFontId=fontIdForTypography(settings);
@@ -716,6 +758,7 @@ class Reader {
       renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
       renderer_.insertFont(nextFontId,EpdFontFamily(12,&bodyFont_));
     }
+    if(next && next->getEpdFont())registerSmoothGlyphs(settings,*next,nextFontId);
     selectedFont_=std::move(next);
     upstreamFontId_=nextFontId;
     scriptFonts_.load(renderer_,settings.size,{1,nextFontId});
@@ -877,7 +920,8 @@ class Reader {
       bookPath_(std::move(path)),packagePath_(resolvePackage(bookPath_)),archive_(packagePath_),
       renderer_(display_),
       bodyFont_(&notosans_12_regular),
-      fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {}
+      fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()),
+      smoothGlyphs_(display_) {}
   ~Reader() {
     // A layout cut short by the exit is not a page to keep: drop that build
     // instead of suspending it, which would cache its pages.
@@ -892,6 +936,7 @@ class Reader {
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
     books::applyThemePalette(display_);  // Q2 Pod's page colours, when it gives them
+    books::UiText::instance().setThemeFace(books::uiTextFace());
     renderer_.insertFont(1,EpdFontFamily(12,&bodyFont_));
     // UI font is always fixed; book typography updates must not touch it.
     renderer_.insertFont(2,EpdFontFamily(12,&bodyFont_));
@@ -1279,6 +1324,7 @@ class Reader {
   void showSyncConflict(int choice) {
     const auto& c=syncConflict_;
     renderer_.clearScreen(0xff);
+    applyMenuPalette();
     renderer_.fillRect(10,40,355,236,true);
     renderer_.fillRect(12,42,351,232,false);
     books::paintFrame(display_,10,40,355,236,2);
@@ -1410,7 +1456,7 @@ class Reader {
     renderer_.fillRect(12,60,351,246,false);
     books::paintFrame(display_,10,58,355,250,2);
     renderer_.drawText(2,20,70,books::tr("Footnote"));
-    if(note.empty())note="Preview unavailable. Center: open note";
+    if(note.empty())note="Preview unavailable.";
     size_t cursor=0;
     for(int line=0;line<9 && cursor<note.size();++line) {
       size_t end=std::min(note.size(),cursor+43);
@@ -1423,7 +1469,6 @@ class Reader {
       cursor=end;
       while(cursor<note.size() && note[cursor]==' ')++cursor;
     }
-    drawMenuText(20,284,"Back: close   Center: jump",1);
     display_.displayBuffer();
   }
   bool followTouchedLink(int touchX,int touchY) {
@@ -1454,7 +1499,6 @@ class Reader {
       drawMenuText(23,y,label.c_str());
       if(index==selected)invertMenuRect(18,y-3,337,21);
     }
-    drawMenuText(22,278,"Wheel: pick  Center: go");  // "follow" was clipped
     display_.displayBuffer();
   }
   const std::vector<books::Highlight>& highlights() {
@@ -1564,9 +1608,7 @@ class Reader {
     renderer_.fillRect(10,254,355,47,true);
     renderer_.fillRect(12,256,351,43,false);
     books::paintFrame(display_,10,254,355,47,2);
-    drawMenuText(20,265,extending?
-        "Wheel: extend  Center: actions":
-        "Wheel: word   Center: start");
+    drawMenuText(20,265,extending?"Selecting text":"Choose a word");
     display_.displayBuffer();
   }
   void showTextSelectionMenu(int option) {
@@ -1643,7 +1685,6 @@ class Reader {
     if(dictionaryPages_.empty()) {
       renderer_.drawText(2,20,133,clippedLabel(selected,32).c_str());
       renderer_.drawText(2,20,158,books::tr("No match in the dictionaries"));
-      drawMenuText(20,271,"Back: selected text",1);
     } else {
       const auto& page=dictionaryPages_[dictionaryPage_];
       std::string header=page.header;
@@ -1656,10 +1697,11 @@ class Reader {
       renderer_.fillRect(20,159,320,1,true);
       for(size_t line=0;line<page.lines.size();++line)
         renderer_.drawText(2,20,163+static_cast<int>(line)*25,page.lines[line].c_str());
-      const std::string footer=dictionaryPages_.size()>1?
-          std::to_string(dictionaryPage_+1)+"/"+std::to_string(dictionaryPages_.size())+
-          "  Wheel: more  Back: selected text":"Back: selected text";
-      drawMenuText(20,271,footer.c_str(),1);
+      if(dictionaryPages_.size()>1) {  // which page of the definition
+        const std::string footer=std::to_string(dictionaryPage_+1)+"/"+
+            std::to_string(dictionaryPages_.size());
+        drawMenuText(20,271,footer.c_str(),1);
+      }
     }
     display_.displayBuffer();
   }
@@ -1724,9 +1766,7 @@ class Reader {
           renderer_.truncatedText(1,label.c_str(),L::kValueRight-L::kTextX).c_str());
       if(item==selected)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    std::string footer=std::to_string(count?std::max(0,selected)+1:0)+"/"+std::to_string(count)+
-        "  "+books::tr("Wheel: select  Center: go  Back: settings");
-    paintListFooter(footer);
+
     display_.displayBuffer();
   }
 
@@ -1740,7 +1780,7 @@ class Reader {
       case 4: next.alignment=1-next.alignment;break;
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
-      case 7: next.nightMode=!next.nightMode;break;
+      case 7: books::toggleNight(next,systemDark());break;
       case 16: next.focusReading=!next.focusReading;break;
       case 17: {
         const auto& choices=books::autoTurnChoices;
@@ -1810,6 +1850,28 @@ class Reader {
   // Menu text in the reading font's own glyphs, scaled to the bitmap menu
   // font's size: used for translated menus, which need accents the 5x8
   // bitmap font has not. Stops at a whole character before maxX.
+  // Menu text sizes in Q2 Pod's px (UiText), as its themes set them: list
+  // rows 27 in Classic's face and 24 in the others (scale 2), small text
+  // (scale 1), large figures (scale 3); the bar is kBarPx in every theme.
+  static constexpr int kBarPx=21;
+  static int uiPx(int scale) {
+    const bool classic=books::uiTheme().style==books::UiTheme::Style::Classic;
+    return scale>=3?40:scale==2?(classic?27:24):(classic?18:15);
+  }
+  // Q2 Pod's TrueType faces, smooth and fixed in size. The capitals sit where
+  // the old glyph box did, so callers' coordinates keep working. False when
+  // UiText is off or lacks a character (the fallback draws it).
+  bool drawUiText(int x,int top,const std::string& text,int scale,int maxX,int px=0) {
+    auto& ui=books::UiText::instance();
+    if(!ui.available() || !ui.drawable(text))return false;
+    if(px<=0)px=uiPx(scale);
+    const int box=scale>=2?16:9,cap=px*7/10;
+    ui.draw(display_,x,top+(box+cap)/2-ui.ascent(px),text,px,maxX);
+    return true;
+  }
+  // Fallback glyphs: the fixed built-in UI font (slot 2), never the reading
+  // font, so changing the book's font or size leaves the menus alone.
+  static constexpr int kUiFontSlot=2;
   void drawGlyphMenuText(int x,int top,const std::string& text,int scale,int maxX) {
     const int scale256=scale>=2?196:118;
     const int baseline=top+(scale>=2?13:8);
@@ -1817,13 +1879,18 @@ class Reader {
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
       int32_t advance=0;int topBearing=0;
-      if(!renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,topBearing))continue;
+      if(!renderer_.getCodepointMetrics(kUiFontSlot,cp,EpdFontFamily::REGULAR,advance,topBearing))continue;
       if(x+fp4::toPixel(advance*scale256/256)>maxX)break;
-      x+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
+      x+=renderer_.drawScaledCodepoint(kUiFontSlot,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
     }
   }
   // The width drawMenuText gives |str| at |scale| (pixel font or glyphs).
   int menuTextWidth(const char* str,int scale) {
+    {
+      auto& ui=books::UiText::instance();
+      const std::string text=books::tr(str);
+      if(ui.available() && ui.drawable(text))return ui.width(text,uiPx(scale));
+    }
     if(!books::uiTranslated() && !books::uiTheme().active())
       return static_cast<int>(std::strlen(str))*6*scale;
     const std::string text=books::tr(str);
@@ -1833,14 +1900,15 @@ class Reader {
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
       int32_t advance=0;int topBearing=0;
-      if(renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,topBearing))
+      if(renderer_.getCodepointMetrics(kUiFontSlot,cp,EpdFontFamily::REGULAR,advance,topBearing))
         width+=fp4::toPixel(advance*scale256/256);
     }
     return width;
   }
   void drawMenuText(int x,int top,const char* str,int scale=2,int maxX=352) {
+    if(drawUiText(x,top,books::tr(str),scale,maxX))return;
     // Translated menus need accents; Q2 Pod's themes draw smooth text: both
-    // use the reading font's glyphs instead of the pixel font.
+    // use the UI font's glyphs instead of the pixel font.
     if(books::uiTranslated() || books::uiTheme().active()) {
       drawGlyphMenuText(x,top,books::tr(str),scale,maxX);
       return;
@@ -1988,7 +2056,7 @@ class Reader {
       preferences_.alignment?"Justify":"Book default",
       preferences_.hyphenation?"On":"Off",
       preferences_.embeddedStyle?"On":"Off",
-      preferences_.nightMode?"On":"Off",
+      nightShown()?"On":"Off",
       "Save page","Saved pages","Browse book","Footnotes / links",
       hasLinkHistory()?"Go back":"No previous link","Highlight / define",
       "Save position","Use remote position",
@@ -2020,10 +2088,7 @@ class Reader {
       drawMenuText(valueX,y+8,value.c_str(),2,L::kValueRight+4);
       if(active)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    const std::string position=std::to_string(std::min(selectedRow,listed-1)+1)+"/"+
-      std::to_string(listed)+"  "+books::tr("Wheel: scroll  Center: select");
-    paintListFooter(position,typographyNotice_.empty()?std::string():
-                             std::string(books::tr(typographyNotice_)));
+    if(!typographyNotice_.empty())paintListNotice(books::tr(typographyNotice_));
     display_.displayBuffer();
   }
   bool loadSpine(int index,int direction) {
@@ -2141,13 +2206,30 @@ class Reader {
     if(changed)persistPosition();
     return changed;
   }
-  void applyNightMode() {
-    if(!preferences_.nightMode)return;
-    auto* buffer=display_.getFrameBuffer();
-    if(!buffer)return;
-    for(size_t i=0;i<display_.getBufferSize();++i)
-      buffer[i]=static_cast<uint8_t>(~buffer[i]);
-    display_.setGrayInverted(true);
+  // Q2 Pod's theme is dark when its page colour is: Modern, Minimal, or
+  // Classic with Light Mode off. No theme reads as light.
+  static bool systemDark() {
+    const auto& t=books::uiTheme();
+    if(!t.active())return false;
+    const uint32_t c=t.box;
+    return (((c>>16)&255u)*299u+((c>>8)&255u)*587u+(c&255u)*114u)/1000u<128u;
+  }
+  bool nightShown() const {return books::nightActive(preferences_,systemDark());}
+  // Page colours. Night mode is a dark page whatever the theme: the theme's
+  // own colours when they match, else its ink and paper swapped. The page is
+  // never inverted, so smooth text and the theme's zones stay as drawn.
+  void applyPagePalette() {
+    const auto& t=books::uiTheme();
+    if(t.active()) {
+      if(nightShown()!=systemDark())display_.setPalette(t.box,t.title);
+      else books::applyThemePalette(display_);
+      display_.setInverted(false);
+    } else display_.setInverted(nightShown());
+  }
+  // Menus and dialogs: always the system's theme colours.
+  void applyMenuPalette() {
+    books::applyThemePalette(display_);
+    display_.setInverted(false);
   }
   // Book progress in parts per million, weighted by chapter size as upstream
   // CrossPoint's Epub::calculateProgress is: the chapters' cumulative XHTML
@@ -2222,7 +2304,6 @@ class Reader {
       drawMenuText(valueX,y+8,value,2,L::kValueRight+4);
       if(item==selected)invertMenuRect(0,y,L::kWidth,L::kRowH);
     }
-    paintListFooter("Center: on/off   Back: settings");
     display_.displayBuffer();
   }
   // Toggle dictionary |index| of dictionaryNames(); false if none.
@@ -2253,6 +2334,7 @@ class Reader {
   int dictionaryCount() const {return static_cast<int>(books::dictionaryNames().size());}
   void showAbout() {
     renderer_.clearScreen(0xff);
+    applyMenuPalette();
     renderer_.fillRect(10,37,355,258,true);
     renderer_.fillRect(12,39,351,254,false);
     books::paintFrame(display_,10,37,355,258,2);
@@ -2265,11 +2347,11 @@ class Reader {
       drawMenuText(22,y+(small&&line[0]?4:0),line,small?1:2);
       y+=!line[0]?8:19;
     }
-    drawMenuText(22,277,"Any key: back",1);
     display_.displayBuffer();
   }
   void showPercentDialog(int percent) {
     renderer_.clearScreen(0xff);
+    applyMenuPalette();
     renderer_.fillRect(10,70,355,170,true);
     renderer_.fillRect(12,72,351,166,false);
     books::paintFrame(display_,10,70,355,170,2);
@@ -2279,8 +2361,6 @@ class Reader {
     drawMenuText(187-static_cast<int>(value.size())*9,130,value.c_str(),3);
     renderer_.drawLine(30,180,345,180,true);
     renderer_.fillRect(30,177,static_cast<int>(3.15f*std::clamp(percent,0,100)),7,true);
-    drawMenuText(22,200,"Wheel: 1%   Keys: 10%",1);
-    drawMenuText(22,215,"Center: go   Back: cancel",1);
     display_.displayBuffer();
   }
   // RD-06: page within the chapter (an estimate while it is still laid out)
@@ -2288,32 +2368,43 @@ class Reader {
   void drawProgress() {
     const int totalChapters=metadata().getSpineCount();
     if(totalChapters<=0 || currentSpine_<0)return;
+    using L=books::MenuLayout;
     const size_t pages=std::max<size_t>(1,estimatedPages());
     const std::string label=std::to_string(currentPage_+1)+"/"+
         (isBuilding()?"~":"")+std::to_string(pages)+"  "+std::to_string(bookPercent())+"%";
-    // Footer: clock | progress bar | page label | battery, as Q2 Pod's bar
-    // shows the time and battery. drawMenuText stops at x 352.
     status_=books::readDeviceStatus();
+    // Top band, as Q2 Pod's bar: the book on the left, the clock centred, the
+    // battery on the right. Bottom band: the progress bar and the page. Both
+    // keep clear of the Q2's rounded corners (MenuLayout::cornerX).
+    constexpr int kTopText=16,kBottomText=290,kTextH=10,kIconW=16;
+    renderer_.fillRect(0,0,375,TOP,false);
+    renderer_.fillRect(0,BOTTOM,375,SCREEN_H-BOTTOM,false);
+    const int topInset=L::cornerX(kTopText,kTextH);
     const std::string clock=books::clockLabel(status_);
     const std::string battery=books::batteryLabel(status_);
-    constexpr int kIconW=16;  // 14 px body and a 2 px tip
-    int right=352;
-    if(!battery.empty())right-=kIconW+4+menuTextWidth(battery.c_str(),1)+8;
-    const int labelX=right-menuTextWidth(label.c_str(),1);
-    const int barStart=14+menuTextWidth(clock.c_str(),1)+8;
+    const int clockW=menuTextWidth(clock.c_str(),1);
+    const int clockX=(375-clockW)/2;
+    drawMenuText(clockX,kTopText,clock.c_str(),1,clockX+clockW+4);
+    if(!battery.empty()) {
+      const int iconX=375-topInset-kIconW;
+      drawBatteryIcon(iconX,kTopText,status_);
+      const int textX=iconX-4-menuTextWidth(battery.c_str(),1);
+      drawMenuText(textX,kTopText,battery.c_str(),1,iconX);
+    }
+    // The book's title only when the UI faces have all its letters (a title
+    // in a script they lack is left out rather than drawn as boxes).
+    const std::string title=std::string(metadata().coreMetadata.title);
+    if(!title.empty() && books::UiText::instance().drawable(title))
+      drawMenuText(topInset,kTopText,title.c_str(),1,clockX-12);
+    const int bottomInset=L::cornerX(kBottomText,kTextH);
+    const int labelX=375-bottomInset-menuTextWidth(label.c_str(),1);
+    const int barStart=bottomInset;
     const int barEnd=std::max(barStart+20,labelX-10);
     const float progress=bookProgressPpm()/1000000.0f;
     const int filled=static_cast<int>(progress*static_cast<float>(barEnd-barStart));
-    renderer_.fillRect(0,307,375,13,false);
-    drawMenuText(14,309,clock.c_str(),1);
-    renderer_.drawLine(barStart,314,barEnd,314,true);
-    if(filled>0)renderer_.fillRect(barStart,312,filled,3,true);
-    drawMenuText(labelX,309,label.c_str(),1);
-    if(!battery.empty()) {
-      const int textX=352-kIconW-4-menuTextWidth(battery.c_str(),1);
-      drawMenuText(textX,309,battery.c_str(),1);
-      drawBatteryIcon(352-kIconW,310,status_);
-    }
+    renderer_.drawLine(barStart,kBottomText+5,barEnd,kBottomText+5,true);
+    if(filled>0)renderer_.fillRect(barStart,kBottomText+3,filled,3,true);
+    drawMenuText(labelX,kBottomText,label.c_str(),1,375-bottomInset+4);
   }
   // A 16x9 battery: body, tip, fill, and a bolt while charging (each bolt
   // pixel the opposite of what is under it, so it shows on fill or not).
@@ -2334,27 +2425,35 @@ class Reader {
   void paintListBar(const char* title) {
     using L=books::MenuLayout;
     renderer_.clearScreen(0xff);
+    applyMenuPalette();
     const auto status=books::readDeviceStatus();
     const std::string clock=books::clockLabel(status);
-    int right=L::kWidth-14;
+    // Text 8 to 24 px down the bar: kept clear of the rounded corners.
+    const int inset=L::cornerX(8,16);
+    int right=L::kWidth-inset;
     if(status.battery>=0) {
       right-=16;
       drawBatteryIcon(right,12,status);
       right-=8;
     }
-    const int clockX=right-menuTextWidth(clock.c_str(),2);
-    drawMenuText(clockX,8,clock.c_str(),2,right+4);
-    drawMenuText(L::kTextX,8,title,2,clockX-10);
+    // Q2 Pod's bar size where the UI faces are there, else the row font.
+    auto& ui=books::UiText::instance();
+    const std::string name=books::tr(title);
+    const int clockX=right-(ui.available()?ui.width(clock,kBarPx):menuTextWidth(clock.c_str(),2));
+    if(!drawUiText(clockX,8,clock,2,right+4,kBarPx))drawMenuText(clockX,8,clock.c_str(),2,right+4);
+    if(!drawUiText(inset,8,name,2,clockX-10,kBarPx))drawMenuText(inset,8,title,2,clockX-10);
     books::paintBar(display_,0,0,L::kWidth,L::kBarH);
   }
-  // The footer under the rows: a rule, then one or two small lines.
-  void paintListFooter(const std::string& line,const std::string& notice=std::string()) {
+  // A notice under the rows (a setting's result); no control hints: the
+  // wheel, Centre and Back work as everywhere on the Q2. Kept clear of the
+  // rounded bottom corners.
+  void paintListNotice(const std::string& notice) {
     using L=books::MenuLayout;
-    renderer_.fillRect(0,L::kFooterY,L::kWidth,1,true);
-    drawMenuText(L::kTextX,notice.empty()?L::kFooterY+10:L::kFooterY+4,
-                 clippedLabel(line,56).c_str(),1);
-    if(!notice.empty())drawMenuText(L::kTextX,L::kFooterY+17,clippedLabel(notice,56).c_str(),1);
+    if(notice.empty())return;
+    const int top=L::kFooterY+8,inset=L::cornerX(top,12);
+    drawMenuText(inset,top,clippedLabel(notice,56).c_str(),1,L::kWidth-inset);
   }
+
   // True when the clock's minute or the battery changed since the footer was
   // drawn: the idle loop then presents the page again.
   bool statusChanged() const {return books::readDeviceStatus()!=status_;}
@@ -2365,12 +2464,8 @@ class Reader {
     slot.spine=currentSpine_;
     slot.page=currentPage_;
     slot.pixels.assign(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
-    slot.grayLsb.clear();
-    slot.grayMsb.clear();
-    if(display_.grayValid()) {
-      slot.grayLsb.assign(display_.grayLsb(),display_.grayLsb()+HalDisplay::BUFFER_SIZE);
-      slot.grayMsb.assign(display_.grayMsb(),display_.grayMsb()+HalDisplay::BUFFER_SIZE);
-    }
+    slot.alpha.assign(display_.coverageAlpha(),display_.coverageAlpha()+HalDisplay::PIXELS);
+    slot.expect.assign(display_.coverageExpect(),display_.coverageExpect()+HalDisplay::PIXELS);
   }
   // Smooth text: renders the page twice more in the engine's grayscale modes
   // (as upstream CrossPoint does for e-ink anti-aliasing) and keeps the two
@@ -2397,6 +2492,7 @@ class Reader {
     renderer_.setRenderMode(GfxRenderer::BW);
     std::memcpy(framebuffer,bw.data(),bw.size());
     display_.setGrayPage(framebuffer);
+    drawSmoothGlyphs(page);
   }
   void render() {
     display_.clearZones();  // a cached page is copied, not cleared
@@ -2407,12 +2503,12 @@ class Reader {
         if(cached.spine==currentSpine_ && cached.page==currentPage_ &&
            cached.pixels.size()==kBytes) {
           std::memcpy(framebuffer,cached.pixels.data(),kBytes);
-          if(cached.grayLsb.size()==kBytes && cached.grayMsb.size()==kBytes)
-            display_.restoreGray(framebuffer,cached.grayLsb.data(),cached.grayMsb.data());
-          else display_.cleanupGrayscaleBuffers(nullptr);
+          if(cached.alpha.size()==HalDisplay::PIXELS && cached.expect.size()==HalDisplay::PIXELS)
+            display_.restoreCoverage(cached.alpha.data(),cached.expect.data());
+          else display_.clearCoverage();
           lastRenderOk_=true;
           drawProgress();
-          applyNightMode();
+          applyPagePalette();
           paintHighlightOverlay();
           return;
         }
@@ -2450,7 +2546,7 @@ class Reader {
                      currentSpine_,currentPage_);
       }
       drawProgress();
-      applyNightMode();
+      applyPagePalette();
       paintHighlightOverlay();
       return;
     }
@@ -2478,7 +2574,7 @@ class Reader {
     }
     cacheRenderedPage();
     drawProgress();
-    applyNightMode();
+    applyPagePalette();
     paintHighlightOverlay();
   }
   void present() {
@@ -2493,7 +2589,7 @@ class Reader {
     std::vector<uint8_t> levels;
     if(smooth) {
       levels.resize(static_cast<size_t>(375)*SCREEN_H);
-      if(!display_.currentLevels(levels.data()))levels.clear();
+      if(!display_.currentAlpha(levels.data()))levels.clear();
     }
     std::FILE* file=std::fopen(path.c_str(),"wb");
     if(!file) return false;
@@ -2502,7 +2598,7 @@ class Reader {
       for (int x=0;x<375;++x) {
         bool paper=(pixels[y*47+x/8]&(0x80u>>(x&7)))!=0;
         unsigned char c=paper?255:0;
-        if(!levels.empty())c=static_cast<unsigned char>(255-85*levels[static_cast<size_t>(y)*375+x]);
+        if(!levels.empty())c=static_cast<unsigned char>(255-levels[static_cast<size_t>(y)*375+x]);
         if(std::fwrite(&c,1,1,file)!=1){ok=false;break;}
       }
     }
@@ -2510,6 +2606,26 @@ class Reader {
     return ok;
   }
   const std::vector<books::SelectedWord>& selectableWordsForTest() const {return selectedWords_;}
+  // How closely the TrueType glyphs cover CrossPoint's own (intersection
+  // over union of ink in the text area): a wrong size or offset shows here.
+  // -1 when the page has no smooth glyphs.
+  double smoothGlyphAgreement(size_t* pixels=nullptr) {
+    cpfontPage_.clear();
+    clearRasterCache();
+    render();
+    const uint8_t* now=display_.getFrameBuffer();
+    if(!now || cpfontPage_.size()!=HalDisplay::BUFFER_SIZE)return -1;
+    size_t both=0,either=0;
+    for(int y=TOP;y<BOTTOM;++y)
+      for(int x=0;x<375;++x) {
+        const size_t byte=static_cast<size_t>(y)*HalDisplay::DISPLAY_WIDTH_BYTES+x/8;
+        const uint8_t mask=static_cast<uint8_t>(0x80u>>(x&7));
+        const bool a=!(cpfontPage_[byte]&mask),b=!(now[byte]&mask);
+        both+=a&&b;either+=a||b;
+      }
+    if(pixels)*pixels=either;
+    return either?static_cast<double>(both)/static_cast<double>(either):-1;
+  }
   // Ink bounding box of the book area of the rendered page (no footer).
   bool inkBounds(int& x0,int& y0,int& x1,int& y1) {
     render();
@@ -2652,6 +2768,7 @@ class CardShelf {
     renderer_.setOrientation(GfxRenderer::LandscapeCounterClockwise);
     renderer_.begin();
     books::applyThemePalette(display_,true);
+    books::UiText::instance().setThemeFace(books::uiTextFace());
     renderer_.insertFont(1,EpdFontFamily(12,&font_));
     // All scripts in EPUB filenames use the same SD font fallback machinery.
     scriptFonts_.load(renderer_,12,{1});
@@ -3161,6 +3278,13 @@ class CardShelf {
   void drawCompactLabel(int x,int baseline,const char* label,int scale=192) {
     // UI labels, translated; UTF-8 so translations keep their accents.
     const std::string text=books::tr(label);
+    {
+      auto& ui=books::UiText::instance();
+      const bool classic=books::uiTheme().style==books::UiTheme::Style::Classic;
+      const int px=std::max(classic?18:15,scale*26/256);
+      if(ui.available() && ui.drawable(text) &&
+         uiDraw(x,baseline-ui.ascent(px),text,px,362))return;
+    }
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
@@ -3215,10 +3339,31 @@ class CardShelf {
     }
     return dots;
   }
+  // Library text in Q2 Pod's TrueType faces (UiText) when they have every
+  // character; else font 1 with its script fallbacks, as before.
+  static int shelfRowPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?27:24;}
+  static int shelfSmallPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?18:16;}
+  bool uiDraw(int x,int top,const std::string& text,int px,int maxX) {
+    auto& ui=books::UiText::instance();
+    if(!ui.available() || !ui.drawable(text))return false;
+    ui.draw(display_,x,top,text,px,maxX);
+    return true;
+  }
   void drawListRow(int y,const std::string& rawTitle,const std::string& author,bool active) {
     constexpr int kHeight=ROW_H-2;
-    const std::string title=fitWidth(rawTitle,334);
     if(!active)renderer_.drawLine(15,y+kHeight,359,y+kHeight,true);
+    auto& ui=books::UiText::instance();
+    if(ui.available() && ui.drawable(rawTitle) && (author.empty() || ui.drawable(author))) {
+      const int rowPx=author.empty()?shelfRowPx():22;
+      const int titleH=ui.lineHeight(rowPx),smallH=ui.lineHeight(shelfSmallPx());
+      const int block=author.empty()?titleH:titleH+smallH;
+      const int top=y+(kHeight-block)/2;
+      ui.draw(display_,22,top,rawTitle,rowPx,356);
+      if(!author.empty())ui.draw(display_,24,top+titleH,author,shelfSmallPx(),354);
+      if(active)invertRect(12,y,350,kHeight);
+      return;
+    }
+    const std::string title=fitWidth(rawTitle,334);
     const bool second=!author.empty();
     if(second)renderer_.drawText(1,22,y-3,title.c_str(),true);
     else drawRowLabel(22,y,kHeight,title.c_str());
@@ -3230,6 +3375,12 @@ class CardShelf {
     if(active)invertRect(12,y,350,kHeight);
   }
   void drawRowLabel(int x,int y,int height,const char* label,bool black=true) {
+    if(black) {
+      auto& ui=books::UiText::instance();
+      const std::string text=books::tr(label);
+      if(ui.available() && ui.drawable(text) &&
+         uiDraw(x,y+(height-ui.lineHeight(shelfRowPx()))/2,text,shelfRowPx(),362))return;
+    }
     const int textY=y+(height-renderer_.getLineHeight(1))/2;
     renderer_.drawText(1,x,textY,books::tr(label),black);
   }
@@ -3241,15 +3392,26 @@ class CardShelf {
       // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
       const char* title=onlineMode_?"Online":"Books";
       int width=0;
-      for(const char* c=books::tr(title);*c;++c) {
+      auto& ui=books::UiText::instance();
+      if(ui.available() && ui.drawable(books::tr(title))) {  // Q2 Pod's 21 px bar title
+        const std::string name=books::tr(title);
+        uiDraw((375-ui.width(name,21))/2,(26-ui.lineHeight(21))/2,name,21,362);
+        books::paintBar(display_,0,0,375,26);
+        width=-1;
+      }
+      else for(const char* c=books::tr(title);*c;++c) {
         int32_t advance=0;int top=0;
         if(renderer_.getCodepointMetrics(1,static_cast<unsigned char>(*c),EpdFontFamily::REGULAR,advance,top))
           width+=fp4::toPixel(advance*170/256);
       }
-      drawCompactLabel((375-width)/2,19,title,170);
-      books::paintBar(display_,0,0,375,26);
+      if(width>=0) {
+        drawCompactLabel((375-width)/2,19,title,170);
+        books::paintBar(display_,0,0,375,26);
+      }
     } else {
-      drawRowLabel(16,0,39,"Books");
+      // Centred, as the themed bar: the strip's ends are under the glass.
+      const char* title=books::tr(onlineMode_?"Online":"Books");
+      drawRowLabel((375-renderer_.getTextWidth(1,title))/2,0,39,title);
       books::paintBar(display_,0,0,375,39);  // the title strip
     }
     if(serverScreen()) {
@@ -3263,7 +3425,6 @@ class CardShelf {
       renderer_.drawLine(15,74,359,74,true);
       if(onlineEntries_.empty()) {
         renderer_.drawText(1,20,120,books::tr("No EPUBs or folders"));
-        drawCompactLabel(20,159,"Back: leave catalog",190);
       }
       const size_t start=(onlineSelection_/VISIBLE_ROWS)*VISIBLE_ROWS;
       for(size_t row=0;row<VISIBLE_ROWS && start+row<onlineEntries_.size();++row) {
@@ -3355,7 +3516,7 @@ class CardShelf {
           drawCompactLabel(x+6,106,one,150);
           if(static_cast<int>(i)==keypad_.pendingIndex())invertRect(x,92,22,18);
         }
-      } else drawCompactLabel(20,106,"Wheel: key   Centre: press   Again: next letter",120);
+      }
       for(int key=0;key<static_cast<int>(SEARCH_KEY_COUNT);++key) {
         const int x=KB_X+(key%4)*(KB_W+KB_GAP), y=KB_Y+(key/4)*(KB_H+KB_GAP);
         const bool fn=books::T9Keypad::functionKey(key);
@@ -3416,19 +3577,17 @@ class CardShelf {
         }
       }
     }
-    // A single footer line; previous "Wheel: choose" at y=261 overlapped
-    // the dark footer and became partly invisible on the actual LCD.
-    const std::string footer=!notice_.empty()
-      ?clippedLabel(notice_,24)
-      :searchEditing_?"OK: press   Back: close":
-       serverScreen()&&onlineScreen_==OnlineScreen::Form?"OK: edit   Back: cancel":
-       serverScreen()?"OK: open   Back: home":
-       detailsOpen()?(detailsOnCard_?"OK: show on card   Back: list":"OK: download   Back: list"):
-       onlineMode_?"OK: open/get   Back: prev":
-        browsing_?(folderMode()&&!folder_.empty()?"OK: open   Back: up":"OK: open   Back: home"):
-        "OK: open   Back: exit";
-    drawRowLabel(22,269,51,footer.c_str());
-    books::paintBar(display_,0,269,375,51);  // the footer strip
+    // The footer strip holds a notice, or the details screen's action (a
+    // tap there downloads); no control hints: the Q2's keys are known.
+    const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
+      :detailsOpen()?(detailsOnCard_?"Show on card":"Download"):std::string();
+    if(!footer.empty()) {
+      // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).
+      const int lineH=renderer_.getLineHeight(1);
+      const int footerX=books::MenuLayout::cornerX(269+(51-lineH)/2,lineH);
+      drawRowLabel(footerX,269,51,footer.c_str());
+      books::paintBar(display_,0,269,375,51);  // the footer strip
+    }
   }
   // A catalog book: cover left, title and author right, the description
   // under them (the wheel scrolls it); OK downloads.
@@ -4093,7 +4252,7 @@ int runCardApp(const std::string& bookDir) {
         if(shelf->change(action==books::LogicalAction::Next?1:-1))shelf->present();
         continue;
       }
-      // OK, or a tap on the footer (where "OK: download" is written).
+      // OK, or a tap on the footer (where "Download" is written).
       if(action!=books::LogicalAction::Confirm && !(touch && event.y>=269))continue;
     }
     if(shelf->onlineMode()) {
@@ -4270,6 +4429,10 @@ int main(int argc,char** argv) {
   // Menus follow Q2 Pod's language; a translation the menu font can't draw
   // stays English rather than showing boxes.
   books::setUiGlyphCheck([](uint32_t cp) {
+    // Q2 Pod's own faces (CJK in stock default.ttf, Thai in a language
+    // pack's font), else the built-in menu font.
+    books::UiText::instance().setThemeFace(books::uiTextFace());
+    if(books::UiText::instance().has(cp))return true;
     static const EpdFont menuFont(&notosans_12_regular);
     return menuFont.getGlyph(cp)!=nullptr;
   });
@@ -4618,7 +4781,7 @@ int main(int argc,char** argv) {
     shelf.enterSearch();
     return shelf.savePgm(argv[3])?0:4;
   }
-  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false,smooth=false;
+  bool dry=false,render=false,walk=false,renderWalk=false,benchmark=false,smooth=false,smoothCheck=false;
   std::string path,output;
   if(argc==3 && std::strcmp(argv[1],"--validate")==0) {
     dry=true;path=argv[2];
@@ -4631,6 +4794,8 @@ int main(int argc,char** argv) {
     dry=true;benchmark=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render")==0) {
     dry=true;render=true;path=argv[2];output=argv[3];
+  } else if(argc==3 && std::strcmp(argv[1],"--smooth-check")==0) {
+    dry=true;smoothCheck=true;path=argv[2];
   } else if(argc==4 && std::strcmp(argv[1],"--render-smooth")==0) {
     dry=true;render=true;smooth=true;path=argv[2];output=argv[3];
   } else if (argc==2 && argv[1][0] != '-') {
@@ -4746,6 +4911,12 @@ int main(int argc,char** argv) {
     }
     reader.report();
     if (render && !reader.savePgm(output,smooth)) return 4;
+    if (smoothCheck) {
+      size_t pixels=0;
+      const double iou=reader.smoothGlyphAgreement(&pixels);
+      if(iou<0){std::puts("Books smooth glyph agreement: no TrueType glyphs on the page");return 6;}
+      std::printf("Books smooth glyph agreement: IoU %.3f over %zu ink pixels\n",iou,pixels);
+    }
     return 0;
   }
   if(!input.open()) {

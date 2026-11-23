@@ -17,7 +17,10 @@ struct ReaderPreferences {
   int alignment=0; // CrossPoint paragraphAlignment 0=left/auto, 1=justify
   bool hyphenation=false;
   bool embeddedStyle=true;
-  bool nightMode=false;
+  // Night mode: kNightAuto follows Q2 Pod's theme (a dark theme reads in
+  // night mode), else the reader's own choice, kept only where it differs
+  // from the theme (toggleNight).
+  int night=-1;
   bool focusReading=false; // upstream CrossPoint Focus Reading (partial bold)
   int autoTurnSeconds=0;   // 0 = off; see autoTurnChoices
 };
@@ -25,12 +28,23 @@ struct ReaderPreferences {
 // input unless Smart Awake is on, so longer reading without touching the Q2
 // needs Smart Awake whatever the interval.
 inline constexpr int autoTurnChoices[]={0,10,15,20,30,45,60};
+inline constexpr int kNightAuto=-1,kNightOff=0,kNightOn=1;
+// Whether pages show in night mode (dark paper) under a light or dark theme.
+inline bool nightActive(const ReaderPreferences& p,bool systemDark) {
+  return p.night==kNightAuto?systemDark:p.night==kNightOn;
+}
+// The Night mode row: flip what shows; matching the theme again follows it.
+inline void toggleNight(ReaderPreferences& p,bool systemDark) {
+  const bool next=!nightActive(p,systemDark);
+  p.night=next==systemDark?kNightAuto:(next?kNightOn:kNightOff);
+}
 inline bool validReaderPreferences(const ReaderPreferences& p) {
   bool autoTurnOk=false;
   for(int choice:autoTurnChoices)autoTurnOk=autoTurnOk||p.autoTurnSeconds==choice;
   return (p.margin==14||p.margin==22||p.margin==30) &&
          (p.linePercent==100||p.linePercent==120||p.linePercent==140) &&
-         (p.alignment==0||p.alignment==1) && autoTurnOk;
+         (p.alignment==0||p.alignment==1) && autoTurnOk &&
+         (p.night==kNightAuto||p.night==kNightOff||p.night==kNightOn);
 }
 inline std::string readerPreferencesFile() {
   const char* root=std::getenv("BOOKS_STATE_DIR");
@@ -47,10 +61,15 @@ inline bool loadReaderPreferences(ReaderPreferences& value) {
   const bool v1=std::string(magic)=="BOOKS-SETTINGS1" && n==6;
   const bool v2=std::string(magic)=="BOOKS-SETTINGS2" && n==7;
   const bool v3=std::string(magic)=="BOOKS-SETTINGS3" && n==9;
-  if(!v3){focus=0;autoTurn=0;}
-  ReaderPreferences temp{margin,spacing,align,hyphen!=0,css!=0,night!=0,focus!=0,autoTurn};
-  if((!v1&&!v2&&!v3)||hyphen<0||hyphen>1||css<0||css>1||
-     night<0||night>1||focus<0||focus>1||!validReaderPreferences(temp))return false;
+  // v4: night 0 follows the theme, 1 off, 2 on. Before, 0 was the default
+  // off (taken as follow the theme) and 1 on.
+  const bool v4=std::string(magic)=="BOOKS-SETTINGS4" && n==9;
+  if(!v3&&!v4){focus=0;autoTurn=0;}
+  if(night<0||night>(v4?2:1))return false;
+  const int choice=v4?(night==0?kNightAuto:night==1?kNightOff:kNightOn):(night?kNightOn:kNightAuto);
+  ReaderPreferences temp{margin,spacing,align,hyphen!=0,css!=0,choice,focus!=0,autoTurn};
+  if((!v1&&!v2&&!v3&&!v4)||hyphen<0||hyphen>1||css<0||css>1||
+     focus<0||focus>1||!validReaderPreferences(temp))return false;
   value=temp;
   return true;
 }
@@ -59,9 +78,10 @@ inline bool saveReaderPreferences(const ReaderPreferences& value) {
   const std::string name=readerPreferencesFile(),tmp=name+".tmp";
   FILE* f=std::fopen(tmp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"BOOKS-SETTINGS3 %d %d %d %d %d %d %d %d\n",
+  const int night=value.night==kNightAuto?0:value.night==kNightOff?1:2;
+  bool ok=std::fprintf(f,"BOOKS-SETTINGS4 %d %d %d %d %d %d %d %d\n",
     value.margin,value.linePercent,value.alignment,
-    value.hyphenation?1:0,value.embeddedStyle?1:0,value.nightMode?1:0,
+    value.hyphenation?1:0,value.embeddedStyle?1:0,night,
     value.focusReading?1:0,value.autoTurnSeconds)>0;
   if(std::fflush(f)!=0)ok=false;
   if(ok && fsync(fileno(f))!=0)ok=false;

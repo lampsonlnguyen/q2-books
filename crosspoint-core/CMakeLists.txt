@@ -152,6 +152,16 @@ target_link_libraries(books_xml_repair_tests PRIVATE EXPAT::EXPAT)
 target_compile_options(books_xml_repair_tests PRIVATE -UNDEBUG)
 add_test(NAME books_xml_element_repair COMMAND books_xml_repair_tests)
 
+add_executable(books_smooth_text_tests tests/smooth_text_test.cpp)
+target_include_directories(books_smooth_text_tests PRIVATE platform/q2)
+target_compile_options(books_smooth_text_tests PRIVATE -UNDEBUG)
+add_test(NAME books_smooth_text_levels COMMAND books_smooth_text_tests)
+
+add_executable(books_status_bar_tests tests/status_bar_test.cpp)
+target_include_directories(books_status_bar_tests PRIVATE reader)
+target_compile_options(books_status_bar_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reading_footer_status COMMAND books_status_bar_tests)
+
 add_executable(crosspoint_controls_tests tests/controls_test.cpp)
 add_test(NAME q2_wheel_touch_mapping COMMAND crosspoint_controls_tests)
 
@@ -897,3 +907,8 @@ add_dependencies(crosspoint_original_engine_link_tests epub_fixture illustrated_
 target_compile_options(crosspoint_original_engine_link_tests PRIVATE -UNDEBUG)
 add_test(NAME crosspoint_original_engine_real_layout
     COMMAND crosspoint_original_engine_link_tests "${EPUB_FIXTURE}")
+
+# Smooth text through the real reader (needs the Vietnamese fixture above).
+add_test(NAME books_smooth_text_render
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/smooth_text_render_test.py"
+      "$<TARGET_FILE:books-reader>" "${VIETNAMESE_EPUB_FIXTURE}")

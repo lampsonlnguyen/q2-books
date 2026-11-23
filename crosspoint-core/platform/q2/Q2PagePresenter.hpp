@@ -21,19 +21,19 @@ class Q2PagePresenter {
   }
 
   bool presentBW(const uint8_t* mono, size_t bytes,
-                 unsigned warmth = 0, bool night = false) {
+                 unsigned warmth = 0, bool night = false, const uint8_t* levels = nullptr) {
     if (!fb_.isOpen() || !pixels_ ||
         !Q2Display::presentBW(mono, bytes, pixels_.get(),
-            Q2Display::Width * Q2Display::Height, warmth, night))
+            Q2Display::Width * Q2Display::Height, warmth, night, levels))
       return false;
     return fb_.presentARGB(pixels_.get(), Q2Display::Width * Q2Display::Height);
   }
 
   bool presentThemed(const uint8_t* mono, size_t bytes, uint32_t ink, uint32_t paper,
-                     const Q2Display::Zone* zones, size_t count) {
+                     const Q2Display::Zone* zones, size_t count, const uint8_t* levels = nullptr) {
     if (!fb_.isOpen() || !pixels_ ||
         !Q2Display::presentThemed(mono, bytes, pixels_.get(), Q2Display::Width * Q2Display::Height,
-                                  ink, paper, zones, count))
+                                  ink, paper, zones, count, levels))
       return false;
     return fb_.presentARGB(pixels_.get(), Q2Display::Width * Q2Display::Height);
   }

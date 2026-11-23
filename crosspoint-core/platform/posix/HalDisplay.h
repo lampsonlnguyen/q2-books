@@ -42,9 +42,23 @@ class HalDisplay {
   void preconditionGrayscale(uint16_t,uint16_t,uint16_t,uint16_t) {}
   bool displayGrayscaleBase(GrayscaleMode,RefreshMode=HALF_REFRESH,bool=false) {return false;}
   void displayGrayscaleBase(RefreshMode=HALF_REFRESH,bool=false) {}
-  void copyGrayscaleLsbBuffers(const uint8_t*) {}
-  void copyGrayscaleMsbBuffers(const uint8_t*) {}
-  void cleanupGrayscaleBuffers(const uint8_t*) {}
+  // Smooth text: the engine's two grayscale passes are kept as planes and
+  // blended with the BW page at present time (see Q2Display::computeLevels).
+  void copyGrayscaleLsbBuffers(const uint8_t* plane) const {copyPlane(grayLsb_.get(),plane);}
+  void copyGrayscaleMsbBuffers(const uint8_t* plane) const {copyPlane(grayMsb_.get(),plane);}
+  void cleanupGrayscaleBuffers(const uint8_t*) const {grayValid_=false;}
+  // Marks the planes as belonging to this BW page, which the reader puts
+  // back in the framebuffer after the grey passes.
+  void setGrayPage(const uint8_t* bwPage) const;
+  // Restores planes kept with a cached page.
+  void restoreGray(const uint8_t* bwPage,const uint8_t* lsb,const uint8_t* msb) const;
+  void setGrayInverted(bool inverted) const {grayInverted_=inverted;}
+  bool grayValid() const {return grayValid_;}
+  const uint8_t* grayLsb() const {return grayLsb_.get();}
+  const uint8_t* grayMsb() const {return grayMsb_.get();}
+  // Coverage levels (Width*Height bytes, 0..3) of the framebuffer as it would
+  // be shown now; false when there are no valid grey planes.
+  bool currentLevels(uint8_t* levels) const;
   void displayGrayBuffer(bool=false) {}
   bool displayRetainedGrayscaleOverlay(uint16_t,uint16_t,uint16_t,uint16_t,bool) {return false;}
   void writeGrayscalePlaneStrip(bool,const uint8_t*,uint16_t,uint16_t) {}
@@ -77,6 +91,11 @@ class HalDisplay {
   mutable int zoneCount_=0;
   mutable std::unique_ptr<uint8_t[]> raster_;
   std::unique_ptr<uint8_t[]> inkRaster_;
+  std::unique_ptr<uint8_t[]> grayPage_,grayLsb_,grayMsb_,levels_;
+  mutable bool grayValid_=false,grayInverted_=false;
+  void copyPlane(uint8_t* dest,const uint8_t* src) const {
+    if(dest&&src) for(uint32_t i=0;i<BUFFER_SIZE;++i)dest[i]=src[i];
+  }
   bool inverted_=false;
   bool loaned_=false;
 };

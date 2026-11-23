@@ -82,7 +82,8 @@ jobs:
       - name: Install Shanling Q2 build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm cmake git curl zip unzip squashfs-tools qemu-user binutils-mipsel-linux-gnu gcc-mipsel-linux-gnu g++-mipsel-linux-gnu libc6-dev-mipsel-cross python3-venv
+          sudo apt-get install -y clang lld llvm cmake git curl zip unzip squashfs-tools qemu-user binutils-mipsel-linux-gnu gcc-mipsel-linux-gnu g++-mipsel-linux-gnu libc6-dev-mipsel-cross python3-venv \
+            fonts-noto-core fonts-noto-cjk
       - name: Build and run all Q2 MIPS/QEMU regressions
         shell: bash
         run: bash crosspoint-core/tools/build_q2_github.sh

@@ -439,10 +439,15 @@ for family in ("sans","serif","bitter","inter","literata"):
     text=open(f"{sys.argv[1]}/smooth-{family}.log").read()
     m=re.search(r"IoU ([0-9.]+) over (\d+) ink pixels, centre shift ([-+0-9.]+) ([-+0-9.]+)",text)
     if not m:
-        bad.append(f"{family}: no agreement line"); continue
+        # A family whose TrueType does not line up keeps 2-bit glyphs (its
+        # baseline check refused it): allowed, except the two defaults.
+        if family in ("sans","serif"): bad.append(f"{family}: no agreement line")
+        else: print(f"::notice::smooth glyphs {family}: kept 2-bit")
+        continue
     iou,pixels,dx,dy=float(m[1]),int(m[2]),float(m[3]),float(m[4])
     print(f"::notice::smooth glyphs {family}: IoU {iou:.3f}, shift {dx:+.2f} {dy:+.2f} px, {pixels} px")
-    if pixels<2000 or iou<0.75 or abs(dx)>0.5 or abs(dy)>0.5:
+    # Hinting snaps lines to whole pixels, so up to 3/4 px vertically.
+    if pixels<2000 or iou<0.75 or abs(dx)>0.5 or abs(dy)>0.75:
         bad.append(f"{family}: IoU {iou:.3f} shift {dx:+.2f} {dy:+.2f}")
 assert not bad, "TrueType glyphs do not land on CrossPoint's: "+"; ".join(bad)
 PY

@@ -9,8 +9,9 @@
 //   - writes "</name>" for elements left open above a matching end tag, and
 //     drops an end tag that matches nothing open;
 //   - writes "</br>" right after a void start tag that is not self-closing;
+//   - closes an open paragraph and its inline children before a new block;
 //   - closes everything still open at the end of the chapter.
-// Well-formed input comes out byte for byte the same. Output is produced in
+// Ordinary well-formed XHTML comes out byte for byte the same. Output is produced in
 // steps, so a caller with a fixed buffer calls feed() until idle().
 
 #include <cstddef>
@@ -75,7 +76,7 @@ class XmlTagRepair {
   }
 
  private:
-  enum class State : unsigned char { Text, Lt, StartName, StartTag, EndTag, SkipEnd, Decl, Raw };
+  enum class State : unsigned char { Text, Lt, StartName, StartPrefix, StartTag, EndTag, SkipEnd, Decl, Raw };
 
   static bool isNameStart(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == ':' ||
@@ -84,13 +85,42 @@ class XmlTagRepair {
   static bool isNameByte(char c) {
     return isNameStart(c) || (c >= '0' && c <= '9') || c == '-' || c == '.';
   }
+  template <size_t N>
+  static bool nameIn(const char* n, size_t len, const char* const (&names)[N]) {
+    for (const char* candidate : names) {
+      if (std::strlen(candidate) == len && std::memcmp(candidate, n, len) == 0) return true;
+    }
+    return false;
+  }
   static bool isVoid(const char* n, size_t len) {
     static constexpr const char* kVoid[] = {"area", "base", "br", "col", "embed", "hr", "img",
                                             "input", "link", "meta", "param", "source", "track", "wbr"};
-    for (const char* v : kVoid) {
-      if (std::strlen(v) == len && std::memcmp(v, n, len) == 0) return true;
+    return nameIn(n, len, kVoid);
+  }
+
+  void closeParagraphBeforeBlock() {
+    static constexpr const char* kBlocks[] = {
+        "address", "article", "aside", "blockquote", "details", "dialog", "div", "dl", "fieldset",
+        "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+        "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search", "section", "table", "ul"};
+    static constexpr const char* kInline[] = {
+        "a", "abbr", "b", "bdi", "bdo", "cite", "code", "del", "dfn", "em", "font", "i", "ins",
+        "kbd", "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strike", "strong",
+        "sub", "sup", "time", "tt", "u", "var"};
+    if (depth_ < 2 || !nameIn(name_, nameLen_, kBlocks)) return;
+    for (size_t j = depth_; j-- > 1;) {
+      if (stackLen_[j] == 1 && stack_[j][0] == 'p') {
+        closes_ = depth_ - j;
+        return;
+      }
+      if (!nameIn(stack_[j], stackLen_[j], kInline)) return;
     }
-    return false;
+  }
+
+  void writeStartPrefix(char* out, size_t& o) const {
+    out[o++] = '<';
+    std::memcpy(out + o, name_, nameLen_);
+    o += nameLen_;
   }
   static bool prefixOf(const char* s, size_t n, const char* p) {
     const size_t pl = std::strlen(p);
@@ -145,6 +175,9 @@ class XmlTagRepair {
       std::memcpy(out + o, "&lt;", 4);
       o += 4;
       state_ = State::Text;
+    } else if (state_ == State::StartName || state_ == State::StartPrefix) {
+      writeStartPrefix(out, o);
+      state_ = State::Text;
     } else if (state_ == State::Decl) {
       out[o++] = '<';
       out[o++] = '!';
@@ -168,8 +201,6 @@ class XmlTagRepair {
         return;
       case State::Lt:
         if (isNameStart(c)) {
-          out[o++] = '<';
-          out[o++] = c;
           name_[0] = c;
           nameLen_ = 1;
           nameOverflow_ = false;
@@ -198,19 +229,21 @@ class XmlTagRepair {
         }
         return;
       case State::StartName:
-        if (isNameByte(c)) {
-          if (nameLen_ < kMaxName) {
-            name_[nameLen_++] = c;
-          } else {
-            nameOverflow_ = true;
-          }
-          out[o++] = c;
+        if (isNameByte(c) && nameLen_ < kMaxName) {
+          name_[nameLen_++] = c;
           ++i;
         } else {
-          state_ = State::StartTag;
-          prev_ = 0;
-          quote_ = 0;
+          nameOverflow_ = isNameByte(c);
+          if (!nameOverflow_) closeParagraphBeforeBlock();
+          state_ = State::StartPrefix;
         }
+        return;
+      case State::StartPrefix:
+        // feed() emits any implied closes before the new start tag.
+        writeStartPrefix(out, o);
+        state_ = State::StartTag;
+        prev_ = 0;
+        quote_ = 0;
         return;
       case State::StartTag:
         if (quote_) {

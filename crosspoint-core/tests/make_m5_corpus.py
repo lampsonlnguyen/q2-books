@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Generate the M5 difficult-EPUB reference corpus.
 
-Each book carries unique ASCII marker strings ("M5-<BOOK>-<NAME>") in its
-visible text, so the corpus runner can check that the content reached the
-reader's text output, not just that the file opened. Broken books are
+Synthetic books carry unique ASCII markers, and public-domain excerpts use
+their own text as markers. The runner checks what reached the reader's text
+output, beyond whether the file opened. Broken books are
 deliberately malformed; the runner checks that they fail cleanly or degrade
 without crashing.
 
@@ -49,7 +49,7 @@ def xhtml(title, body, css_href=None, lang="en", dir_attr=None):
 """
 
 
-def opf(book_id, title, items, spine, extra_metadata=""):
+def opf(book_id, title, items, spine, extra_metadata="", lang="en"):
     manifest = "\n".join(
         f'<item id="{item_id}" href="{href}" media-type="{mt}"{props}/>'
         for item_id, href, mt, props in items)
@@ -59,7 +59,7 @@ def opf(book_id, title, items, spine, extra_metadata=""):
 <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
 <dc:identifier id="id">books-m5-{book_id}</dc:identifier>
 <dc:title>{title}</dc:title>
-<dc:language>en</dc:language>
+<dc:language>{lang}</dc:language>
 {extra_metadata}
 </metadata>
 <manifest>
@@ -91,7 +91,7 @@ def _info(name, compress):
     return info
 
 
-def book(name, title, chapters, css=None, extra_files=None, metadata="", spine_order=None):
+def book(name, title, chapters, css=None, extra_files=None, metadata="", spine_order=None, lang="en"):
     """chapters: list of (id, filename, title, body_html, css_href_or_None, dir_attr)."""
     items = [("nav", "nav.xhtml", "application/xhtml+xml", ' properties="nav"')]
     spine = []
@@ -99,7 +99,7 @@ def book(name, title, chapters, css=None, extra_files=None, metadata="", spine_o
     for cid, fname, ctitle, body, css_href, dir_attr in chapters:
         items.append((cid, fname, "application/xhtml+xml", ""))
         spine.append(cid)
-        files["OEBPS/" + fname] = xhtml(ctitle, body, css_href, dir_attr=dir_attr)
+        files["OEBPS/" + fname] = xhtml(ctitle, body, css_href, lang=lang, dir_attr=dir_attr)
     if css:
         items.append(("style", "style.css", "text/css", ""))
         files["OEBPS/style.css"] = css
@@ -110,8 +110,8 @@ def book(name, title, chapters, css=None, extra_files=None, metadata="", spine_o
         spine = spine_order
     files["OEBPS/nav.xhtml"] = xhtml(
         title, '<nav epub:type="toc"><ol>' + "".join(
-            f'<li><a href="{f}">{t}</a></li>' for _, f, t, _, _, _ in chapters) + "</ol></nav>")
-    files["OEBPS/content.opf"] = opf(name, title, items, spine, metadata)
+            f'<li><a href="{f}">{t}</a></li>' for _, f, t, _, _, _ in chapters) + "</ol></nav>", lang=lang)
+    files["OEBPS/content.opf"] = opf(name, title, items, spine, metadata, lang=lang)
     return files
 
 
@@ -225,12 +225,11 @@ p { font-variant: small-caps; }
     write_book(out / "entities.epub", book("entities", "Entities", [
         ("c1", "chapter1.xhtml", "Entities", body, None, None)]))
 
-    # 11. Broken: unclosed and mismatched tags. Expat cannot recover from
-    #     these, so the book must fail cleanly (no crash, no hang).
+    # 11. Broken: the first paragraph and its inline formatting are unclosed.
     bad = """<?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml"><head><title>Bad</title></head>
-<body><h1>Malformed</h1><p>M5-BROKEN-XML-OK survives <b>unclosed bold
-<p>second paragraph</body></html>
+<body><h1>Malformed</h1><p>M5-BROKEN-XML-OK survives <b><em>unclosed formatting
+<p>M5-BROKEN-XML-PLAIN second paragraph</p></body></html>
 """
     files = {
         "OEBPS/content.opf": opf("broken-xml", "Broken XML", [
@@ -240,6 +239,9 @@ p { font-variant: small-caps; }
         "OEBPS/nav.xhtml": xhtml("Broken XML", '<nav epub:type="toc"><ol><li><a href="chapter1.xhtml">Bad</a></li></ol></nav>'),
     }
     write_book(out / "broken-xml.epub", files)
+    files["OEBPS/chapter1.xhtml"] = bad.replace(
+        "<p>M5-BROKEN-XML-PLAIN", "</em></b></p><p>M5-BROKEN-XML-PLAIN", 1)
+    write_book(out / "broken-xml-reference.epub", files)
 
     # 12. Broken: empty chapter body and a chapter that is only whitespace.
     files = book("empty-chapter", "Empty chapter", [
@@ -247,6 +249,32 @@ p { font-variant: small-caps; }
         ("c2", "chapter2.xhtml", "Blank", "   \n  ", None, None),
         ("c3", "chapter3.xhtml", "After", "<p>M5-EMPTY-AFTER text after empty chapters.</p>", None, None)])
     write_book(out / "empty-chapter.epub", files)
+
+    # Public-domain table excerpt from The Principles of Chemistry, Volume II
+    # (Project Gutenberg #54210), preserving the source's cell spans and breaks.
+    body = """<table summary="table_3">
+  <tr>
+    <td class="td1" rowspan="2" colspan="4">Molecular composition of the<br />higher hydrogen and<br />metallo-organic compounds</td>
+    <td class="td1" rowspan="2" colspan="3">Atomic weights of the elements</td>
+    <td class="td1" rowspan="2" colspan="9">Composition of the saline compounds, X=Cl</td>
+    <td class="td1" rowspan="2">Peroxides</td>
+    <td class="td1" rowspan="2">Lower hydrogen<br />compounds</td>
+    <td class="td2" colspan="3">Simple bodies</td>
+  </tr>
+  <tr>
+    <td class="td3">Sp. gr.</td>
+    <td class="td3">Sp. vol.</td>
+    <td class="td4">Melting<br />point</td>
+  </tr>
+</table>"""
+    write_book(out / "chemistry-table.epub", book("chemistry-table", "The Principles of Chemistry", [
+        ("c1", "chapter1.xhtml", "Periodic table", body, None, None)]))
+
+    # Public-domain Japanese prose and reading from Aozora Bunko's Rashōmon,
+    # card 127. Encode the supplied reading as EPUB ruby.
+    body = """<p>その代りまた<ruby>鴉<rp>（</rp><rt>からす</rt><rp>）</rp></ruby>がどこからか、たくさん集って来た。</p>"""
+    write_book(out / "rashomon-ruby.epub", book("rashomon-ruby", "羅生門", [
+        ("c1", "chapter1.xhtml", "羅生門", body, None, None)], lang="ja"))
 
     print(f"wrote M5 corpus to {out}")
 

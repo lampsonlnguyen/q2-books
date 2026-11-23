@@ -21,7 +21,7 @@ Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, 
 | Milestone | Scope | Status |
 |---|---|---|
 | M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
-| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Repair and corpus released in 1.2.0; see [the M5 notes](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, real books, Q2 measurement |
+| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Paragraph formatting repair and public-domain excerpts are covered by the [M5 corpus](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, full-length books and Q2 measurements |
 | M6 — Optional polish (v0.14) | Only features with a Q2 use case: smooth text (TrueType, 8-bit), menus in Q2 Pod's own faces, clock and battery, text clear of the rounded corners, night mode that follows the system | Smooth text, status and list layout in 1.2.0; TrueType text, corners and night mode on `main`; see [the M6 notes](docs/v0.14-polish.md). Open: Q2 page-turn measurement, a smooth-text switch, CJK and Thai menu tables |
 | M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.2.0 (1.0.0 was the first stable tag); the criteria below are not all met yet |
 
@@ -45,9 +45,8 @@ Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, 
 - Measure the 4000-book scan and folder browsing on a Q2's SD card.
 
 **EPUB fidelity (M5)**
-- Unclosed inline formatting (an unclosed `<b>`) carries on into later paragraphs; close it at the end of each block, as browsers do.
 - Compare the corpus with upstream CrossPoint pixel for pixel, using the same settings, and document the allowed differences (ruby and tables are not laid out as upstream will show them).
-- Add real public-domain books with tables, ruby, CJK and Indic text to the corpus; the current books are generated.
+- Extend coverage from public-domain excerpts to full-length books with tables, ruby, CJK and Indic text.
 - Measure the M5 parse change on a Q2: page-turn time and RAM while a chapter is laid out.
 
 **Polish (M6)**

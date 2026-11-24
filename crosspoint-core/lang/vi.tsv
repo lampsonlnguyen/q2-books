@@ -201,6 +201,10 @@ Bad search template	Bad search template	Mẫu tìm kiếm không hợp lệ
 Not a complete EPUB ZIP	Not a complete EPUB ZIP	Tệp ZIP của EPUB không đầy đủ
 Catalog request failed	Catalog request failed	Không truy cập được danh mục
 Search description failed	Search description failed	Không tải được mô tả tìm kiếm
+Options	Options	Tùy chọn
+Sort	Sort	Sắp xếp
+Browse Style	Browse Style	Kiểu duyệt
+Font Store	Font Store	Kho phông chữ
 Library View	Library View	Kiểu thư viện
 Cover Flow	Cover Flow	Bìa sách
 List View	List View	Danh sách

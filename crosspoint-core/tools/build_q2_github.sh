@@ -313,10 +313,10 @@ python3 -m venv "$work/font-build-venv"
   freetype-py fonttools PyYAML
 "$work/font-build-venv/bin/python" \
   crosspoint-core/tools/build_q2_small_font_assets.py "$card/.books/fonts"
-(cd "$card/.books/fonts" && sha256sum -c books-fonts-10-11.sha256)
+(cd "$card/.books/fonts" && sha256sum -c books-fonts-8-14.sha256)
 # All seven CrossInk named families have genuine 10/11/12pt glyph metrics.
 for name in bitter lexenddeca chareink literata merriweather inter atkinson; do
-  for point in 10 11 12; do
+  for point in 8 9 10 11 12 13 14; do
     test -s "$card/.books/fonts/$name-$point.cpfont" ||
       { echo "::error::Missing $name ${point}pt CrossInk font"; exit 1; }
   done
@@ -462,7 +462,7 @@ rm -f "$card/.books/typography.conf"
 # original CrossPoint font files. Each size must retain all 14 scripts,
 # produce distinct paginated pixels, and never fall back to the 12pt bitmap.
 for family in sans serif; do
-  for point in 10 11 12; do
+  for point in 8 9 10 11 12 13 14; do
     setting="$family $point"
     echo "BOOKS-TYPE1 $setting" > "$card/.books/typography.conf"
     slug="$family-$point"
@@ -483,7 +483,7 @@ for pair in "bitter:Bitter" "lexenddeca:Lexend Deca" \
   "merriweather:Merriweather" "inter:Inter" "atkinson:Atkinson"; do
   slug="${pair%%:*}"
   family_name="${pair#*:}"
-  for point in 10 11 12; do
+  for point in 8 9 10 11 12 13 14; do
     test -s "$card/.books/fonts/$slug-$point.cpfont"
     echo "BOOKS-TYPE1 $slug $point" > "$card/.books/typography.conf"
     BOOKS_STATE_DIR="$card/.books" timeout 90s \
@@ -503,13 +503,13 @@ work=Path(sys.argv[1])
 for family in ("bitter","lexenddeca","chareink","literata",
                "merriweather","inter","atkinson"):
     images=[]
-    for size in (10,11,12):
+    for size in range(8,15):
         data=(work/f"{family}-{size}.pgm").read_bytes()
         assert data.startswith(b"P5\n375 320\n255\n")
         assert len(data)==120015 and sum(p<255 for p in data[15:])>50
         images.append(data)
-    assert len(set(images))==3, f"Font size raster did not change: {family}"
-print("CrossInk 7-family x 3-size Q2 MIPS raster: PASS")
+    assert len(set(images))==7, f"Font size raster did not change: {family}"
+print("CrossInk 7-family x 7-size Q2 MIPS raster: PASS")
 PY
 python3 - "$work" <<'PY'
 from pathlib import Path
@@ -517,16 +517,16 @@ import sys
 work = Path(sys.argv[1])
 for family in ("sans", "serif"):
     previous = None
-    for size in range(10, 13):
+    for size in range(8, 15):
         data = (work / f"{family}-{size}.pgm").read_bytes()
         assert data.startswith(b"P5\n375 320\n255\n") and len(data)==120015
         assert data[15:].count(0)>50, (family,size)
         assert previous!=data, f"Size {size} did not change raster for {family}"
         previous = data
-for size in range(10, 13):
+for size in range(8, 15):
     assert (work/f"sans-{size}.pgm").read_bytes() != \
            (work/f"serif-{size}.pgm").read_bytes(), size
-print("MIPS Q2 10-12pt 3-size font switching and multilingual rendering: PASS")
+print("MIPS Q2 8-14pt 7-size font switching and multilingual rendering: PASS")
 PY
 rm -f "$card/.books/typography.conf"
 # Stress-regression for v0.8: validate EPUB3 HTML entities and the actual

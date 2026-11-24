@@ -17,12 +17,13 @@ namespace books {
 struct PngPreview {
   unsigned width = 0, height = 0;
   std::vector<uint8_t> gray;
+  std::vector<uint8_t> rgb;
 };
 inline uint32_t readBE32(const uint8_t* p) {
   return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) |
          (uint32_t(p[2]) << 8) | uint32_t(p[3]);
 }
-inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
+inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out,bool color=false) {
   out = {};
   constexpr size_t MAX_COMPRESSED = 4u*1024u*1024u;
   constexpr uint32_t MAX_PIXELS = 1024u*1024u;
@@ -95,6 +96,7 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
   out.width=width;
   out.height=height;
   out.gray.resize(static_cast<size_t>(width)*height);
+  if(color)out.rgb.resize(static_cast<size_t>(width)*height*3);
   std::vector<uint8_t> previous(stride,0);
   for(uint32_t y=0;y<height;++y) {
     uint8_t* row=raw.data()+static_cast<size_t>(y)*(stride+1)+1;
@@ -121,8 +123,10 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
     for(uint32_t x=0;x<width;++x) {
       const uint8_t* pixel=row+static_cast<size_t>(x)*channels;
       unsigned gray=0,alpha=255;
+      unsigned red=0,green=0,blue=0;
       if(colorType==0 || colorType==4) {
         gray=pixel[0];
+        red=green=blue=gray;
         if(colorType==4)alpha=pixel[1];
       } else {
         const uint8_t* rgb=pixel;
@@ -131,7 +135,14 @@ inline bool decodePngPreview(const uint8_t* bytes,size_t len,PngPreview& out) {
           rgb=palette.data()+3u*pixel[0];
           alpha=paletteAlpha[pixel[0]];
         } else if(colorType==6)alpha=pixel[3];
+        red=rgb[0];green=rgb[1];blue=rgb[2];
         gray=(77u*rgb[0]+150u*rgb[1]+29u*rgb[2]+128u)>>8;
+      }
+      if(color) {
+        const size_t offset=3*(static_cast<size_t>(y)*width+x);
+        const unsigned channelsRgb[]={red,green,blue};
+        for(unsigned c=0;c<3;++c)
+          out.rgb[offset+c]=static_cast<uint8_t>((channelsRgb[c]*alpha+255u*(255u-alpha)+127u)/255u);
       }
       out.gray[static_cast<size_t>(y)*width+x]=static_cast<uint8_t>(
         (gray*alpha+255u*(255u-alpha)+127u)/255u);

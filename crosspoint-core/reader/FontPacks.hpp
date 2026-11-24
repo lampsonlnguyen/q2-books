@@ -76,6 +76,50 @@ inline bool fontPackInstalled(const FontPack& pack) {
     if(!usableCpfont(root+pack.slug+"-"+std::to_string(pt)+".cpfont"))return false;
   return !pack.smooth || fontPackTtf(root+"ttf/"+pack.slug+"-regular.ttf");
 }
+// Exact optional-pack filenames only. Never remove the core or user Fonts/.
+inline bool optionalFontSlug(const std::string& slug) {
+  for(const auto& pack:fontPacks)if(slug==pack.slug)return true;
+  return false;
+}
+inline bool fontPackHasFiles(const FontPack& pack) {
+  if(!optionalFontSlug(pack.slug))return false;
+  const auto root=fontPackRoot()+"/";
+  struct stat st{};
+  for(int pt=8;pt<=14;++pt)
+    if(::lstat((root+pack.slug+"-"+std::to_string(pt)+".cpfont").c_str(),&st)==0)return true;
+  for(const char* style:{"regular","bold","italic","bolditalic"})
+    if(::lstat((root+"ttf/"+pack.slug+"-"+style+".ttf").c_str(),&st)==0)return true;
+  return false;
+}
+inline bool removeFontPack(const FontPack& pack) {
+  if(!optionalFontSlug(pack.slug))return false;
+  const auto root=fontPackRoot();
+  struct stat st{};
+  if(::lstat(root.c_str(),&st)!=0 || !S_ISDIR(st.st_mode))return false;
+  // Refuse to follow directory symlinks.
+  for(const char* sub:{"ttf","licenses"}) {
+    const auto dir=root+"/"+sub;
+    if(::lstat(dir.c_str(),&st)==0) {
+      if(!S_ISDIR(st.st_mode))return false;
+    } else if(errno!=ENOENT)return false;
+  }
+  Typography saved;
+  if(loadTypography(saved)) {
+    const char* slug=typographyFamilySlug(saved.family);
+    if(slug && std::strcmp(slug,pack.slug)==0 &&
+       !saveTypography({Typography::Family::Sans,saved.size}))return false;
+  }
+  bool ok=true;
+  const auto remove=[&](const std::string& name) {
+    if(::unlink((root+"/"+name).c_str())!=0 && errno!=ENOENT)ok=false;
+  };
+  for(int pt=8;pt<=14;++pt)
+    remove(std::string(pack.slug)+"-"+std::to_string(pt)+".cpfont");
+  for(const char* style:{"regular","bold","italic","bolditalic"})
+    remove(std::string("ttf/")+pack.slug+"-"+style+".ttf");
+  remove(std::string("licenses/")+pack.slug+".txt");
+  return ok;
+}
 inline bool fontPackPath(const FontPack& pack,const std::string& path) {
   const std::string slug=pack.slug;
   for(int pt=8;pt<=14;++pt)

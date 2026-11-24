@@ -57,4 +57,18 @@ with tempfile.TemporaryDirectory() as tmp:
     run(zip_path,False)
     assert old.read_bytes()==b"not a font"
     assert not (font/"serif-8.cpfont").exists()
-print("Font pack installation, integrity primitives and preservation: PASS")
+    # Remove only the chosen pack, including older/partial installations.
+    core=font/"sans-12.cpfont"
+    core.write_bytes(payload)
+    other=font/"inter-12.cpfont"
+    other.write_bytes(payload)
+    (state/"typography.conf").write_text("BOOKS-TYPE1 serif 10\n")
+    subprocess.run([reader,"--test-font-pack-remove","serif"],env=env,check=True)
+    assert not list(font.glob("serif-*.cpfont"))
+    assert not (font/"ttf/serif-regular.ttf").exists()
+    assert not (font/"licenses/serif.txt").exists()
+    assert core.read_bytes()==payload and other.read_bytes()==payload
+    assert (state/"typography.conf").read_text()=="BOOKS-TYPE1 sans 10\n"
+    assert subprocess.run([reader,"--test-font-pack-remove","sans"],env=env).returncode!=0
+    assert core.read_bytes()==payload
+print("Font pack installation, removal, integrity primitives and preservation: PASS")

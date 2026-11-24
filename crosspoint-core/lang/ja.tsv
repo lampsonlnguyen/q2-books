@@ -45,3 +45,7 @@ Downloading font...	Downloading font...	ダウンロード中...
 Font installed	Font installed	フォントを追加しました
 Already installed	Already installed	インストール済み
 Font download failed	Font download failed	ダウンロード失敗
+Remove font	Remove font	フォントを削除
+Confirm remove font	Confirm remove font	削除を確認
+Font removed	Font removed	フォントを削除しました
+Font removal failed	Font removal failed	削除失敗

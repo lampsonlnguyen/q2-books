@@ -2799,6 +2799,7 @@ class CardShelf {
   bool searchSubmit_=false;
   int homeSelection_ = 0;
   bool fontManager_=false;
+  bool fontRemoveArmed_=false;
   size_t fontSelection_=0;
   std::string notice_;
   // 4 rows of 47 px: a title line and an author line need about 45 px with
@@ -2850,30 +2851,43 @@ class CardShelf {
   bool fontsChosen() const {return !browsing_ && homeSelection_==5;}
   bool fontManager() const {return fontManager_;}
   void enterFontManager() {
-    fontManager_=true;fontSelection_=0;notice_.clear();
+    fontManager_=true;fontRemoveArmed_=false;fontSelection_=0;notice_.clear();
   }
   void fontManagerInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     const bool touch=event.kind==books::PhysicalKind::TouchUp;
     if(action==books::LogicalAction::Back || (touch && event.y<74)) {
-      fontManager_=false;notice_.clear();present();return;
+      if(fontRemoveArmed_)fontRemoveArmed_=false;
+      else fontManager_=false;
+      notice_.clear();present();return;
     }
     if(action==books::LogicalAction::Next || action==books::LogicalAction::Previous) {
       if(action==books::LogicalAction::Next && fontSelection_+1<books::fontPackCount)
         ++fontSelection_;
       else if(action==books::LogicalAction::Previous && fontSelection_>0)--fontSelection_;
-      notice_.clear();present();return;
+      fontRemoveArmed_=false;notice_.clear();present();return;
     }
     bool activate=action==books::LogicalAction::Confirm;
     if(touch && event.y>=TOP_Y && event.y<TOP_Y+VISIBLE_ROWS*ROW_H) {
       const size_t index=(fontSelection_/VISIBLE_ROWS)*VISIBLE_ROWS+
           static_cast<size_t>((event.y-TOP_Y)/ROW_H);
       if(index>=books::fontPackCount)return;
+      if(index!=fontSelection_)fontRemoveArmed_=false;
       fontSelection_=index;activate=true;
     }
     if(!activate)return;
     const auto& pack=books::fontPacks[fontSelection_];
-    if(books::fontPackInstalled(pack)) {
-      notice_="Already installed";present();return;
+    if(books::fontPackHasFiles(pack)) {
+      if(!fontRemoveArmed_) {
+        fontRemoveArmed_=true;
+        notice_="Confirm remove font";present();return;
+      }
+      fontRemoveArmed_=false;
+      // Release open script fonts before deleting their SD files.
+      scriptFonts_.clear(renderer_);
+      const bool removed=books::removeFontPack(pack);
+      scriptFonts_.load(renderer_,12,{1});
+      notice_=removed?"Font removed":"Font removal failed";
+      present();return;
     }
     notice_="Downloading font...";present();
     std::string error;
@@ -3603,7 +3617,8 @@ class CardShelf {
         const auto& pack=books::fontPacks[index];
         char size[40]{};
         std::snprintf(size,sizeof size,"%.1f MiB",double(pack.bytes)/1048576.);
-        const std::string detail=books::fontPackInstalled(pack)?books::tr("Installed"):
+        const std::string detail=books::fontPackHasFiles(pack)?
+            books::tr(fontRemoveArmed_ && index==fontSelection_?"Confirm remove font":"Remove font"):
             std::string(books::tr("Download"))+"  "+size;
         drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,books::tr(pack.label),detail,index==fontSelection_);
       }
@@ -4797,6 +4812,11 @@ int main(int argc,char** argv) {
        !books::githubFontRedirect("https://github.com/other/repo", "https://release-assets.githubusercontent.com/asset").empty())
       return 4;
     return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-font-pack-remove")==0 && stateOverride && *stateOverride) {
+    for(const auto& pack:books::fontPacks)
+      if(std::strcmp(pack.slug,argv[2])==0)return books::removeFontPack(pack)?0:1;
+    return 2;
   }
   if(argc==3 && std::strcmp(argv[1],"--test-font-pack-install")==0 && stateOverride && *stateOverride) {
     const auto root=books::fontPackRoot();

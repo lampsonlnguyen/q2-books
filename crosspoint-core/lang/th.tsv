@@ -45,3 +45,7 @@ Downloading font...	Downloading font...	กำลังดาวน์โหล�
 Font installed	Font installed	ติดตั้งแบบอักษรแล้ว
 Already installed	Already installed	ติดตั้งแล้ว
 Font download failed	Font download failed	ดาวน์โหลดไม่สำเร็จ
+Remove font	Remove font	ลบแบบอักษร
+Confirm remove font	Confirm remove font	ยืนยันการลบ
+Font removed	Font removed	ลบแบบอักษรแล้ว
+Font removal failed	Font removal failed	ลบไม่สำเร็จ

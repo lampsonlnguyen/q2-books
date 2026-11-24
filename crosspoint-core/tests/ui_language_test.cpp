@@ -1,6 +1,6 @@
 // Menus follow Q2 Pod's language: English by default; config.ini's
-// [Q2POD] LANG only while Q2 Pod's copy of the language is there; Books' own
-// table only (not Q2 Pod's); lines with other printf conversions skipped;
+// [Q2POD] LANG only while Q2 Pod's copy of the language is there; Books'
+// table wins over shared firmware labels; mismatched printf conversions skipped;
 // letters the menu font lacks shown in English.
 // Also checks Books' shipped tables (lang/*.tsv) against the template.
 #include <cassert>
@@ -49,7 +49,7 @@ int main() {
   books::reloadUiLanguage();
   assert(!books::uiTranslated());
 
-  // With Q2 Pod's copy: German, from Books' table alone.
+  // With Q2 Pod's copy: Books' labels take precedence over shared labels.
   put(data + "/q2-lang-de.tsv",
       "# Deutsch\nmsg_no\tCancel\tAbbrechen\nSave\tSave\tSpeichern\nSearch\tSearch\tSuche\n"
       "%u songs\t%u songs\t%s Titel\n");  // wrong conversion: skipped
@@ -62,7 +62,8 @@ int main() {
   books::reloadUiLanguage();
   assert(books::uiTranslated() && books::uiLanguageCode() == "de");
   assert(books::tr(std::string("Reading settings")) == "Lese\neinstellungen");
-  assert(books::tr(std::string("Cancel")) == "Cancel");  // only in Q2 Pod's table: English
+  assert(books::tr(std::string("Cancel")) == "Cancel");  // firmware-specific key
+  assert(books::tr(std::string("Save")) == "Speichern");  // shared firmware label
   assert(books::tr(std::string("Search")) == "Suchen (Books)");
   assert(books::tr(std::string("Books: %zu/%zu")) == "Bücher: %zu/%zu");
   assert(books::tr(std::string("Online")) == "Online" && books::tr(std::string("%u songs")) == "%u songs");
@@ -71,6 +72,25 @@ int main() {
   assert(books::tr(std::string("Wide")) == "\xE5\xBA\x83");
   books::setUiGlyphCheck([](uint32_t cp) { return cp < 0x3000; });
   assert(books::tr(std::string("Wide")) == "Wide" && books::tr(std::string("Search")) == "Suchen (Books)");
+
+  // A new firmware language with no Books table can still supply shared labels.
+  put(data + "/q2-lang-id.tsv", "# Bahasa Indonesia\nSearch\tSearch\tCari\n");
+  put(data + "/config.ini", "[Q2POD]\nLANG=id\n");
+  books::reloadUiLanguage();
+  assert(books::uiLanguageCode() == "id" && books::tr(std::string("Search")) == "Cari");
+  assert(books::tr(std::string("Reading settings")) == "Reading settings");
+
+  // Switch the firmware to Vietnamese, using the actual shipped Books table.
+  setenv("BOOKS_STATE_DIR", BOOKS_LANG_DIR "/..", 1);
+  put(data + "/q2-lang-vi.tsv", "# Tiếng Việt\nSave\tSave\tLưu\n");
+  put(data + "/config.ini", "[Q2POD]\nLANG=vi\n");
+  books::reloadUiLanguage();
+  assert(books::uiLanguageCode() == "vi" && books::tr(std::string("Books")) == "Sách");
+  assert(books::tr(std::string("Cannot save EPUB")) == "Không thể lưu EPUB");
+  assert(unlink((data + "/q2-lang-vi.tsv").c_str()) == 0);
+  books::reloadUiLanguage();
+  assert(!books::uiTranslated() && books::tr(english) == english);
+  setenv("BOOKS_STATE_DIR", state.c_str(), 1);
 
   // Not a code, or another section's LANG: English.
   put(data + "/config.ini", "[Q2POD]\nLANG=../x\n");
@@ -100,7 +120,7 @@ int main() {
     }
   }
   assert(templ.count("Reading settings") && templ.count("Catalog servers") && templ.count("Books: %zu/%zu"));
-  for (const char* code : {"de", "es", "fr", "it", "pl", "ru", "uk", "vi"}) {
+  for (const char* code : {"de", "es", "fr", "it", "ja", "ko", "pl", "ru", "th", "uk", "vi", "zh_CN", "zh_HK"}) {
     std::ifstream in(std::string(BOOKS_LANG_DIR "/") + code + ".tsv");
     std::string line;
     assert(std::getline(in, line) && line.rfind("# ", 0) == 0);

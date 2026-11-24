@@ -168,3 +168,36 @@ Upload this Q2's 	Upload this Q2's 	Gửi vị trí máy này
 Keep and upload 	Keep and upload 	Giữ và gửi 
 %zu / %zu books	%zu / %zu books	%zu / %zu sách
 Books: %zu/%zu	Books: %zu/%zu	Sách: %zu/%zu
+Selecting text	Selecting text	Đang chọn văn bản
+Choose a word	Choose a word	Chọn một từ
+Books	Books	Sách
+Copy EPUBs to /Books	Copy EPUBs to /Books	Chép EPUB vào /Books
+Tap title to edit search	Tap title to edit search	Chạm tiêu đề để sửa tìm kiếm
+Untitled	Untitled	Không có tiêu đề
+Cannot hash EPUB	Cannot hash EPUB	Không thể tạo mã băm EPUB
+Cannot map text position	Cannot map text position	Không xác định được vị trí đọc
+Could not open synced position	Could not open synced position	Không mở được vị trí đã đồng bộ
+Could not repaginate	Could not repaginate	Không thể phân trang lại
+Could not update page layout	Could not update page layout	Không thể cập nhật bố cục trang
+Remote text location unsupported	Remote text location unsupported	Không hỗ trợ vị trí đọc từ xa
+Settings not saved to SD	Settings not saved to SD	Chưa lưu cài đặt vào thẻ SD
+Sync not configured	Sync not configured	Chưa cài đặt đồng bộ
+Invalid sync position	Invalid sync position	Vị trí đồng bộ không hợp lệ
+Invalid remote position	Invalid remote position	Vị trí từ xa không hợp lệ
+Too many servers	Too many servers	Có quá nhiều máy chủ
+Connection unavailable	Connection unavailable	Không thể kết nối
+Connection ended unexpectedly	Connection ended unexpectedly	Kết nối bị ngắt đột ngột
+HTTPS certificate not trusted (check the device clock)	HTTPS certificate not trusted (check the device clock)	Chứng chỉ HTTPS không đáng tin cậy (kiểm tra giờ thiết bị)
+HTTPS redirect refused (origin or scheme changed)	HTTPS redirect refused (origin or scheme changed)	Từ chối chuyển hướng HTTPS (địa chỉ gốc hoặc giao thức đã đổi)
+HTTPS unavailable	HTTPS unavailable	Không dùng được HTTPS
+Download too large	Download too large	Tệp tải xuống quá lớn
+Download already in progress	Download already in progress	Đang tải xuống
+Invalid download link	Invalid download link	Liên kết tải xuống không hợp lệ
+Invalid OPDS XML	Invalid OPDS XML	XML OPDS không hợp lệ
+Cannot save EPUB	Cannot save EPUB	Không thể lưu EPUB
+Books directory unavailable	Books directory unavailable	Không mở được thư mục Books
+Cannot create Online folder	Cannot create Online folder	Không thể tạo thư mục Online
+Bad search template	Bad search template	Mẫu tìm kiếm không hợp lệ
+Not a complete EPUB ZIP	Not a complete EPUB ZIP	Tệp ZIP của EPUB không đầy đủ
+Catalog request failed	Catalog request failed	Không truy cập được danh mục
+Search description failed	Search description failed	Không tải được mô tả tìm kiếm

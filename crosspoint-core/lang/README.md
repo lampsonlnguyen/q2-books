@@ -3,13 +3,13 @@
 Books has no language setting: its menus follow the language Q2 Pod is set
 to (System settings → Language, offered by the Languages card app). When
 Q2 Pod shows a language, Books looks each menu text up in its own table for
-that language, `.books/lang/<code>.tsv`, and shows the English when the
-table has no line for it (or there is no table).
+that language, `.books/lang/<code>.tsv`. If there is no Books translation,
+it uses shared labels from Q2 Pod's active language pack when the key and
+English text both match. Other labels appear in English.
 
-Tables here: `de`, `es`, `fr`, `it`, `pl`, `ru`, `uk` (Q2 Pod's European
-languages) and `vi`. They were written for Books and haven't been checked
-by native speakers yet; corrections are welcome. Q2 Pod's `ja`, `ko`, `th`,
-`zh_CN` and `zh_HK` have no table: the menu font has no letters for them.
+Books ships tables for `de`, `es`, `fr`, `it`, `pl`, `ru`, `uk` and `vi`,
+plus core menu labels for `ja`, `ko`, `th`, `zh_CN` and `zh_HK`.
+Corrections to the translations are welcome.
 
 The tables use Q2 Pod's language-pack format, and the code is Q2 Pod's
 (`de`, `fr`, `zh_CN`...): a first line `# ` and the language's own name,
@@ -21,7 +21,7 @@ and `\\` escaped. Books' key is its English.
 - Keep each `%zu`, `%d` or `%s` in the same order: a line whose conversions
   differ from its English is skipped.
 - Menu rows are about 13 characters wide; keep translations short.
-- A translation with a letter the menu font can't draw (CJK, Thai) is shown
-  in English for now.
+- A translation with a letter the firmware or Books UI fonts can't draw
+  falls back to English.
 
 The release ZIP carries every table here except `en.tsv`.

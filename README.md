@@ -37,7 +37,7 @@ Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, 
 - Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
 
 **Reader and languages (from M3)**
-- A native speaker's review of each menu table (de, es, fr, it, pl, ru, uk, vi in `crosspoint-core/lang/`). Q2 Pod's ja, ko, th, zh_CN and zh_HK menus need translation tables (the letters come from Q2 Pod's own faces).
+- Native-speaker review of the [menu translations](crosspoint-core/lang/README.md) and additional Books-specific labels for Japanese, Korean, Thai and Chinese.
 - Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 
 **Library and servers (from M4)**
@@ -52,7 +52,6 @@ Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, 
 **Polish (M6)**
 - Measure page-turn time and battery with smooth text on a Q2 (each new page is drawn five times); add a Reading settings switch for it.
 - The clock is 24-hour only: Q2 Pod's 12/24-hour setting is not readable by a card app.
-- Menu translation tables for Japanese, Korean, Chinese and Thai (the letters now come from Q2 Pod's faces).
 - Refresh the menu bar's clock while a menu stays open; time left in the chapter.
 
 **Release and packaging (M7)**

@@ -77,26 +77,26 @@ Turn the wheel to choose Font or Size; Centre cycles the selected value.
 Back closes the menu. Font cycles through these **nine named families**:
 Noto Sans, Noto Serif, Bitter, Lexend Deca, ChareInk, Literata,
 Merriweather, Inter and Atkinson Hyperlegible Next. Size cycles through
-**10, 11 or 12 pt (maximum)**; 12 pt remains the default.
-Fonts not installed at the currently selected size are skipped, so copies of
-older card packages do not show unusable choices.
+the installed sizes for the chosen family, from **8 to 14 pt**. The default
+is 12 pt. Switching families keeps the current size when available or
+selects the closest installed size. A tie selects the smaller size.
 Each family is loaded individually from SD, not kept fully in RAM.
 Books repaginates the current chapter and saves your choices in
 /mnt/mmc/.books/typography.conf. The book's page number may shift when
 font size changes; location anchoring is still a follow-up.
 
 The card app CI installs original CrossPoint NotoSansExtended and
-NotoSerifExtended at 10/11/12pt, using the official pinned 12pt release
-and source-rasterized smaller fonts. Seven additional reading families
+NotoSerifExtended at 8–14 pt, using the official pinned 12 pt release
+and source-rasterized variants. Seven additional reading families
 come from CrossInk's pinned font manifest, rasterized into genuine
-CrossPoint cpfont v4 files at 10/11/12pt. It also installs upstream
+CrossPoint cpfont v4 files at 8–14 pt. It also installs upstream
 NotoSansCJKJP (Japanese and common Chinese), Pretendard (Korean Hangul),
 NotoSansDevanagari (Hindi, Marathi, Nepali), NotoSansBengali (Bengali),
 NotoSansGujarati, NotoSansGurmukhi (Punjabi), NotoSansKannada,
 NotoSansMalayalam, NotoSansOriya (Odia), NotoSansSinhala, NotoSansTamil,
 NotoSansTelugu, NotoNaskhArabicUI (Arabic), and Alef (Hebrew). Each
-fallback family is present at 10/11/12pt. The 12pt packages are downloaded from the original CrossPoint release and
-SHA-256 verified. The 10–11pt variants are built from a pinned CrossPoint
+fallback family is present at 8–14 pt. The 12 pt packages are downloaded from the original CrossPoint release and
+SHA-256 verified. The other sizes are built from a pinned CrossPoint
 source snapshot using its own original font converter, with a generated
 asset-checksum manifest; upstream source-font URLs are not all content-pinned.
 The optional script faces stay on SD until their glyphs are requested.

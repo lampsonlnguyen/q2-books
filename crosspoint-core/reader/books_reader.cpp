@@ -3314,24 +3314,29 @@ class CardShelf {
   // drawing the second at +18 px overprinted the next row. Draws nothing and
   // returns false when font 1 lacks a character (CJK comes from a fallback
   // font that scaled drawing does not reach), rather than dropping letters.
-  bool drawSmallLine(int x,int baseline,const std::string& text,int maxWidth) {
-    constexpr int scale=150;
+  bool drawSmallLine(int x,int baseline,const std::string& text,int maxWidth,int scale=150) {
+    int totalWidth=0;
     const auto* probe=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*probe) {
       const uint32_t cp=utf8NextCodepoint(&probe);
       int32_t advance=0;int top=0;
       if(!renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,top))return false;
+      totalWidth+=fp4::toPixel(advance*scale/256);
+    }
+    int limit=x+maxWidth;
+    if(totalWidth>maxWidth) {
+      int32_t advance=0;int top=0;
+      if(renderer_.getCodepointMetrics(1,'.',EpdFontFamily::REGULAR,advance,top))
+        limit-=3*fp4::toPixel(advance*scale/256);
     }
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     int cx=x;
     while(*p) {
-      const auto* before=p;
       const uint32_t cp=utf8NextCodepoint(&p);
       int32_t advance=0;int top=0;
       (void)renderer_.getCodepointMetrics(1,cp,EpdFontFamily::REGULAR,advance,top);
       const int width=fp4::toPixel(advance*scale/256);
-      if(cx+width>x+maxWidth) {  // clip at a whole character, with an ellipsis
-        (void)before;
+      if(cx+width>limit) {  // clip at a whole character, with an ellipsis
         for(int dot=0;dot<3;++dot)
           cx+=renderer_.drawScaledCodepoint(1,'.',EpdFontFamily::REGULAR,cx,baseline,scale);
         break;
@@ -3345,15 +3350,18 @@ class CardShelf {
   // smaller line when there is one (else the title is centred in the row).
   // Clip at a whole character to a pixel width: wide CJK titles clipped by a
   // character count still ran past the row's right edge.
-  std::string fitWidth(std::string text,int maxWidth) const {
-    if(renderer_.getTextWidth(1,text.c_str())<=maxWidth)return text;
+  std::string fitWidth(std::string text,int maxWidth,int uiPx=0) const {
+    const auto width=[this,uiPx](const std::string& value) {
+      return uiPx?books::UiText::instance().width(value,uiPx):renderer_.getTextWidth(1,value.c_str());
+    };
+    if(width(text)<=maxWidth)return text;
     const std::string dots="...";
     while(!text.empty()) {
       size_t cut=text.size()-1;
       while(cut>0 && (static_cast<unsigned char>(text[cut])&0xC0)==0x80)--cut;
       text.erase(cut);
       while(!text.empty() && text.back()==' ')text.pop_back();
-      if(renderer_.getTextWidth(1,(text+dots).c_str())<=maxWidth)return text+dots;
+      if(width(text+dots)<=maxWidth)return text+dots;
     }
     return dots;
   }
@@ -3458,29 +3466,37 @@ class CardShelf {
       }
     } else if(!browsing_) {
       drawRowLabel(16,39,35,"Home");
-      renderer_.drawLine(15,74,359,74,true);
-      // Real EPUB cover thumb is decoded once when leaving the book;
-      // shelf startup only reads a 360-byte 1-bit cached image.
-      if(!books_.empty())drawBookCover(18,86,current_);
-      else {
-        renderer_.drawLine(17,85,66,85,true);
-        renderer_.drawLine(17,85,17,146,true);
-        renderer_.drawLine(66,85,66,146,true);
-        renderer_.drawLine(17,146,66,146,true);
+      constexpr int top=74,bottom=149,right=359;
+      constexpr int coverX=18,textX=82,textWidth=right-textX,lineHeight=21;
+      constexpr int coverY=(top+bottom-books::ShelfCover::height+1)/2;
+      renderer_.drawLine(15,top,right,top,true);
+      // The shelf only reads the cached thumbnail; the reader decodes the cover.
+      if(!books_.empty())drawBookCover(coverX,coverY,current_);
+      else renderer_.drawRect(coverX-1,coverY-1,
+                              books::ShelfCover::width+2,books::ShelfCover::height+2,true);
+
+      const auto* info=books_.empty()?nullptr:&details(current_);
+      const bool hasAuthor=info && !info->author.empty();
+      const int textY=(top+bottom+1-lineHeight*(hasAuthor?3:2))/2;
+      drawCompactLabel(textX,textY+16,"Current book",150);
+      const int titleY=textY+lineHeight;
+      if(info) {
+        const auto& title=info->title.empty()?books_[current_].label:info->title;
+        auto& ui=books::UiText::instance();
+        const int titlePx=shelfRowPx()-3;
+        if(ui.available() && ui.drawable(title)) {
+          ui.draw(display_,textX,titleY+(lineHeight-ui.lineHeight(titlePx))/2,
+                  fitWidth(title,textWidth,titlePx),titlePx,right);
+        } else if(!drawSmallLine(textX,titleY+19,title,textWidth,224)) {
+          drawRowLabel(textX,titleY,lineHeight,renderer_.truncatedText(1,title.c_str(),textWidth).c_str());
+        }
+        if(hasAuthor)
+          drawRowLabel(textX,titleY+lineHeight,lineHeight,
+                       renderer_.truncatedText(1,info->author.c_str(),textWidth).c_str());
+      } else {
+        drawRowLabel(textX,titleY,lineHeight,"No books yet");
       }
-      // Small, so a label with stacked accents (Vietnamese) can't reach the
-      // title line under it.
-      drawCompactLabel(82,100,"Current book",150);
-      if(books_.empty())
-        drawRowLabel(82,107,20,"No books yet");
-      else {
-        const auto& info=details(current_);
-        const auto& title=info.title.empty()?books_[current_].label:info.title;
-        drawRowLabel(82,106,20,renderer_.truncatedText(1,title.c_str(),277).c_str());
-        if(!info.author.empty())
-          drawRowLabel(82,127,20,renderer_.truncatedText(1,info.author.c_str(),277).c_str());
-      }
-      renderer_.drawLine(15,149,359,149,true);
+      renderer_.drawLine(15,bottom,right,bottom,true);
       if(!books_.empty()) {
         drawRowLabel(22,158,37,"Continue reading");
         if(homeSelection_==0)books::paintSelection(display_,12,158,350,37);

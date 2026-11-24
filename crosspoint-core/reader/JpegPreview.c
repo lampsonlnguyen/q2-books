@@ -15,10 +15,9 @@ static void booksJpegError(j_common_ptr cinfo) {
       (struct BooksJpegError*)cinfo->err;
   longjmp(err->jump,1);
 }
-// Returns a malloc-owned grayscale buffer (must be freed by caller).
-// Reject malformed/oversized images; libjpeg's output always has one channel.
-int booksDecodeJpeg(const unsigned char* bytes,size_t length,
-                       unsigned char** pixels,unsigned* width,unsigned* height) {
+// Returns a malloc-owned grayscale or RGB buffer (must be freed by caller).
+static int decodeJpeg(const unsigned char* bytes,size_t length,
+                       unsigned char** pixels,unsigned* width,unsigned* height,int color) {
   if(!bytes||!pixels||!width||!height||length<16||length>4194304)return 0;
   *pixels=NULL;*width=0;*height=0;
   struct jpeg_decompress_struct cinfo;
@@ -41,22 +40,23 @@ int booksDecodeJpeg(const unsigned char* bytes,size_t length,
      cinfo.image_width>1048576u/cinfo.image_height) {
     jpeg_destroy_decompress(&cinfo);return 0;
   }
-  cinfo.out_color_space=JCS_GRAYSCALE;
+  cinfo.out_color_space=color?JCS_RGB:JCS_GRAYSCALE;
+  const unsigned channels=color?3u:1u;
   if(!jpeg_start_decompress(&cinfo)) {
     jpeg_destroy_decompress(&cinfo);return 0;
   }
-  if(cinfo.output_components!=1 || !cinfo.output_width ||
+  if((unsigned)cinfo.output_components!=channels || !cinfo.output_width ||
      !cinfo.output_height ||
      cinfo.output_width>1048576u/cinfo.output_height) {
     jpeg_destroy_decompress(&cinfo);return 0;
   }
-  const size_t n=(size_t)cinfo.output_width*cinfo.output_height;
+  const size_t n=(size_t)cinfo.output_width*cinfo.output_height*channels;
   image=(unsigned char*)malloc(n);
   if(!image) {
     jpeg_destroy_decompress(&cinfo);return 0;
   }
   while(cinfo.output_scanline<cinfo.output_height) {
-    JSAMPROW row=(JSAMPROW)(image+(size_t)cinfo.output_scanline*cinfo.output_width);
+    JSAMPROW row=(JSAMPROW)(image+(size_t)cinfo.output_scanline*cinfo.output_width*channels);
     if(jpeg_read_scanlines(&cinfo,&row,1)!=1) {
       free((void*)image);jpeg_destroy_decompress(&cinfo);return 0;
     }
@@ -68,4 +68,13 @@ int booksDecodeJpeg(const unsigned char* bytes,size_t length,
   jpeg_destroy_decompress(&cinfo);
   *pixels=(unsigned char*)image;*width=w;*height=h;
   return 1;
+}
+
+int booksDecodeJpeg(const unsigned char* bytes,size_t length,
+                    unsigned char** pixels,unsigned* width,unsigned* height) {
+  return decodeJpeg(bytes,length,pixels,width,height,0);
+}
+int booksDecodeJpegRgb(const unsigned char* bytes,size_t length,
+                       unsigned char** pixels,unsigned* width,unsigned* height) {
+  return decodeJpeg(bytes,length,pixels,width,height,1);
 }

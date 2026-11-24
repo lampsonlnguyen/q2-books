@@ -74,14 +74,5 @@ inline void draw(uint32_t* frame,const FlowCover& cover,float distance,uint32_t 
     }
   }
 }
-inline FlowCover placeholder(uint16_t color=0x39e7) {
-  FlowCover cover;
-  cover.width=104;cover.height=160;
-  cover.pixels.assign(cover.width*cover.height,color);
-  for(unsigned y=0;y<cover.height;++y)for(unsigned x=0;x<cover.width;++x)
-    if(x<7||x+2>=cover.width||y<2||y+2>=cover.height)
-      cover.pixels[y*cover.width+x]=0x2104;
-  return cover;
-}
 } // namespace flow
 } // namespace books

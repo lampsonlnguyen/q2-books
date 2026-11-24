@@ -130,7 +130,7 @@ User name	User name	Tài khoản
 Done: keep	Done: keep	Done: giữ
 Server saved	Server saved	Đã lưu máy chủ
 Server deleted	Server deleted	Đã xóa máy chủ
-Add a catalog server	Add a catalog server	Hãy thêm máy chủ
+Add a OPDS server	Add a OPDS server	Thêm máy chủ OPDS
 Up to 8 servers	Up to 8 servers	Tối đa 8 máy chủ
 OK: edit   Back: cancel	OK: edit   Back: cancel	OK: sửa   Back: hủy
 Type the catalog URL	Type the catalog URL	Hãy nhập địa chỉ
@@ -221,3 +221,4 @@ Remove font	Remove font	Xóa phông chữ
 Confirm remove font	Confirm remove font	Xác nhận xóa phông
 Font removed	Font removed	Đã xóa phông
 Font removal failed	Font removal failed	Xóa phông thất bại
+User Guide	User Guide	Hướng dẫn sử dụng

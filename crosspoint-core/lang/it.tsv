@@ -130,7 +130,7 @@ User name	User name	Nome utente
 Done: keep	Done: keep	Done: tieni
 Server saved	Server saved	Server salvato
 Server deleted	Server deleted	Server eliminato
-Add a catalog server	Add a catalog server	Aggiungi un server
+Add a OPDS server	Add a OPDS server	Aggiungi server OPDS
 Up to 8 servers	Up to 8 servers	Al massimo 8 server
 OK: edit   Back: cancel	OK: edit   Back: cancel	OK: modifica   Indietro: annulla
 Type the catalog URL	Type the catalog URL	Scrivi l'URL del catalogo
@@ -192,3 +192,4 @@ Remove font	Remove font	Rimuovi carattere
 Confirm remove font	Confirm remove font	Conferma rimozione
 Font removed	Font removed	Carattere rimosso
 Font removal failed	Font removal failed	Rimozione non riuscita
+User Guide	User Guide	Guida utente

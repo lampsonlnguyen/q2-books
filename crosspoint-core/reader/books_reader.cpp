@@ -2884,6 +2884,8 @@ class CardShelf {
   size_t detailsRoom_=6;  // description lines the last paint had room for
   bool searchSubmit_=false;
   int homeSelection_ = 0;
+  bool optionsOpen_=false;
+  int optionSelection_=0;
   bool fontManager_=false;
   bool fontRemoveArmed_=false;
   size_t fontSelection_=0;
@@ -2891,7 +2893,8 @@ class CardShelf {
   // 4 rows of 47 px: a title line and an author line need about 45 px with
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
-  static constexpr int HOME_ONLINE_X=252;
+  static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
+  static constexpr int OPTION_COUNT=3;
 
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
@@ -2901,6 +2904,7 @@ class CardShelf {
       books_(books),root_(std::move(root)),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
+    if(books_.empty())homeSelection_=1;
     libraryView_=loadLibraryView();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
@@ -2941,8 +2945,18 @@ class CardShelf {
     return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_;
   }
   bool hasBrowsed() const {return browsed_;}
-  bool viewChosen() const {return !browsing_ && homeSelection_==4;}
-  bool fontsChosen() const {return !browsing_ && homeSelection_==5;}
+  bool optionsChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==2;}
+  bool optionsOpen() const {return optionsOpen_;}
+  void enterOptions() {
+    homeSelection_=2;
+    optionsOpen_=true;
+    optionSelection_=0;
+    notice_.clear();
+  }
+  void closeOptions() {optionsOpen_=false;notice_.clear();}
+  bool sortChosen() const {return optionsOpen_ && optionSelection_==0;}
+  bool viewChosen() const {return optionsOpen_ && optionSelection_==1;}
+  bool fontsChosen() const {return optionsOpen_ && optionSelection_==2;}
   bool fontManager() const {return fontManager_;}
   void enterFontManager() {
     fontManager_=true;fontRemoveArmed_=false;fontSelection_=0;notice_.clear();
@@ -3089,9 +3103,8 @@ class CardShelf {
   bool empty() const {return books_.empty();}
   bool guideSelected() const {return browsing_ && selected()==books_.size();}
   bool browsing() const {return browsing_;}
-  bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
-  bool sortChosen() const {return !browsing_ && homeSelection_==2;}
-  bool onlineChosen() const {return !browsing_ && homeSelection_==3;}
+  bool browseChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==1;}
+  bool onlineChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==3;}
   bool onlineMode() const {return onlineMode_;}
   bool searching() const {return browsing_ && searchEditing_;}
   // The server list: no network until a server is opened.
@@ -3382,7 +3395,8 @@ class CardShelf {
     browsed_=true;
   }
   void goHome() {
-    browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
+    browsing_=false;onlineMode_=false;searchEditing_=false;optionsOpen_=false;
+    homeSelection_=books_.empty()?1:0;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
     detailsOpen_=false;
     keypad_.setUrlMode(false);
@@ -3478,8 +3492,14 @@ class CardShelf {
         static_cast<int>(SEARCH_KEY_COUNT))%static_cast<int>(SEARCH_KEY_COUNT));
       return searchKey_!=before;
     }
+    if(optionsOpen_) {
+      const int next=std::clamp(optionSelection_+direction,0,OPTION_COUNT-1);
+      if(next==optionSelection_)return false;
+      optionSelection_=next;
+      return true;
+    }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,5);
+      const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,3);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -3514,13 +3534,17 @@ class CardShelf {
       searchKey_=option;
       return applySearchChoice();
     }
+    if(optionsOpen_) {
+      if(x<12 || x>=362 || y<TOP_Y || y>=TOP_Y+OPTION_COUNT*ROW_H)return false;
+      optionSelection_=(y-TOP_Y)/ROW_H;
+      return true;
+    }
     if(!browsing_) {
-      if(y>=153&&y<182)homeSelection_=0;
-      else if(y>=185&&y<214)homeSelection_=1;
-      else if(y>=217&&y<242)homeSelection_=x<HOME_ONLINE_X?2:3;
-      else if(y>=244&&y<269)homeSelection_=4;
-      else if(y>=271&&y<296)homeSelection_=5;
-      else return false;
+      if(x<12 || x>=362 || y<HOME_TOP_Y)return false;
+      const int offset=y-HOME_TOP_Y;
+      const int row=offset/HOME_ROW_STEP;
+      if(row>3 || offset%HOME_ROW_STEP>=HOME_ROW_H || (row==0 && books_.empty()))return false;
+      homeSelection_=row;
       return true;
     }
     if(y>=39 && y<74) {
@@ -3732,9 +3756,9 @@ class CardShelf {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
     // Invert the header raster so its text stays white on the dark title bar.
+    const char* title=fontManager_?"Font Store":optionsOpen_?"Options":onlineMode_?"Online":"Books";
     if(books::uiTheme().active()) {
       // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
-      const char* title=fontManager_?"Fonts":onlineMode_?"Online":"Books";
       int width=0;
       auto& ui=books::UiText::instance();
       if(ui.available() && ui.drawable(books::tr(title))) {  // Q2 Pod's 21 px bar title
@@ -3759,8 +3783,7 @@ class CardShelf {
       }
     } else {
       // Centred, as the themed bar: the strip's ends are under the glass.
-      const char* title=books::tr(fontManager_?"Fonts":onlineMode_?"Online":"Books");
-      drawRowLabel((375-renderer_.getTextWidth(1,title))/2,0,39,title);
+      drawRowLabel((375-renderer_.getTextWidth(1,books::tr(title)))/2,0,39,title);
       books::paintBar(display_,0,0,375,39);  // the title strip
     }
     if(fontManager_) {
@@ -3777,6 +3800,13 @@ class CardShelf {
             std::string(books::tr("Download"))+"  "+size;
         drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,books::tr(pack.label),detail,index==fontSelection_);
       }
+    } else if(optionsOpen_) {
+      const std::array<std::string,OPTION_COUNT> labels{
+        books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store")};
+      const std::array<std::string,OPTION_COUNT> details{
+        books::tr(books::shelfSortLabel(sortMode_)),books::tr(viewLabel()),{}};
+      for(int row=0;row<OPTION_COUNT;++row)
+        drawListRow(TOP_Y+row*ROW_H,labels[row],details[row],row==optionSelection_);
     } else if(serverScreen()) {
       paintServers();
     } else if(onlineMode_ && !searchEditing_ && detailsOpen_) {
@@ -3834,51 +3864,12 @@ class CardShelf {
         drawRowLabel(textX,titleY,lineHeight,"No books yet");
       }
       renderer_.drawLine(15,bottom,right,bottom,true);
-      if(!books_.empty()) {
-        drawRowLabel(22,153,29,"Continue reading");
-        if(homeSelection_==0)books::paintSelection(display_,12,153,350,29);
+      static constexpr const char* homeLabels[]={"Continue reading","Browse files","Options","Online"};
+      for(int row=books_.empty()?1:0;row<4;++row) {
+        const int y=HOME_TOP_Y+row*HOME_ROW_STEP;
+        drawRowLabel(22,y,HOME_ROW_H,homeLabels[row]);
+        if(homeSelection_==row)books::paintSelection(display_,12,y,350,HOME_ROW_H);
       }
-      drawRowLabel(22,185,29,"Browse files");
-      if(homeSelection_==1 || (books_.empty() && homeSelection_==0))
-        books::paintSelection(display_,12,185,350,29);
-      std::string sortText=books::tr("Sort: ");
-      sortText+=books::tr(books::shelfSortLabel(sortMode_));
-      drawRowLabel(22,217,25,
-          renderer_.truncatedText(1,sortText.c_str(),HOME_ONLINE_X-42).c_str());
-      drawRowLabel(HOME_ONLINE_X+10,217,25,"Online");
-      if(homeSelection_==2)books::paintSelection(display_,12,217,HOME_ONLINE_X-22,25);
-      if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,217,362-HOME_ONLINE_X,25);
-      const std::string view=std::string(books::tr("Library View"))+": "+books::tr(viewLabel());
-      // Keep the setting inside the rounded lower corners. Measure in the
-      // actual UI face, not the larger reader font, before reducing size.
-      constexpr int viewY=244,viewH=25,viewX=49,viewRight=326;
-      auto& viewUi=books::UiText::instance();
-      if(viewUi.available()&&viewUi.drawable(view)) {
-        int px=shelfRowPx();
-        while(px>12 && (viewUi.width(view,px)>viewRight-viewX ||
-                        viewUi.lineHeight(px)>viewH))--px;
-        const auto label=fitWidth(view,viewRight-viewX,px);
-        uiDraw((375-viewUi.width(label,px))/2,
-               viewY+(viewH-viewUi.lineHeight(px))/2,label,px,viewRight);
-      } else {
-        // The reader's script fallback remains available for unsupported UI
-        // glyphs. Split into separate compact labels rather than cut the value.
-        const auto label=std::string(books::tr("Library View"))+":";
-        const auto value=std::string(books::tr(viewLabel()));
-        const int leftWidth=130,rightWidth=135;
-        if(!drawSmallLine(viewX,viewY+19,label,leftWidth,150))
-          drawRowLabel(viewX,viewY,viewH,fitWidth(label,leftWidth).c_str());
-        if(!drawSmallLine(viewX+leftWidth+6,viewY+19,value,rightWidth,150))
-          drawRowLabel(viewX+leftWidth+6,viewY,viewH,fitWidth(value,rightWidth).c_str());
-      }
-      if(homeSelection_==4)books::paintSelection(display_,viewX-5,viewY,viewRight-viewX+10,viewH);
-      const std::string fontsLabel=books::tr("Fonts");
-      auto& fontsUi=books::UiText::instance();
-      if(fontsUi.available() && fontsUi.drawable(fontsLabel))
-        uiDraw((375-fontsUi.width(fontsLabel,18))/2,271+(25-fontsUi.lineHeight(18))/2,
-               fontsLabel,18,326);
-      else drawRowLabel((375-renderer_.getTextWidth(1,fontsLabel.c_str()))/2,271,25,fontsLabel.c_str());
-      if(homeSelection_==5)books::paintSelection(display_,44,271,287,25);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};
@@ -4933,6 +4924,12 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
+    if(shelf->optionsOpen() && (action==books::LogicalAction::Back ||
+       (event.kind==books::PhysicalKind::TouchUp && event.y<74))) {
+      shelf->closeOptions();
+      shelf->present();
+      continue;
+    }
     if(action==books::LogicalAction::Back) {
       if(shelf->browsing() && shelf->folderUp()) {shelf->present();continue;}
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
@@ -4950,6 +4947,7 @@ int runCardApp(const std::string& bookDir) {
     }
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && (shelf->animating() || shelf->gridActive()))shelf->present();continue;}
+    if(shelf->optionsChosen()) {shelf->enterOptions();shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
     if(shelf->searching()) {shelf->present();continue;}
@@ -4969,6 +4967,7 @@ int runCardApp(const std::string& bookDir) {
       selection=books::lastOpenedIndex(books,recent);
       shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
       if(!shelf->open())return 6;
+      shelf->enterOptions();
       shelf->present();
       continue;
     }
@@ -5069,6 +5068,25 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==2 && std::strcmp(argv[1],"--test-shelf-options")==0) {
+    const std::vector<ShelfEntry> empty;
+    CardShelf shelf(empty);
+    if(!shelf.open() || !shelf.browseChosen() || shelf.change(-1) ||
+       !shelf.change(1) || !shelf.optionsChosen())return 1;
+    if(!shelf.tap(28,220) || !shelf.optionsChosen())return 2;
+    shelf.enterOptions();
+    if(!shelf.optionsOpen() || !shelf.sortChosen() || shelf.browseChosen() ||
+       shelf.change(-1))return 3;
+    if(!shelf.change(1) || !shelf.viewChosen() ||
+       !shelf.tap(28,178) || !shelf.fontsChosen() || shelf.change(1))return 4;
+    shelf.enterFontManager();
+    shelf.fontManagerInput(books::LogicalAction::Back,{});
+    if(shelf.fontManager() || !shelf.optionsOpen() || !shelf.fontsChosen())return 5;
+    shelf.closeOptions();
+    if(shelf.optionsOpen() || !shelf.optionsChosen() || !shelf.change(1) ||
+       !shelf.onlineChosen() || shelf.change(1))return 6;
+    return 0;
+  }
   if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {
     namespace grid=books::grid;
     char state[]="/tmp/books-grid-test-XXXXXX";

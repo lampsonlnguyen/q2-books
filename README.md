@@ -7,9 +7,7 @@ EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books
 differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
-**Status:** v1.3.0 is the Cover Flow release target; see [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) for published builds. Full physical-Q2 validation remains outstanding (M1 below). Earlier releases were named CrossPod.
-User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
-[release notes](docs/release-notes/v1.1.1.md).
+**Status:** [v1.4.2](https://github.com/lampsonlnguyen/q2-books/releases/tag/v1.4.2) is the current release. Grid View and the v1.4.2 library updates were checked on a physical Shanling Q2 and looked good in the maintainer’s test. The broader hardware QA checklist is below. The next feature release is [v1.5.0 — Alphabetical navigation](#v150--alphabetical-navigation).
 
 ## Automatic releases
 
@@ -17,14 +15,12 @@ Source changes merged to `main` automatically reserve the next patch version (or
 
 The **Automatic Books release** workflow can also be run manually on main. If version/tag preparation succeeds but a later build or dispatch fails, retry **Build, test and publish Books for Q2** with that existing tag; do not recreate or force-push the tag. Automatic release preparation requires the GitHub Actions token to be permitted to commit the version file and create tags. A failed build can reserve a version without publishing it. Automated tests do not replace physical-device QA.
 
-## Release roadmap (v1.3.0–v1.18.0)
+## Release roadmap (v1.5.0–v1.18.0)
 
-One primary feature per minor release. Stabilize v1.3.0 before starting v1.4.0; complete each release's milestones and release gates before moving on. Patch releases (for example v1.4.1 and v1.4.2) are reserved for fixes, compatibility and performance regressions. Versions below are planned targets, not published releases.
+Each minor release has one primary feature. Patch releases address fixes, compatibility, and performance regressions. See [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) for completed releases.
 
 | Release | Primary feature | Status |
 | --- | --- | --- |
-| v1.3.0 | Cover Flow | Release candidate; hardware QA outstanding |
-| v1.4.0 | Grid View | Planned |
 | v1.5.0 | Alphabetical navigation | Planned |
 | v1.6.0 | Book information panel | Planned |
 | v1.7.0 | Collections and favorites | Planned |
@@ -39,30 +35,6 @@ One primary feature per minor release. Stabilize v1.3.0 before starting v1.4.0; 
 | v1.16.0 | Language-aware hyphenation | Planned |
 | v1.17.0 | Reading statistics | Planned |
 | v1.18.0 | Reading streaks and goals | Planned |
-
-### v1.3.0 — Cover Flow
-
-Development branch: [feature/cover-flow](https://github.com/lampsonlnguyen/q2-books/tree/feature/cover-flow). Checked items indicate code committed, **not** verified behavior on hardware.
-
-- [x] 1.3-M1 — Color thumbnail infrastructure: bounded RGB565 thumbnails (up to 144 × 200), preserve original proportions, persistent SD cache, file-identity invalidation, and legacy monochrome thumbnail compatibility.
-- [x] 1.3-M2 — Extract PNG/JPEG artwork from unopened EPUBs during idle indexing; placeholder covers for missing or unsupported images.
-- [x] 1.3-M3 — Perspective renderer, shared horizon, depth, shading, fading reflections and independent ARGB presentation path; keep CrossPoint reading canvas unchanged.
-- [x] 1.3-M4 — Integrate library browsing, wheel-driven transitions, bounded neighboring-cover cache (up to eight slots), title and author, default Cover Flow and persistent List View alternative.
-- [x] 1.3-M5 — Implement touch hit testing, swipe navigation, saved whole-book percentage, theme colors and initial Vietnamese labels; release shelf buffers when leaving the graphical view.
-- [ ] 1.3-M6 — Complete remaining language packs; refine typography, alignment, reflections and touch interactions against firmware and CrossInk; preserve folder browsing, search, sort and OPDS behavior. Verify rapid wheel input and sensitivity.
-- [ ] 1.3-M7 — Run host regression suite and Q2 MIPS build; validate simulator screenshots, cache migration, missing/corrupt covers, large libraries, idle CPU, RAM, battery and physical-device behavior. Fix regressions before tagging.
-
-**Acceptance:** Users can switch views and restart without losing preferences or reading state; artwork stays proportional and navigation feels native; no continuous redraw at rest. Existing books, reader and network features remain functional. Automated release gates must pass before publishing; full physical-device certification remains open. The M6 test build passed CI and user visual review identified a truncated Home label, addressed in the next patch. All language tables now contain the view labels; native-speaker and physical-device review remain pending.
-
-### v1.4.0 — Grid View
-
-- [ ] 1.4-M1 — Design responsive multi-column cover grid within rounded display bounds; reuse existing color thumbnail cache and placeholders.
-- [ ] 1.4-M2 — Implement bounded visible-tile rendering and incremental loading, proportional artwork, selection indicator, title truncation and progress where available.
-- [ ] 1.4-M3 — Support wheel traversal, touch selection/open, paging/scrolling and back behavior; retain sort, search and folder navigation.
-- [ ] 1.4-M4 — Add Grid View as third persistent library view alongside Cover Flow and List View; restore selection across view changes.
-- [ ] 1.4-M5 — Translate labels, compare light/dark themes, test empty/large libraries and measure RAM, scrolling and SD activity.
-
-**Acceptance:** All three views share the same library and selection model, with no duplicate indexing or unbounded cover loads.
 
 ### v1.5.0 — Alphabetical navigation
 

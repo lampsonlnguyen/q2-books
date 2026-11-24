@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 // Q2-specific multi-family typography preferences. Font files are CrossPoint
-// CPFONT v4: each selectable 10..12pt size MUST have its own raster/metrics.
+// CPFONT v4: each selectable 8..14pt size MUST have its own raster/metrics.
 // CrossInk's scalable-font menu inspired this range, not scaled 12pt bitmaps.
 #include <dirent.h>
 
@@ -28,19 +28,19 @@ struct Typography {
 inline bool validTypography(const Typography& t) {
   return static_cast<unsigned>(t.family)<
          static_cast<unsigned>(Typography::Family::Count) &&
-         t.size>=10 && t.size<=12;
+         t.size>=8 && t.size<=14;
 }
-// The Q2 Center button cycles font size through exactly three sizes.
+// The Q2 Center button cycles font size through seven sizes.
 inline int nextTypographySize(int current) {
-  return current>=10 && current<12?current+1:10;
+  return current>=8 && current<14?current+1:8;
 }
 inline std::string typographyRoot() {
   const char* env=std::getenv("BOOKS_STATE_DIR");
   return env && *env ? env : "/mnt/mmc/.books";
 }
 // RD-05 user fonts: <Fonts>/<Name>-<size>.cpfont (CrossPoint CPFONT v4, made
-// with CrossPoint's font tools), size 10, 11 or 12; a family is offered when
-// its 12 pt file is there. Names: letters, digits, '_', '-', '.'; 24 at most.
+// with CrossPoint's font tools), sizes 8 through 14; a family is offered when
+// any supported file is there. Names: letters, digits, '_', '-', '.'; 24 at most.
 constexpr int kUserFontSlots=4;
 constexpr long kUserFontMaxBytes=16L<<20;
 inline std::string userFontsDir() {
@@ -71,13 +71,20 @@ inline std::vector<std::string> userFontFamilies() {
   if(!d)return names;
   for(dirent* e;(e=readdir(d))!=nullptr;) {
     const std::string file=e->d_name;
-    const std::string suffix="-12.cpfont";
+    const auto dash=file.rfind('-');
+    if(dash==std::string::npos)continue;
+    const std::string suffix=file.substr(dash);
+    bool supported=false;
+    for(int size=8;size<=14;++size)
+      if(suffix=="-"+std::to_string(size)+".cpfont")supported=true;
+    if(!supported)continue;
     if(file.size()<=suffix.size() || file.compare(file.size()-suffix.size(),suffix.size(),suffix)!=0)continue;
     const std::string name=file.substr(0,file.size()-suffix.size());
     if(validUserFontName(name) && usableCpfont(userFontsDir()+"/"+file))names.push_back(name);
   }
   closedir(d);
   std::sort(names.begin(),names.end());
+  names.erase(std::unique(names.begin(),names.end()),names.end());
   if(names.size()>static_cast<size_t>(kUserFontSlots))names.resize(kUserFontSlots);
   return names;
 }
@@ -143,8 +150,28 @@ inline std::string typographyFontIdentity(Typography t) {
 // Shared CJK fallback is the original CrossPoint NotoSansCJKJP .cpfont v4.
 // This does not replace the reader's selected Sans/Serif face for Latin text.
 inline std::string typographyCjkFontPath(int size) {
-  if(size<10 || size>12)return {};
+  if(size<8 || size>14)return {};
   return typographyRoot()+"/fonts/cjk-"+std::to_string(size)+".cpfont";
+}
+inline bool installedTypographySize(Typography t) {
+  if(!validTypography(t))return false;
+  if(t.family==Typography::Family::Sans && t.size==12)return true;
+  return usableCpfont(typographyFontPath(t));
+}
+inline int nearestTypographySize(Typography t) {
+  int best=0;
+  for(int size=8;size<=14;++size)
+    if(installedTypographySize({t.family,size}) &&
+       (!best || std::abs(size-t.size)<std::abs(best-t.size)))best=size;
+  return best;
+}
+inline int nextInstalledTypographySize(Typography t) {
+  int size=t.size;
+  for(int i=0;i<7;++i) {
+    size=nextTypographySize(size);
+    if(installedTypographySize({t.family,size}))return size;
+  }
+  return t.size;
 }
 // Skip uninstalled choices rather than changing settings to a missing font.
 inline Typography::Family nextInstalledTypographyFamily(Typography t) {
@@ -152,9 +179,7 @@ inline Typography::Family nextInstalledTypographyFamily(Typography t) {
   for(unsigned i=0;i<static_cast<unsigned>(Typography::Family::Count);++i) {
     next=nextTypographyFamily(next);
     if(next==t.family)return t.family;
-    const Typography candidate{next,t.size};
-    const auto path=typographyFontPath(candidate);
-    if(!path.empty() && ::access(path.c_str(),R_OK)==0)return next;
+    if(nearestTypographySize({next,t.size}))return next;
   }
   return t.family;
 }
@@ -180,11 +205,8 @@ inline bool loadTypography(Typography& value) {
     }
   }
   if(!found)return false;
-  // Any old saved 14/16/18pt preference is reduced to the 12pt ceiling;
-  // existing 10..12pt choices are preserved; prior 8/9pt beta choices migrate to 10pt.
-  // Keep the existing file format so upgrades do not erase other settings.
-  if(read.size>12)read.size=12;
-  if(read.size==8 || read.size==9)read.size=10;
+  // Preserve valid preferences and clamp older oversized settings.
+  read.size=std::clamp(read.size,8,14);
   if(!validTypography(read))return false;
   value=read;
   return true;

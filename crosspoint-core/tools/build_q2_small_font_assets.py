@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate real CrossPoint CPFONT v4 glyphs at 10/11 pt for Shanling Q2.
+"""Generate real CrossPoint CPFONT v4 glyphs at 8–14 pt for Shanling Q2.
 
 The 12 pt assets remain pinned to official CrossPoint release SHA-256 hashes
 in fetch_q2_fonts.py. Smaller fonts must be *rasterized at their real point
@@ -23,7 +23,8 @@ from crosspoint_script_fonts import SCRIPT_FONTS
 # definitions are used; no ESP32 firmware is compiled for the Q2.
 CROSSPOINT_REF = "42d58daaabcf469a2e5e1ba871714fb9dcf51d29"
 CROSSPOINT_URL = "https://github.com/crosspoint-reader/crosspoint-reader.git"
-SIZES = (10, 11)
+SIZES = (8, 9, 10, 11, 13, 14)
+ALL_SIZES = tuple(range(8, 15))
 # CrossInk's named reader font catalog. The extra families are generated at
 # all three 10/11/12pt sizes; the original two and script fallbacks reuse the
 # officially SHA-pinned 12pt CrossPoint releases.
@@ -268,10 +269,10 @@ def main() -> int:
         for name in FAMILIES:
             source = dict(catalog[name])
             source["sizes"] = list(
-                (10, 11, 12) if name in CROSSINK_FAMILIES else SIZES)
+                ALL_SIZES if name in CROSSINK_FAMILIES else SIZES)
             families.append(source)
 
-        subset = workspace / "books-sizes-10-11.yaml"
+        subset = workspace / "books-sizes-8-14.yaml"
         subset.write_text(yaml.safe_dump({"families": families}, sort_keys=False))
         built = workspace / "fonts"
         # CJK font rasterization is much heavier than Latin. Bound parallelism
@@ -282,7 +283,7 @@ def main() -> int:
 
         checksums = []
         for name, slug in FAMILIES.items():
-            for size in ((10, 11, 12) if name in CROSSINK_FAMILIES else SIZES):
+            for size in (ALL_SIZES if name in CROSSINK_FAMILIES else SIZES):
                 source = built / name / f"{name}_{size}.cpfont"
                 if not source.is_file():
                     raise RuntimeError(f"Missing freshly rasterized font: {source}")
@@ -295,7 +296,7 @@ def main() -> int:
                 checksums.append(f"{digest}  {dest.name}")
                 print(f"Generated CrossPoint {name} {size}pt: {len(data)} bytes")
 
-        (target / "books-fonts-10-11.sha256").write_text(
+        (target / "books-fonts-8-14.sha256").write_text(
             "\n".join(checksums) + "\n")
         write_license_bundle(target / "CrossPoint-font-licenses.txt",
                              upstream, crossink, catalog)
@@ -304,7 +305,7 @@ def main() -> int:
                           workspace / "ttf-sources")
         # Validate these sizes exist for *all* 14 scripts and both primary
         # families, or fail the package rather than silently drop glyphs.
-        assert len(checksums) == (len(FAMILIES) - len(CROSSINK_FAMILIES))*len(SIZES) + len(CROSSINK_FAMILIES)*3
+        assert len(checksums) == (len(FAMILIES) - len(CROSSINK_FAMILIES))*len(SIZES) + len(CROSSINK_FAMILIES)*len(ALL_SIZES)
     return 0
 
 

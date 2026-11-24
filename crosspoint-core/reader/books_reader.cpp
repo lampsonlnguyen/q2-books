@@ -677,7 +677,7 @@ class Reader {
     renderer_.setGlyphHook(nullptr,GfxRenderer::GlyphHookMode::Off);
   }
   int fontIdForTypography(books::Typography value) const {
-    return 100+static_cast<int>(value.family)*3+(value.size-10);
+    return 1000+static_cast<int>(value.family)*7+(value.size-8);
   }
   ReaderRenderSpec upstreamSpec() const {
     return books::makeReaderRenderSpec(preferences_,upstreamFontId_,
@@ -718,7 +718,7 @@ class Reader {
     // out with another file under the same slot must not be reused.
     for(int f=static_cast<int>(books::Typography::Family::User1);
         f<static_cast<int>(books::Typography::Family::Count);++f)
-      for(int size=10;size<=12;++size)
+      for(int size=8;size<=14;++size)
         for(unsigned char byte:books::typographyFontIdentity({static_cast<books::Typography::Family>(f),size})) {
           hash^=byte;hash*=1099511628211ull;
         }
@@ -958,7 +958,7 @@ class Reader {
     books::Typography savedType;
     if(!books::loadTypography(savedType)) {
       (void)useTypography(typography_);
-    } else if(!useTypography(savedType)) {
+    } else if(!(savedType.size=books::nearestTypographySize(savedType)) || !useTypography(savedType)) {
       typographyNotice_="Selected font file missing";
       (void)useTypography(typography_);
     }
@@ -1865,10 +1865,10 @@ class Reader {
   // Menu text sizes in Q2 Pod's px (UiText), as its themes set them: list
   // rows 27 in Classic's face and 24 in the others (scale 2), small text
   // (scale 1), large figures (scale 3); the bar is kBarPx in every theme.
-  static constexpr int kBarPx=21;
+  static constexpr int kBarPx=19;
   static int uiPx(int scale) {
     const bool classic=books::uiTheme().style==books::UiTheme::Style::Classic;
-    return scale>=3?40:scale==2?(classic?27:24):(classic?18:15);
+    return scale>=3?38:scale==2?(classic?25:22):(classic?16:13);
   }
   // Q2 Pod's TrueType faces, smooth and fixed in size. The capitals sit where
   // the old glyph box did, so callers' coordinates keep working. False when
@@ -1885,7 +1885,7 @@ class Reader {
   // font, so changing the book's font or size leaves the menus alone.
   static constexpr int kUiFontSlot=2;
   void drawGlyphMenuText(int x,int top,const std::string& text,int scale,int maxX) {
-    const int scale256=scale>=2?196:118;
+    const int scale256=scale>=2?180:102;
     const int baseline=top+(scale>=2?13:8);
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*p) {
@@ -1906,7 +1906,7 @@ class Reader {
     if(!books::uiTranslated() && !books::uiTheme().active())
       return static_cast<int>(std::strlen(str))*6*scale;
     const std::string text=books::tr(str);
-    const int scale256=scale>=2?196:118;
+    const int scale256=scale>=2?180:102;
     int width=0;
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*p) {
@@ -3299,7 +3299,7 @@ class CardShelf {
     {
       auto& ui=books::UiText::instance();
       const bool classic=books::uiTheme().style==books::UiTheme::Style::Classic;
-      const int px=std::max(classic?18:15,scale*26/256);
+      const int px=std::max(classic?16:13,scale*24/256);
       if(ui.available() && ui.drawable(text) &&
          uiDraw(x,baseline-ui.ascent(px),text,px,362))return;
     }
@@ -3367,8 +3367,8 @@ class CardShelf {
   }
   // Library text in Q2 Pod's TrueType faces (UiText) when they have every
   // character; else font 1 with its script fallbacks, as before.
-  static int shelfRowPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?27:24;}
-  static int shelfSmallPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?18:16;}
+  static int shelfRowPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?25:22;}
+  static int shelfSmallPx() {return books::uiTheme().style==books::UiTheme::Style::Classic?16:14;}
   bool uiDraw(int x,int top,const std::string& text,int px,int maxX) {
     auto& ui=books::UiText::instance();
     if(!ui.available() || !ui.drawable(text))return false;
@@ -3380,7 +3380,7 @@ class CardShelf {
     if(!active)renderer_.drawLine(15,y+kHeight,359,y+kHeight,true);
     auto& ui=books::UiText::instance();
     if(ui.available() && ui.drawable(rawTitle) && (author.empty() || ui.drawable(author))) {
-      const int rowPx=author.empty()?shelfRowPx():22;
+      const int rowPx=author.empty()?shelfRowPx():20;
       const int titleH=ui.lineHeight(rowPx),smallH=ui.lineHeight(shelfSmallPx());
       const int block=author.empty()?titleH:titleH+smallH;
       const int top=y+(kHeight-block)/2;
@@ -3421,7 +3421,7 @@ class CardShelf {
       auto& ui=books::UiText::instance();
       if(ui.available() && ui.drawable(books::tr(title))) {  // Q2 Pod's 21 px bar title
         const std::string name=books::tr(title);
-        uiDraw((375-ui.width(name,21))/2,(26-ui.lineHeight(21))/2,name,21,362);
+        uiDraw((375-ui.width(name,19))/2,(26-ui.lineHeight(19))/2,name,19,362);
         books::paintBar(display_,0,0,375,26);
         width=-1;
       }
@@ -4185,7 +4185,8 @@ int runCardApp(const std::string& bookDir) {
             auto next=reader->typography();
             if(typeSelection==0) {
               next.family=books::nextInstalledTypographyFamily(next);
-            } else next.size=books::nextTypographySize(next.size);
+             next.size=books::nearestTypographySize(next);
+            } else next.size=books::nextInstalledTypographySize(next);
             (void)reader->configureTypography(next);
           }
           if(navigationMenu)
@@ -5066,7 +5067,8 @@ int main(int argc,char** argv) {
           auto next=reader.typography();
           if(typeSelection==0)
             next.family=books::nextInstalledTypographyFamily(next);
-          else next.size=books::nextTypographySize(next.size);
+             next.size=books::nearestTypographySize(next);
+          else next.size=books::nextInstalledTypographySize(next);
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);

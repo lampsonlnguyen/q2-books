@@ -724,6 +724,7 @@ add_test(NAME crosspoint_original_chapter_parser_interface
 
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
+add_test(NAME books_reader_grid_view COMMAND books-reader --test-grid-shelf)
 add_test(NAME books_reader_card_user_guide
     COMMAND books-reader --test-user-guide-shelf)
 add_test(NAME books_reader_card_empty_library
@@ -790,11 +791,13 @@ add_test(NAME books_reader_png_and_jpeg
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/epub_png_jpeg_test.py"
       "$<TARGET_FILE:books-reader>" "${ILLUSTRATED_EPUB_FIXTURE}"
       "${CMAKE_CURRENT_BINARY_DIR}/jpeg-png-page.pgm")
+add_test(NAME books_reader_color_jpeg
+    COMMAND books-reader --test-color-jpeg "${ILLUSTRATED_EPUB_FIXTURE}")
 # These open the same illustrated EPUB, and so the same Section cache, in the
 # default state folder: run them one at a time (ctest -j raced on the cache).
 set_tests_properties(books_real_nav_ncx_toc books_original_zip_illustrated_epub
     books_reader_relative_css_and_inline_image books_reader_bounded_xhtml_streaming
-    books_reader_renders_epub_png books_reader_png_and_jpeg
+    books_reader_renders_epub_png books_reader_png_and_jpeg books_reader_color_jpeg
     PROPERTIES RESOURCE_LOCK illustrated_epub_cache)
 
 # Chinese/Japanese EPUB. Q2 hardware build renders this through the original

@@ -46,7 +46,7 @@
 #include "ShelfFolders.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
-#include "FlowRenderer.hpp"
+#include "ShelfGrid.hpp"
 #include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
@@ -609,18 +609,23 @@ class Reader {
   std::vector<RenderPage> pages_;
   // A bounded 3-page 1-bpp raster cache (~45 KB) avoids repeated SD-page
   // decompression, layout painting and glyph lookups when moving back/forward.
+  struct ColorImage {
+    int x,y,w,h;
+    std::vector<uint16_t> pixels;
+  };
   struct CachedRaster {
     int spine=-1;
     size_t page=0;
     std::vector<uint8_t> pixels;
     std::vector<uint8_t> alpha,expect;  // smooth text's coverage layer (empty: none)
+    std::vector<ColorImage> jpegs;
   };
   std::array<CachedRaster,3> rasterCache_{};
   books::DeviceStatus status_{};  // what the footer last showed
   size_t nextRasterSlot_=0;
   bool lastRenderOk_=true;
   void clearRasterCache() {
-    for(auto& item:rasterCache_)item.spine=-1;
+    for(auto& item:rasterCache_) {item.spine=-1;item.jpegs.clear();}
   }
   std::vector<books::Highlight> highlights_;
   bool highlightsLoaded_=false;
@@ -2480,7 +2485,43 @@ class Reader {
   // True when the clock's minute or the battery changed since the footer was
   // drawn: the idle loop then presents the page again.
   bool statusChanged() const {return books::readDeviceStatus()!=status_;}
-  void cacheRenderedPage() {
+  void cachePageJpegs(const Page& page,std::vector<ColorImage>& images) {
+    size_t remaining=HalDisplay::PIXELS;
+    for(const auto& element:page.elements) {
+      if(element->getTag()!=TAG_PageImage)continue;
+      const auto& block=static_cast<const PageImage&>(*element).getImageBlock();
+      const auto& source=block.getSourcePath();
+      const auto dot=source.find_last_of('.');
+      if(dot==std::string::npos)continue;
+      std::string ext=source.substr(dot);
+      std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){
+        return static_cast<char>(std::tolower(c));});
+      if(ext!=".jpg" && ext!=".jpeg")continue;
+      ColorImage image{element->xPos+preferences_.margin,element->yPos+TOP,
+                       block.getWidth(),block.getHeight(),{}};
+      if(image.x<0 || image.y<TOP || image.w<=0 || image.h<=0 ||
+         image.x+image.w>HalDisplay::DISPLAY_WIDTH || image.y+image.h>BOTTOM)continue;
+      const size_t area=size_t(image.w)*image.h;
+      if(area>remaining)continue;
+      size_t bytes=0;
+      if(!archive_.getInflatedFileSize(source.c_str(),&bytes) || bytes<16 ||
+         bytes>4u*1024u*1024u)continue;
+      const std::unique_ptr<uint8_t,decltype(&std::free)> data(
+          archive_.readFileToMemory(source.c_str(),&bytes,false),&std::free);
+      unsigned char* decoded=nullptr;
+      unsigned width=0,height=0;
+      if(!data || !booksDecodeJpegRgb(data.get(),bytes,&decoded,&width,&height))continue;
+      const std::unique_ptr<uint8_t,decltype(&std::free)> rgb(decoded,&std::free);
+      image.pixels.resize(area);
+      for(int y=0;y<image.h;++y)for(int x=0;x<image.w;++x) {
+        const auto* pixel=rgb.get()+3*(size_t(y*height/image.h)*width+x*width/image.w);
+        image.pixels[size_t(y)*image.w+x]=uint16_t((pixel[0]&248u)<<8 | (pixel[1]&252u)<<3 | pixel[2]>>3);
+      }
+      remaining-=area;
+      images.push_back(std::move(image));
+    }
+  }
+  void cacheRenderedPage(const Page* page=nullptr) {
     const uint8_t* framebuffer=display_.getFrameBuffer();
     if(!framebuffer || currentSpine_<0)return;
     auto& slot=rasterCache_[nextRasterSlot_++%rasterCache_.size()];
@@ -2489,6 +2530,8 @@ class Reader {
     slot.pixels.assign(framebuffer,framebuffer+HalDisplay::BUFFER_SIZE);
     slot.alpha.assign(display_.coverageAlpha(),display_.coverageAlpha()+HalDisplay::PIXELS);
     slot.expect.assign(display_.coverageExpect(),display_.coverageExpect()+HalDisplay::PIXELS);
+    slot.jpegs.clear();
+    if(page && page->hasImages())cachePageJpegs(*page,slot.jpegs);
   }
   // Smooth text: renders the page twice more in the engine's grayscale modes
   // (as upstream CrossPoint does for e-ink anti-aliasing) and keeps the two
@@ -2560,7 +2603,7 @@ class Reader {
       }
       lastRenderOk_=pageHasVisibleInk();
       if(lastRenderOk_)captureGrayPlanes(page);
-      if(lastRenderOk_)cacheRenderedPage();
+      if(lastRenderOk_)cacheRenderedPage(page.get());
       else {
         // Direct bitmap menu glyphs work even when the SD-book font has
         // failed; leave a visible diagnostic instead of a silent white page.
@@ -2600,9 +2643,27 @@ class Reader {
     applyPagePalette();
     paintHighlightOverlay();
   }
+  bool composeReadingColor(std::vector<uint32_t>& frame) {
+    if(!lastRenderOk_)return false;
+    for(const auto& slot:rasterCache_) {
+      if(slot.spine!=currentSpine_ || slot.page!=currentPage_ || slot.jpegs.empty())continue;
+      frame.resize(HalDisplay::PIXELS);
+      if(!display_.composeColorFrame(frame.data(),frame.size()))return false;
+      for(const auto& image:slot.jpegs) {
+        for(int y=0;y<image.h;++y)for(int x=0;x<image.w;++x) {
+          const size_t offset=size_t(image.y+y)*HalDisplay::DISPLAY_WIDTH+image.x+x;
+          frame[offset]=0xff000000u|books::flow::rgb(image.pixels[size_t(y)*image.w+x]);
+        }
+      }
+      return true;
+    }
+    return false;
+  }
   void present() {
     render();
-    display_.displayBuffer();
+    std::vector<uint32_t> frame;
+    if(!composeReadingColor(frame) || !display_.presentColorFrame(frame.data(),frame.size()))
+      display_.displayBuffer();
   }
   // smooth: write each pixel at its smooth-text level (as the LCD shows it)
   // instead of plain black and white.
@@ -2736,8 +2797,24 @@ class CardShelf {
   bool currentCoverChecked_=false;
   bool currentCoverAvailable_=false;
   bool browsing_ = false;
-  bool flowView_=true;
-  struct FlowSlot {size_t index=0; bool used=false; books::FlowCover cover;};
+  enum class LibraryView {CoverFlow,List,Grid};
+  LibraryView libraryView_=LibraryView::CoverFlow;
+  bool browsed_=false;
+  int gridTouchX_=-1,gridTouchY_=0;
+  const char* viewLabel() const {
+    switch(libraryView_) {
+      case LibraryView::CoverFlow:return "Cover Flow";
+      case LibraryView::List:return "List View";
+      case LibraryView::Grid:return "Grid View";
+    }
+    return "Cover Flow";
+  }
+  struct FlowSlot {
+    size_t index=0;
+    bool used=false;
+    books::FlowCover cover;
+    int progress=-1;
+  };
   std::array<FlowSlot,8> flowSlots_{};
   books::FlowCover fallbackCover_=books::flow::placeholder();
   std::vector<uint32_t> flowFrame_;
@@ -2752,18 +2829,21 @@ class CardShelf {
   bool flowDragged_=false;
   ReaderClock::time_point flowAt_{};
   static std::string viewFile() {return books::uiStateDir()+"/library-view.conf";}
-  static bool loadFlowView() {
+  static LibraryView loadLibraryView() {
     FILE* f=std::fopen(viewFile().c_str(),"rb");
-    if(!f)return true;
+    if(!f)return LibraryView::CoverFlow;
     char line[32]{};
-    const bool list=std::fgets(line,sizeof(line),f) && std::strcmp(line,"list\n")==0;
-    std::fclose(f);return !list;
+    (void)std::fgets(line,sizeof(line),f);
+    std::fclose(f);
+    if(std::strcmp(line,"grid\n")==0)return LibraryView::Grid;
+    return std::strcmp(line,"list\n")==0?LibraryView::List:LibraryView::CoverFlow;
   }
-  bool saveFlowView() const {
+  bool saveLibraryView() const {
     const auto path=viewFile(),tmp=path+".tmp";
     FILE* f=std::fopen(tmp.c_str(),"wb");
     if(!f)return false;
-    bool ok=std::fputs(flowView_?"cover\n":"list\n",f)>=0;
+    bool ok=std::fputs(libraryView_==LibraryView::Grid?"grid\n":
+                       libraryView_==LibraryView::List?"list\n":"cover\n",f)>=0;
     if(std::fflush(f)!=0)ok=false;
     if(ok&&fsync(fileno(f))!=0)ok=false;
     if(std::fclose(f)!=0)ok=false;
@@ -2821,7 +2901,7 @@ class CardShelf {
       books_(books),root_(std::move(root)),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
-    flowView_=loadFlowView();
+    libraryView_=loadLibraryView();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
     refreshVisible();
@@ -2854,9 +2934,13 @@ class CardShelf {
         visible_[selected_-first]:current_;
   }
   bool flowActive() const {
-    return selected_<visible_.size() && flowView_ && browsing_ && !onlineMode_ && !searchEditing_ &&
+    return selected_<visible_.size() && libraryView_==LibraryView::CoverFlow && browsing_ && !onlineMode_ && !searchEditing_ &&
         folderRows()==0 && !visible_.empty();
   }
+  bool gridActive() const {
+    return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_;
+  }
+  bool hasBrowsed() const {return browsed_;}
   bool viewChosen() const {return !browsing_ && homeSelection_==4;}
   bool fontsChosen() const {return !browsing_ && homeSelection_==5;}
   bool fontManager() const {return fontManager_;}
@@ -2919,9 +3003,35 @@ class CardShelf {
     present();
   }
   void toggleView() {
-    flowView_=!flowView_;
-    if(!saveFlowView()) {flowView_=!flowView_;notice_="Cannot save setting";}
+    const auto previous=libraryView_;
+    libraryView_=libraryView_==LibraryView::CoverFlow?LibraryView::List:
+        libraryView_==LibraryView::List?LibraryView::Grid:LibraryView::CoverFlow;
+    if(!saveLibraryView()) {libraryView_=previous;notice_="Cannot save setting";}
     flowMoving_=false;flowPosition_=float(selected_);
+  }
+  bool gridTouchEvent(const books::PhysicalEvent& event) {
+    using K=books::PhysicalKind;
+    if(!gridActive()) {gridTouchX_=-1;return false;}
+    if(event.kind==K::TouchDown) {
+      gridTouchX_=books::grid::hit(event.x,event.y)>=0?event.x:-1;
+      gridTouchY_=event.y;
+      return gridTouchX_>=0;
+    }
+    if(gridTouchX_<0)return false;
+    if(event.kind==K::TouchMove)return true;
+    if(event.kind!=K::TouchUp) {gridTouchX_=-1;return false;}
+    const int dx=event.x-gridTouchX_,dy=event.y-gridTouchY_;
+    gridTouchX_=-1;
+    if(std::abs(dy)>=25 && std::abs(dy)>std::abs(dx)) {
+      constexpr size_t count=books::grid::pageSize;
+      const size_t start=books::grid::pageStart(selected_);
+      if(dy<0 && start+count<rowCount())selected_=std::min(selected_+count,rowCount()-1);
+      if(dy>0 && start>=count)selected_-=count;
+      notice_.clear();
+      present();
+      return true;
+    }
+    return std::abs(dx)>=25 || std::abs(dy)>=25;
   }
   bool animating() const {return flowActive()&&flowMoving_&&!flowTouch_;}
   bool flowTouchEvent(const books::PhysicalEvent& event) {
@@ -3261,7 +3371,7 @@ class CardShelf {
   }
   void enterBrowser(bool focusGuide=false) {
     browsing_=true;searchEditing_=false;notice_.clear();
-    if(folderMode() && current_<books_.size()) {  // open the current book's folder, on it
+    if(!browsed_ && folderMode() && current_<books_.size()) {  // open the current book's folder, on it
       std::string where;
       folder_=books::shelfRelativeFolder(root_,books_[current_].path,where)?where:std::string();
       refreshVisible();
@@ -3269,13 +3379,25 @@ class CardShelf {
       selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
     }
     if(focusGuide)selected_=folderRows();
+    browsed_=true;
   }
   void goHome() {
     browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
     detailsOpen_=false;
     keypad_.setUrlMode(false);
-    searchQuery_.clear();refreshVisible();notice_.clear();
+    if(!searchQuery_.empty()) {
+      const size_t index=selected_<visible_.size()?visible_[selected_]:books_.size();
+      searchQuery_.clear();
+      if(folderMode() && index<books_.size()) {
+        (void)books::shelfRelativeFolder(root_,books_[index].path,folder_);
+      }
+      refreshVisible();
+      const auto it=std::find(visible_.begin(),visible_.end(),index);
+      selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
+    }
+    gridTouchX_=-1;
+    notice_.clear();
   }
   void enterSearch() {
     browsing_=true;searchEditing_=true;searchKey_=books::T9Keypad::Abc;keypad_.reset();
@@ -3421,6 +3543,16 @@ class CardShelf {
       flowPosition_=position;selected_=picked;
       flowMoving_=true;flowAt_=ReaderClock::now();
       return false;
+    }
+    if(gridActive()) {
+      const int cell=books::grid::hit(x,y);
+      if(cell<0)return false;
+      const size_t index=books::grid::pageStart(selected_)+static_cast<size_t>(cell);
+      if(index>=rowCount())return false;
+      const bool activate=index==selected_;
+      selected_=index;
+      notice_.clear();
+      return activate;
     }
     if(rowCount()==0||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
@@ -3716,7 +3848,7 @@ class CardShelf {
       drawRowLabel(HOME_ONLINE_X+10,217,25,"Online");
       if(homeSelection_==2)books::paintSelection(display_,12,217,HOME_ONLINE_X-22,25);
       if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,217,362-HOME_ONLINE_X,25);
-      const std::string view=std::string(books::tr("Library View"))+": "+books::tr(flowView_?"Cover Flow":"List View");
+      const std::string view=std::string(books::tr("Library View"))+": "+books::tr(viewLabel());
       // Keep the setting inside the rounded lower corners. Measure in the
       // actual UI face, not the larger reader font, before reducing size.
       constexpr int viewY=244,viewH=25,viewX=49,viewRight=326;
@@ -3732,7 +3864,7 @@ class CardShelf {
         // The reader's script fallback remains available for unsupported UI
         // glyphs. Split into separate compact labels rather than cut the value.
         const auto label=std::string(books::tr("Library View"))+":";
-        const auto value=std::string(books::tr(flowView_?"Cover Flow":"List View"));
+        const auto value=std::string(books::tr(viewLabel()));
         const int leftWidth=130,rightWidth=135;
         if(!drawSmallLine(viewX,viewY+19,label,leftWidth,150))
           drawRowLabel(viewX,viewY,viewH,fitWidth(label,leftWidth).c_str());
@@ -3825,7 +3957,8 @@ class CardShelf {
       } else drawCompactLabel(16,61,count);
       drawCompactLabel(212,61,"Search | Online",133);
       renderer_.drawLine(15,72,359,72,true);
-      if(flowActive()) {
+      if(gridActive()) paintGrid();
+      else if(flowActive()) {
         const size_t index=visible_[selected_];
         const bool guide=index==books_.size();
         const books::ShelfDetails guideDetails{books::userGuideLabel,books::userGuideTitle};
@@ -3981,32 +4114,108 @@ class CardShelf {
       drawListRow(y,clippedLabel(title,31),detail,index==pick);
     }
   }
+  FlowSlot& coverSlot(size_t index,size_t first,size_t end) {
+    for(auto& slot:flowSlots_)if(slot.used && slot.index==index)return slot;
+    auto* target=&flowSlots_[0];
+    for(auto& slot:flowSlots_) {
+      const auto it=std::find(visible_.begin()+first,visible_.begin()+end,slot.index);
+      if(!slot.used || it==visible_.begin()+end) {target=&slot;break;}
+    }
+    *target={};
+    target->index=index;target->used=true;
+    (void)books::loadFlowCover(books_[index].path,target->cover);
+    uint32_t ppm=0;
+    if(gridActive() && books::loadShelfProgress(books_[index].path,ppm))
+      target->progress=static_cast<int>(ppm/10000u);
+    return *target;
+  }
   const books::FlowCover& flowCoverAt(size_t row) {
     const size_t index=visible_[row];
     if(index==books_.size())return fallbackCover_;
-    for(auto& slot:flowSlots_)if(slot.used&&slot.index==index)
-      return slot.cover.valid()?slot.cover:fallbackCover_;
-    auto* target=&flowSlots_[0];
-    for(auto& slot:flowSlots_) {
-      if(!slot.used){target=&slot;break;}
-      const auto it=std::find(visible_.begin(),visible_.end(),slot.index);
-      if(it==visible_.end() || std::abs(float(it-visible_.begin())-flowPosition_)>=books::flow::reach) {
-        target=&slot;break;
+    const size_t first=static_cast<size_t>(std::max(0,int(std::floor(flowPosition_-books::flow::reach))));
+    const size_t end=std::min(visible_.size(),
+        static_cast<size_t>(std::ceil(flowPosition_+books::flow::reach)));
+    const auto& cover=coverSlot(index,first,end).cover;
+    return cover.valid()?cover:fallbackCover_;
+  }
+  FlowSlot& gridSlot(size_t index,size_t start) {
+    const size_t folders=folderRows();
+    const size_t first=start>folders?start-folders:0;
+    const size_t end=std::min(rowCount(),start+books::grid::pageSize)-folders;
+    return coverSlot(index,first,end);
+  }
+  void paintGrid() {
+    namespace grid=books::grid;
+    const size_t start=grid::pageStart(selected_),folders=folderRows();
+    for(int cell=0;cell<grid::pageSize && start+cell<rowCount();++cell) {
+      const size_t row=start+cell;
+      const auto [x,y]=grid::tile(cell);
+      const bool folder=row<folders;
+      const size_t index=folder?books_.size():visible_[row-folders];
+      const bool guide=!folder && index==books_.size();
+      std::string title;
+      int progress=-1;
+      if(folder) {
+        title=folders_[row];
+        renderer_.drawRect(x+29,y+27,52,32,true);
+        renderer_.drawRect(x+29,y+21,22,7,true);
+      } else if(guide)title=books::userGuideLabel;
+      else {
+        const auto& info=details(index);
+        title=info.title.empty()?books_[index].label:info.title;
+        progress=gridSlot(index,start).progress;
+      }
+      if(row==selected_)renderer_.drawRoundedRect(x,y,grid::tileWidth,grid::tileHeight-2,2,5,true);
+      else renderer_.drawRect(x,y,grid::tileWidth,grid::tileHeight-2,true);
+      if(progress>=0) {
+        renderer_.drawLine(x+13,y+72,x+96,y+72,true);
+        if(progress>0)renderer_.fillRect(x+13,y+71,progress*84/100,3,true);
+      }
+      constexpr int maxWidth=grid::tileWidth-12;
+      auto& ui=books::UiText::instance();
+      if(ui.available()&&ui.drawable(title)) {
+        constexpr int px=14;
+        const auto label=fitWidth(title,maxWidth,px);
+        uiDraw(x+(grid::tileWidth-ui.width(label,px))/2,y+76,label,px,x+grid::tileWidth-5);
+      } else {
+        const auto label=fitWidth(title,maxWidth);
+        const int left=x+(grid::tileWidth-renderer_.getTextWidth(1,label.c_str()))/2;
+        const auto clip=renderer_.getClipRect();
+        renderer_.setClipRect(x+4,y+74,grid::tileWidth-8,17);
+        const int textY=y+76+(14-renderer_.getLineHeight(1))/2;
+        renderer_.drawText(1,left,textY,label.c_str());
+        renderer_.setClipRect(clip[0],clip[1],clip[2],clip[3]);
       }
     }
-    target->index=index;target->used=true;target->cover={};
-    (void)books::loadFlowCover(books_[index].path,target->cover);
-    return target->cover.valid()?target->cover:fallbackCover_;
+  }
+  void drawGridCovers() {
+    const size_t start=books::grid::pageStart(selected_),folders=folderRows();
+    for(int cell=0;cell<books::grid::pageSize && start+cell<rowCount();++cell) {
+      const size_t row=start+cell;
+      if(row<folders)continue;
+      const size_t index=visible_[row-folders];
+      const auto& cover=index==books_.size()?fallbackCover_:gridSlot(index,start).cover;
+      books::grid::drawCover(flowFrame_.data(),cover.valid()?cover:fallbackCover_,books::grid::tile(cell));
+    }
   }
   void present() {
     paint();
-    if(!flowActive()) {
+    if(!flowActive() && !gridActive()) {
       flowMoving_=false;flowTouch_=false;flowPosition_=float(selected_);
       std::vector<uint32_t>().swap(flowFrame_);std::vector<uint8_t>().swap(flowAlpha_);
       for(auto& slot:flowSlots_)slot={};
       display_.displayBuffer();return;
     }
     if(!flowMoving_ && !flowTouch_)flowPosition_=float(selected_);
+    if(gridActive()) {
+      flowFrame_.resize(HalDisplay::PIXELS);
+      if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
+        drawGridCovers();
+        if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+      }
+      display_.displayBuffer();
+      return;
+    }
     const auto& theme=books::uiTheme();
     const uint32_t paper=theme.active()?theme.box:0xffffff;
     const uint32_t ink=theme.active()?theme.title:0;
@@ -4143,7 +4352,7 @@ int runCardApp(const std::string& bookDir) {
   shelf->present();
   books::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
-  bool readingUserGuide=false;
+  bool readingUserGuide=false,readingFromGrid=false;
   bool typeMenu=false;
   bool navigationMenu=false;
   bool linkMenu=false;
@@ -4580,10 +4789,8 @@ int runCardApp(const std::string& bookDir) {
         selection=books::lastOpenedIndex(books,recent);
         shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
         if(!shelf->open())return 6;
-        if(readingUserGuide) {
-          shelf->enterBrowser(true);
-          readingUserGuide=false;
-        }
+        if(readingUserGuide || readingFromGrid)shelf->enterBrowser(readingUserGuide);
+        readingUserGuide=false;readingFromGrid=false;
         shelf->present();
         continue;
       }
@@ -4731,7 +4938,7 @@ int runCardApp(const std::string& bookDir) {
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
     }
-    if(shelf->flowTouchEvent(event))continue;
+    if(shelf->flowTouchEvent(event) || shelf->gridTouchEvent(event))continue;
     if(action==books::LogicalAction::Previous && shelf->change(-1))shelf->present();
     if(action==books::LogicalAction::Next && shelf->change(1))shelf->present();
     bool activate=action==books::LogicalAction::Confirm;
@@ -4742,7 +4949,7 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
-    if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && shelf->animating())shelf->present();continue;}
+    if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && (shelf->animating() || shelf->gridActive()))shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
     if(shelf->searching()) {shelf->present();continue;}
@@ -4766,7 +4973,7 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->browseChosen()) {
-      shelf->enterBrowser(true);
+      shelf->enterBrowser(!shelf->hasBrowsed());
       shelf->present();
       continue;
     }
@@ -4774,7 +4981,7 @@ int runCardApp(const std::string& bookDir) {
     const bool userGuide=shelf->guideSelected();
     std::string chosen;
     if(userGuide) {
-      shelf->setNotice("Downloading userguide...");
+      shelf->setNotice("Checking userguide...");
       shelf->present();
       std::string error;
       chosen=books::openUserGuide(error);
@@ -4799,6 +5006,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
       shelf->present();
     } else {
+      readingFromGrid=shelf->gridActive();
       shelf.reset();
       reader=std::move(next);
       reader->present();
@@ -4861,6 +5069,80 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {
+    namespace grid=books::grid;
+    char state[]="/tmp/books-grid-test-XXXXXX";
+    if(!mkdtemp(state) || setenv("BOOKS_STATE_DIR",state,1)!=0)return 1;
+    const std::string setting=std::string(state)+"/library-view.conf";
+    struct Cleanup {
+      const std::string& setting;
+      const char* state;
+      ~Cleanup(){unlink(setting.c_str());rmdir(state);}
+    } cleanup{setting,state};
+    const auto [x,y]=grid::tile(1);
+    const std::vector<ShelfEntry> empty;
+    CardShelf emptyShelf(empty);
+    emptyShelf.toggleView();
+    emptyShelf.toggleView();
+    emptyShelf.enterBrowser(true);
+    if(!emptyShelf.open() || !emptyShelf.gridActive() || !emptyShelf.guideSelected() ||
+       emptyShelf.change(1) || emptyShelf.tap(x+1,y+1))return 2;
+
+    std::vector<ShelfEntry> books;
+    for(int i=0;i<4000;++i)books.push_back({"/Books/"+std::to_string(i)+".epub","Book"});
+    CardShelf shelf(books);
+    shelf.enterBrowser(true);
+    if(!shelf.open() || !shelf.gridActive() || shelf.tap(x+1,y+1) ||
+       shelf.bookPath()!=books[0].path || !shelf.tap(x+1,y+1))return 3;
+    for(int i=0;i<grid::pageSize;++i)if(!shelf.change(1))return 4;
+    if(shelf.bookPath()!=books[grid::pageSize].path)return 5;
+    using K=books::PhysicalKind;
+    if(!shelf.gridTouchEvent({K::TouchDown,0,x+1,y+1}) ||
+       !shelf.gridTouchEvent({K::TouchUp,0,x+1,y+40}) || shelf.bookPath()!=books[0].path)
+      return 10;
+    shelf.goHome();
+    shelf.toggleView();
+    shelf.enterBrowser();
+    if(shelf.gridActive() || shelf.bookPath()!=books[0].path)return 6;
+
+    const std::vector<ShelfEntry> nested{{"/Books/Z.epub","Root"},{"/Books/A/Book.epub","Nested"}};
+    CardShelf folders(nested,0,0,books::ShelfSortMode::Folders,"/Books");
+    folders.toggleView();
+    folders.toggleView();
+    folders.enterBrowser();
+    if(!folders.gridActive() || !folders.change(-1) || !folders.change(-1) ||
+       !folders.folderSelected())return 7;
+    folders.openSelectedFolder();
+    if(!folders.guideSelected() || !folders.folderUp() || !folders.folderSelected())return 8;
+
+    std::vector<uint32_t> frame(HalDisplay::PIXELS,0);
+    books::FlowCover art{2,1,{0xf800,0x001f}};
+    const auto first=grid::tile(0);
+    grid::drawCover(frame.data(),art,first);
+    if(frame[size_t(first.y+32)*HalDisplay::DISPLAY_WIDTH+first.x+22]!=0xffff0000u ||
+       frame[size_t(first.y+32)*HalDisplay::DISPLAY_WIDTH+first.x+87]!=0xff0000ffu ||
+       frame[size_t(first.y+5)*HalDisplay::DISPLAY_WIDTH+first.x+22]!=0)return 9;
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-color-jpeg")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open())return 1;
+    for(int pages=0;pages<16;++pages) {
+      std::vector<uint32_t> frame;
+      reader.render();
+      if(reader.composeReadingColor(frame)) {
+        const auto jpegYellow=[](uint32_t p) {
+          return ((p>>16)&255u)>(p&255u)+35u && ((p>>8)&255u)>(p&255u)+35u;
+        };
+        if(!std::any_of(frame.begin(),frame.end(),jpegYellow))return 2;
+        reader.render();  // the same JPEG is still shown on a raster-cache hit
+        return reader.composeReadingColor(frame) &&
+            std::any_of(frame.begin(),frame.end(),jpegYellow)?0:3;
+      }
+      if(!reader.move(1))break;
+    }
+    return 4;
+  }
   if(argc==2 && std::strcmp(argv[1],"--test-user-guide-shelf")==0) {
     const std::vector<ShelfEntry> empty;
     CardShelf emptyShelf(empty);

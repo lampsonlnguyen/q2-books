@@ -32,10 +32,10 @@ int main() {
   assert(!books::saveReadingPosition(book,{-1,0}));
   assert(!books::saveReadingPosition(book,{0,1000001}));
 
-  // UI font is independent; persisted oversized reader settings migrate to 12pt.
+  // UI font is independent; persisted oversized reader settings clamp to 14pt.
   books::Typography textSize{};
   assert(books::validTypography(textSize));
-  books::Typography oversizedSans{books::Typography::Family::Sans,14};
+  books::Typography oversizedSans{books::Typography::Family::Sans,15};
   books::Typography oversizedSerif{books::Typography::Family::Serif,18};
   assert(!books::validTypography(oversizedSans));
   assert(!books::validTypography(oversizedSerif));
@@ -46,7 +46,7 @@ int main() {
     assert(std::fputs("BOOKS-TYPE1 sans 18\\n",old)>0);
     assert(std::fclose(old)==0);
     assert(books::loadTypography(textSize));
-    assert(textSize.size==12);
+    assert(textSize.size==14);
     std::remove(oldSetting.c_str());
   }
   books::ReaderPreferences defaults;

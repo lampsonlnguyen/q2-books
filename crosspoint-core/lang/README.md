@@ -8,7 +8,7 @@ it uses shared labels from Q2 Pod's active language pack when the key and
 English text both match. Other labels appear in English.
 
 Books ships tables for `de`, `es`, `fr`, `it`, `pl`, `ru`, `uk` and `vi`,
-plus core menu labels for `ja`, `ko`, `th`, `zh_CN` and `zh_HK`.
+plus core menu labels for `hi`, `ja`, `ko`, `th`, `zh_CN` and `zh_HK`.
 Corrections to the translations are welcome.
 
 The tables use Q2 Pod's language-pack format, and the code is Q2 Pod's

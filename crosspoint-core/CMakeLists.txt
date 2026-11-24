@@ -152,6 +152,12 @@ target_link_libraries(books_xml_repair_tests PRIVATE EXPAT::EXPAT)
 target_compile_options(books_xml_repair_tests PRIVATE -UNDEBUG)
 add_test(NAME books_xml_element_repair COMMAND books_xml_repair_tests)
 
+add_executable(books_user_guide_tests tests/user_guide_test.cpp)
+target_include_directories(books_user_guide_tests PRIVATE reader)
+target_link_libraries(books_user_guide_tests PRIVATE crosspoint_zip crosspoint_epub_container crosspoint_txt curl)
+target_compile_options(books_user_guide_tests PRIVATE -UNDEBUG)
+add_test(NAME books_user_guide_download_and_cache COMMAND books_user_guide_tests)
+
 add_executable(books_smooth_text_tests tests/smooth_text_test.cpp)
 target_include_directories(books_smooth_text_tests PRIVATE platform/q2)
 target_compile_options(books_smooth_text_tests PRIVATE -UNDEBUG)
@@ -718,6 +724,8 @@ add_test(NAME crosspoint_original_chapter_parser_interface
 
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
+add_test(NAME books_reader_card_user_guide
+    COMMAND books-reader --test-user-guide-shelf)
 add_test(NAME books_reader_card_empty_library
     COMMAND books-reader --list-books "${CMAKE_CURRENT_BINARY_DIR}/empty-books")
 add_test(NAME books_reader_card_list_fixture

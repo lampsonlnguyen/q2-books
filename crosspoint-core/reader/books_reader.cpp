@@ -37,6 +37,7 @@
 #include "StatusBar.hpp"
 #include "MenuLayout.hpp"
 #include "UiText.hpp"
+#include "MenuLanguageFont.hpp"
 #include "SmoothGlyphs.hpp"
 #include "ReadingLayout.hpp"
 #include "Utf8Label.hpp"
@@ -56,6 +57,7 @@
 #include "OpdsCatalog.hpp"
 #include "OpdsCover.hpp"
 #include "KoreaderSync.hpp"
+#include "UserGuide.hpp"
 #include <ProgressMapper.h>
 #include <ProgressComparison.h>
 #include "ShelfLibrary.hpp"
@@ -98,6 +100,7 @@ constexpr size_t MAX_PAGES_PER_SPINE = 512;
 constexpr int SCREEN_H = 320, LEFT = 14, TOP = 40;
 constexpr int TEXT_WIDTH = 345, BOTTOM = 282;
 volatile std::sig_atomic_t interrupted = 0;
+books::MenuLanguageFont menuLanguageFont;
 std::string clippedLabel(const std::string&,size_t);
 void exitOnSignal(int) { interrupted = 1; }
 
@@ -777,6 +780,7 @@ class Reader {
     selectedFont_=std::move(next);
     upstreamFontId_=nextFontId;
     scriptFonts_.load(renderer_,settings.size,{1,nextFontId});
+    menuLanguageFont.attach(renderer_,kUiFontSlot);
     typography_=settings;
     clearRasterCache();
     return true;
@@ -1896,9 +1900,10 @@ class Reader {
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
       int32_t advance=0;int topBearing=0;
-      if(!renderer_.getCodepointMetrics(kUiFontSlot,cp,EpdFontFamily::REGULAR,advance,topBearing))continue;
+      const int slot=menuLanguageFont.glyphSlot(kUiFontSlot,cp);
+      if(!renderer_.getCodepointMetrics(slot,cp,EpdFontFamily::REGULAR,advance,topBearing))continue;
       if(x+fp4::toPixel(advance*scale256/256)>maxX)break;
-      x+=renderer_.drawScaledCodepoint(kUiFontSlot,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
+      x+=renderer_.drawScaledCodepoint(slot,cp,EpdFontFamily::REGULAR,x,baseline,scale256);
     }
   }
   // The width drawMenuText gives |str| at |scale| (pixel font or glyphs).
@@ -1917,7 +1922,8 @@ class Reader {
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
       int32_t advance=0;int topBearing=0;
-      if(renderer_.getCodepointMetrics(kUiFontSlot,cp,EpdFontFamily::REGULAR,advance,topBearing))
+      if(renderer_.getCodepointMetrics(menuLanguageFont.glyphSlot(kUiFontSlot,cp),cp,
+                                       EpdFontFamily::REGULAR,advance,topBearing))
         width+=fp4::toPixel(advance*scale256/256);
     }
     return width;
@@ -2820,9 +2826,13 @@ class CardShelf {
     detailsChecked_.resize(books_.size(),false);
     refreshVisible();
     if(!books_.empty()) {
-      selected_=std::min(selection,books_.size()-1);
+      selected_=std::min(selection,books_.size()-1)+1;
       current_=std::min(current,books_.size()-1);
     }
+  }
+  void loadShelfFonts() {
+    scriptFonts_.load(renderer_,12,{1});
+    menuLanguageFont.attach(renderer_,1);
   }
   bool open() {
     display_.begin();
@@ -2832,7 +2842,7 @@ class CardShelf {
     books::UiText::instance().setThemeFace(books::uiTextFace());
     renderer_.insertFont(1,EpdFontFamily(12,&font_));
     // All scripts in EPUB filenames use the same SD font fallback machinery.
-    scriptFonts_.load(renderer_,12,{1});
+    loadShelfFonts();
     if(!decompressor_.init())return false;
     fontCache_.setFontDecompressor(&decompressor_);
     renderer_.setFontCacheManager(&fontCache_);
@@ -2876,6 +2886,7 @@ class CardShelf {
     }
     if(!activate)return;
     const auto& pack=books::fontPacks[fontSelection_];
+    const bool isLanguageFont=books::menuLanguageFontPack(books::readSystemLanguage())==&pack;
     if(books::fontPackHasFiles(pack)) {
       if(!fontRemoveArmed_) {
         fontRemoveArmed_=true;
@@ -2884,8 +2895,10 @@ class CardShelf {
       fontRemoveArmed_=false;
       // Release open script fonts before deleting their SD files.
       scriptFonts_.clear(renderer_);
+      if(isLanguageFont)menuLanguageFont.detach(renderer_);
       const bool removed=books::removeFontPack(pack);
-      scriptFonts_.load(renderer_,12,{1});
+      if(isLanguageFont)books::setUiEnglishFallback(!menuLanguageFont.load(pack));
+      loadShelfFonts();
       notice_=removed?"Font removed":"Font removal failed";
       present();return;
     }
@@ -2894,9 +2907,10 @@ class CardShelf {
     const bool installed=books::downloadFontPack(pack,error);
     if(interrupted)return;
     if(installed) {
+      if(isLanguageFont)books::setUiEnglishFallback(!menuLanguageFont.load(pack));
       // New script fallbacks are immediately usable by the shelf; the next
       // reader opens its own fonts from disk, including existing saved faces.
-      scriptFonts_.load(renderer_,12,{1});
+      loadShelfFonts();
       notice_="Font installed";
     } else {
       notice_="Font download failed";
@@ -2963,7 +2977,7 @@ class CardShelf {
     return true;
   }
   bool empty() const {return books_.empty();}
-  bool hasMatches() const {return rowCount()>0;}
+  bool guideSelected() const {return browsing_ && selected()==books_.size();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && (homeSelection_==1 || books_.empty());}
   bool sortChosen() const {return !browsing_ && homeSelection_==2;}
@@ -3245,7 +3259,7 @@ class CardShelf {
     const size_t selected=start+static_cast<size_t>((y-TOP_Y)/ROW_H);
     if(selected<onlineEntries_.size())onlineSelection_=selected;
   }
-  void enterBrowser() {
+  void enterBrowser(bool focusGuide=false) {
     browsing_=true;searchEditing_=false;notice_.clear();
     if(folderMode() && current_<books_.size()) {  // open the current book's folder, on it
       std::string where;
@@ -3254,6 +3268,7 @@ class CardShelf {
       const auto it=std::find(visible_.begin(),visible_.end(),current_);
       selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
     }
+    if(focusGuide)selected_=folderRows();
   }
   void goHome() {
     browsing_=false;onlineMode_=false;searchEditing_=false;homeSelection_=0;
@@ -3295,13 +3310,15 @@ class CardShelf {
   void refreshVisible() {
     flowMoving_=false;flowTouch_=false;
     visible_.clear();
+    visible_.push_back(books_.size());  // Virtual guide, even when the shelf is empty.
     folders_.clear();
     if(folderMode()) {
       auto view=books::shelfFolderView(books_,root_,folder_);
       if(view.folders.empty() && view.books.empty() && !folder_.empty()) {
         folder_.clear();view=books::shelfFolderView(books_,root_,folder_);
       }
-      folders_=std::move(view.folders);visible_=std::move(view.books);
+      folders_=std::move(view.folders);
+      visible_.insert(visible_.end(),view.books.begin(),view.books.end());
       if(selected_>=rowCount())selected_=0;
       return;
     }
@@ -3312,7 +3329,7 @@ class CardShelf {
           searchQuery_,books_[i].label,info.title,info.author))
         visible_.push_back(i);
     }
-    if(visible_.empty() || selected_>=visible_.size())selected_=0;
+    if(selected_>=visible_.size())selected_=0;
   }
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
@@ -3474,7 +3491,8 @@ class CardShelf {
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
-      x+=renderer_.drawScaledCodepoint(1,cp,EpdFontFamily::REGULAR,x,baseline,scale);
+      x+=renderer_.drawScaledCodepoint(menuLanguageFont.glyphSlot(1,cp),cp,
+                                        EpdFontFamily::REGULAR,x,baseline,scale);
     }
   }
   // A list row's second line (an author), in font 1's own glyphs scaled down:
@@ -3593,10 +3611,15 @@ class CardShelf {
         books::paintBar(display_,0,0,375,26);
         width=-1;
       }
-      else for(const char* c=books::tr(title);*c;++c) {
-        int32_t advance=0;int top=0;
-        if(renderer_.getCodepointMetrics(1,static_cast<unsigned char>(*c),EpdFontFamily::REGULAR,advance,top))
-          width+=fp4::toPixel(advance*170/256);
+      else {
+        const auto* p=reinterpret_cast<const unsigned char*>(books::tr(title));
+        while(*p) {
+          const uint32_t cp=utf8NextCodepoint(&p);
+          int32_t advance=0;int top=0;
+          if(renderer_.getCodepointMetrics(menuLanguageFont.glyphSlot(1,cp),cp,
+                                           EpdFontFamily::REGULAR,advance,top))
+            width+=fp4::toPixel(advance*170/256);
+        }
       }
       if(width>=0) {
         drawCompactLabel((375-width)/2,19,title,170);
@@ -3732,7 +3755,7 @@ class CardShelf {
       char count[48];
       if(fieldEditing_)std::snprintf(count,sizeof(count),"%s",books::tr("Done: keep"));
       else if(onlineSearching_)std::snprintf(count,sizeof(count),"Done: search");
-      else std::snprintf(count,sizeof(count),books::tr("%zu / %zu books"),visible_.size(),books_.size());
+      else std::snprintf(count,sizeof(count),books::tr("%zu / %zu books"),visible_.size()-1,books_.size());
       drawCompactLabel(232,56,count,136);
       renderer_.drawRect(12,62,351,28,true);
       const int pending=keypad_.pendingKey();
@@ -3794,7 +3817,7 @@ class CardShelf {
       }
     } else {
       char count[64];
-      std::snprintf(count,sizeof(count),books::tr("Books: %zu/%zu"),visible_.size(),books_.size());
+      std::snprintf(count,sizeof(count),books::tr("Books: %zu/%zu"),visible_.size()-1,books_.size());
       if(folderMode()) {  // where you are instead of the count
         std::string crumb=books::shelfBreadcrumb(folder_,24);
         if(crumb.compare(0,5,"Books")==0)crumb=books::tr("Books")+crumb.substr(5);
@@ -3804,7 +3827,9 @@ class CardShelf {
       renderer_.drawLine(15,72,359,72,true);
       if(flowActive()) {
         const size_t index=visible_[selected_];
-        const auto& info=details(index);
+        const bool guide=index==books_.size();
+        const books::ShelfDetails guideDetails{books::userGuideLabel,books::userGuideTitle};
+        const auto& info=guide?guideDetails:details(index);
         const auto title=info.title.empty()?books_[index].label:info.title;
         const auto caption=[this](const std::string& value,int y,int px,int width) {
           if(value.empty())return;
@@ -3822,16 +3847,12 @@ class CardShelf {
         if(flowProgressIndex_!=index) {
           flowProgressIndex_=index;
           uint32_t ppm=0;
-          flowProgressPercent_=books::loadShelfProgress(books_[index].path,ppm)?int(ppm/10000u):-1;
+          flowProgressPercent_=!guide && books::loadShelfProgress(books_[index].path,ppm)?int(ppm/10000u):-1;
         }
         if(flowProgressPercent_>=0) {
           const auto percent=std::to_string(flowProgressPercent_)+"%";
           caption(percent,287,14,135);
         }
-      } else if(rowCount()==0) {
-        renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));
-        renderer_.drawText(1,16,144,
-            books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
       } else {
         const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
         const size_t first=folderRows();
@@ -3844,6 +3865,10 @@ class CardShelf {
             continue;
           }
           const size_t index=visible_[filtered-first];
+          if(index==books_.size()) {
+            drawListRow(y,books::userGuideLabel,books::userGuideTitle,active);
+            continue;
+          }
           const auto& info=details(index);
           const std::string label=clippedLabel(
               info.title.empty()?books_[index].label:info.title,26);
@@ -3958,6 +3983,7 @@ class CardShelf {
   }
   const books::FlowCover& flowCoverAt(size_t row) {
     const size_t index=visible_[row];
+    if(index==books_.size())return fallbackCover_;
     for(auto& slot:flowSlots_)if(slot.used&&slot.index==index)
       return slot.cover.valid()?slot.cover:fallbackCover_;
     auto* target=&flowSlots_[0];
@@ -4080,6 +4106,9 @@ int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
   books::sweepFontPackStages();
+  const auto* languagePack=books::menuLanguageFontPack(books::readSystemLanguage());
+  const bool needsLanguageFont=languagePack && !menuLanguageFont.load(*languagePack);
+  books::setUiEnglishFallback(needsLanguageFont);
   // Downloads cut off by a kill leave an unlocked .part each: remove them.
   if(const int stale=books::sweepStaleOpdsDownloads(bookDir))
     std::fprintf(stderr,"Books: removed %d interrupted download(s)\n",stale);
@@ -4097,9 +4126,24 @@ int runCardApp(const std::string& bookDir) {
   std::unique_ptr<CardShelf> shelf(new CardShelf(books,selection,selection,sortMode,bookDir));
   if(!shelf->open())return 4;
   if(interrupted)return 0;
+  if(needsLanguageFont) {
+    shelf->setNotice("Downloading font...");
+    shelf->present();
+    std::string error;
+    if(books::downloadFontPack(*languagePack,error) && menuLanguageFont.load(*languagePack)) {
+      books::setUiEnglishFallback(false);
+      shelf->loadShelfFonts();
+    } else {
+      std::fprintf(stderr,"Books language font %s: %s\n",languagePack->slug,
+                   error.empty()?"Font unavailable":error.c_str());
+    }
+    if(interrupted)return 0;
+    shelf->setNotice({});
+  }
   shelf->present();
   books::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
+  bool readingUserGuide=false;
   bool typeMenu=false;
   bool navigationMenu=false;
   bool linkMenu=false;
@@ -4536,6 +4580,10 @@ int runCardApp(const std::string& bookDir) {
         selection=books::lastOpenedIndex(books,recent);
         shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
         if(!shelf->open())return 6;
+        if(readingUserGuide) {
+          shelf->enterBrowser(true);
+          readingUserGuide=false;
+        }
         shelf->present();
         continue;
       }
@@ -4718,32 +4766,49 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->browseChosen()) {
-      shelf->enterBrowser();
+      shelf->enterBrowser(true);
       shelf->present();
       continue;
     }
-    if(!shelf->hasMatches())continue;
     if(shelf->folderSelected()) {shelf->openSelectedFolder();shelf->present();continue;}
-    selection=shelf->selected();
-    const std::string chosen=shelf->bookPath();
-    shelf->setNotice("Opening EPUB...");
-    shelf->present();
+    const bool userGuide=shelf->guideSelected();
+    std::string chosen;
+    if(userGuide) {
+      shelf->setNotice("Downloading userguide...");
+      shelf->present();
+      std::string error;
+      chosen=books::openUserGuide(error);
+      if(interrupted)break;
+      if(chosen.empty()) {
+        shelf->setNotice(error);
+        shelf->present();
+        continue;
+      }
+      if(!error.empty())
+        std::fprintf(stderr,"Books: %s, opening cached userguide\n",error.c_str());
+    } else {
+      selection=shelf->selected();
+      chosen=shelf->bookPath();
+      shelf->setNotice("Opening EPUB...");
+      shelf->present();
+    }
     auto next=std::make_unique<Reader>(chosen);
     const bool opened=next->open(true);
     if(interrupted)break;
     if(!opened) {
-      shelf->setNotice("Cannot read this EPUB");
+      shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
       shelf->present();
     } else {
-      // A successful open updates Continue Reading; rejected/corrupt EPUBs
-      // never become the current title. Atomic history costs one SD write
-      // per opened book, never one write per page turn.
       shelf.reset();
       reader=std::move(next);
       reader->present();
-      (void)books::saveShelfDetails(chosen,reader->shelfDetails());
-      if(books::recordRecentBook(chosen))
-        recent=books::loadRecentBooks();
+      readingUserGuide=userGuide;
+      if(!userGuide) {
+        // Continue Reading tracks the real books on the card.
+        (void)books::saveShelfDetails(chosen,reader->shelfDetails());
+        if(books::recordRecentBook(chosen))
+          recent=books::loadRecentBooks();
+      }
     }
   }
   return 0;
@@ -4778,7 +4843,7 @@ int main(int argc,char** argv) {
     books::UiText::instance().setThemeFace(books::uiTextFace());
     if(books::UiText::instance().has(cp))return true;
     static const EpdFont menuFont(&notosans_12_regular);
-    return menuFont.getGlyph(cp)!=nullptr;
+    return menuFont.hasCodepoint(cp) || menuLanguageFont.has(cp);
   });
   books::httpAbortFlag=&interrupted;  // SIGTERM stops a running transfer
   bookslayout::layoutAbortFlag=&interrupted;  // and an overlong word's layout
@@ -4796,7 +4861,30 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==2 && std::strcmp(argv[1],"--test-user-guide-shelf")==0) {
+    const std::vector<ShelfEntry> empty;
+    CardShelf emptyShelf(empty);
+    emptyShelf.enterBrowser(true);
+    if(!emptyShelf.guideSelected() || emptyShelf.change(1))return 1;
+
+    const std::vector<ShelfEntry> books{{"/Books/Novel.epub","Novel"}};
+    CardShelf shelf(books);
+    if(!shelf.open() || shelf.guideSelected())return 2;
+    shelf.enterBrowser(true);
+    if(!shelf.guideSelected() || !shelf.change(1) || shelf.guideSelected() ||
+       shelf.bookPath()!=books.front().path)return 3;
+    if(!shelf.change(-1) || !shelf.guideSelected())return 4;
+    return 0;
+  }
   if(argc==2 && std::strcmp(argv[1],"--test-font-pack-sha")==0) {
+    const auto* chinese=books::menuLanguageFontPack("zh_CN");
+    const auto* hindi=books::menuLanguageFontPack("hi");
+    if(!chinese || std::strcmp(chinese->slug,"cjk")!=0 ||
+       chinese!=books::menuLanguageFontPack("zh_HK") ||
+       !hindi || std::strcmp(hindi->slug,"devanagari")!=0 ||
+       hindi!=books::menuLanguageFontPack("hi_IN") ||
+       books::menuLanguageFontPack("en") || books::menuLanguageFontPack("vi") ||
+       books::menuLanguageFontPack("ru"))return 7;
     books::FontPackSha256 sha;
     if(sha.hexDigest()!="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")return 1;
     sha.update("a",1);sha.update("bc",2);
@@ -4806,10 +4894,10 @@ int main(int argc,char** argv) {
     for(int i=0;i<1000;++i)longSha.update(block.data(),block.size());
     if(longSha.hexDigest()!="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")return 3;
     const std::string url="https://github.com/lampsonlnguyen/q2-books-fonts/releases/download/fonts-v1.0.0/serif.zip";
-    if(books::githubFontRedirect(url,"https://release-assets.githubusercontent.com/asset?sig=abc").empty() ||
-       !books::githubFontRedirect(url,"https://example.org/asset").empty() ||
-       !books::githubFontRedirect(url,"http://release-assets.githubusercontent.com/asset").empty() ||
-       !books::githubFontRedirect("https://github.com/other/repo", "https://release-assets.githubusercontent.com/asset").empty())
+    if(books::githubReleaseAssetRedirect(url,"https://release-assets.githubusercontent.com/asset?sig=abc").empty() ||
+       !books::githubReleaseAssetRedirect(url,"https://example.org/asset").empty() ||
+       !books::githubReleaseAssetRedirect(url,"http://release-assets.githubusercontent.com/asset").empty() ||
+       !books::githubReleaseAssetRedirect("https://github.com/other/repo", "https://release-assets.githubusercontent.com/asset").empty())
       return 4;
     return 0;
   }

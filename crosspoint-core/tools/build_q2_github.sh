@@ -545,6 +545,43 @@ find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-book
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
 find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
 find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
+# Full fonts were required for regression tests above, but optional packs are
+# distributed by q2-books-fonts. Never prune the user's SD card: this is only
+# the temporary CI staging tree.
+python3 - "$card/.books/fonts" <<'PY'
+from pathlib import Path
+import re, sys
+root=Path(sys.argv[1])
+for p in root.glob("*.cpfont"):
+    if not re.fullmatch(r"sans-(8|9|10|11|12|13|14)\.cpfont", p.name):
+        p.unlink()
+for p in (root/"ttf").glob("*.ttf"):
+    if not re.fullmatch(r"sans-(regular|bold|italic|bolditalic)\.ttf", p.name):
+        p.unlink()
+manifest=root/"ttf"/"books-ttf.txt"
+if manifest.exists():
+    manifest.write_text("".join(line+"\n" for line in manifest.read_text().splitlines()
+        if len(line.split())>=2 and line.split()[1].startswith("sans-")))
+# The full-collection checksums must not advertise removed files.
+for p in root.glob("*.txt"):
+    if p.name!="CrossPoint-font-licenses.txt":
+        p.unlink()
+PY
+# Verify the clean-install configuration on MIPS, independent of the full
+# font matrix. Render the Vietnamese fixture at every retained size.
+for point in 8 9 10 11 12 13 14; do
+  echo "BOOKS-TYPE1 sans $point" > "$card/.books/typography.conf"
+  BOOKS_STATE_DIR="$card/.books" timeout 90s qemu-mipsel -L "$root" "$elf" \
+    --render "$work/reader/vietnamese-prose.epub" "$work/slim-$point.pgm" \
+    | tee "$work/slim-$point.log"
+  grep -q "Books typeface: Noto Sans ${point}pt" "$work/slim-$point.log"
+  grep -q "Books multilingual fonts: 0/14 scripts loaded" "$work/slim-$point.log"
+  cmp "$work/sans-$point.pgm" "$work/slim-$point.pgm"
+done
+# Rendering can create state; remove it again before packaging.
+find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
+  ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
 # The test books in $card/Books were only for the checks above: the release
 # carries the app alone, never books in the user's Books folder.
@@ -561,6 +598,10 @@ bad=[n for n in names_all if not re.fullmatch(
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
 names=set(n for n in names_all)
-assert ".books/fonts/ttf/sans-regular.ttf" in names and ".books/fonts/ttf/serif-regular.ttf" in names, "smooth text TrueType files missing from the ZIP"
+assert ".books/fonts/ttf/sans-regular.ttf" in names, "Noto Sans TrueType missing"
+assert {n for n in names if n.endswith(".cpfont")} == {
+  f".books/fonts/sans-{size}.cpfont" for size in range(8,15)}, "unexpected or missing bitmap fonts"
+assert all(re.fullmatch(r"\.books/fonts/ttf/sans-(regular|bold|italic|bolditalic)\.ttf", n)
+  for n in names if n.endswith(".ttf")), "optional TrueType bundled"
 assert ".books/lang/vi.tsv" in names and ".books/lang/ja.tsv" in names, "menu translations missing from the ZIP"
 print("Release ZIP contents: PASS")'

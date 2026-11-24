@@ -98,7 +98,7 @@ jobs:
           test -n "$expected" && test "$expected" = "$actual"
           unzip -t "$zip"
           unzip -Z1 "$zip" > dist/archive-contents.txt
-          for path in .books/books-engine .books/q2-books .books/q2app .books/fonts/ttf/sans-regular.ttf .books/fonts/ttf/serif-regular.ttf; do
+          for path in .books/books-engine .books/q2-books .books/q2app .books/fonts/ttf/sans-regular.ttf; do
             grep -Fxq "$path" dist/archive-contents.txt || { echo "::error::Missing $path"; exit 1; }
           done
           unzip -p "$zip" .books/q2app | grep -Fxq 'row=library'

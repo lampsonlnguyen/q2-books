@@ -45,3 +45,7 @@ Downloading font...	Downloading font...	글꼴 다운로드 중...
 Font installed	Font installed	글꼴 설치됨
 Already installed	Already installed	이미 설치됨
 Font download failed	Font download failed	다운로드 실패
+Remove font	Remove font	글꼴 삭제
+Confirm remove font	Confirm remove font	삭제 확인
+Font removed	Font removed	글꼴 삭제됨
+Font removal failed	Font removal failed	삭제 실패

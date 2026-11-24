@@ -212,3 +212,7 @@ Downloading font...	Downloading font...	Đang tải phông...
 Font installed	Font installed	Đã cài phông
 Already installed	Already installed	Đã được cài
 Font download failed	Font download failed	Tải phông thất bại
+Remove font	Remove font	Xóa phông chữ
+Confirm remove font	Confirm remove font	Xác nhận xóa phông
+Font removed	Font removed	Đã xóa phông
+Font removal failed	Font removal failed	Xóa phông thất bại

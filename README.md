@@ -14,6 +14,194 @@ yet been validated on a physical Q2**: see M1 below.
 User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 [release notes](docs/release-notes/v1.1.1.md).
 
+## Release roadmap (v1.3.0–v1.18.0)
+
+One primary feature per minor release. Stabilize v1.3.0 before starting v1.4.0; complete each release's milestones and release gates before moving on. Patch releases (for example v1.4.1 and v1.4.2) are reserved for fixes, compatibility and performance regressions. Versions below are planned targets, not published releases.
+
+| Release | Primary feature | Status |
+| --- | --- | --- |
+| v1.3.0 | Cover Flow | In development; validation pending |
+| v1.4.0 | Grid View | Planned |
+| v1.5.0 | Alphabetical navigation | Planned |
+| v1.6.0 | Book information panel | Planned |
+| v1.7.0 | Collections and favorites | Planned |
+| v1.8.0 | Reading status filters | Planned |
+| v1.9.0 | Recently read carousel | Planned |
+| v1.10.0 | Series grouping | Planned |
+| v1.11.0 | Cover Flow customization | Planned |
+| v1.12.0 | In-book search | Planned |
+| v1.13.0 | Embedded EPUB fonts | Planned |
+| v1.14.0 | Markdown support | Planned |
+| v1.15.0 | HTML support | Planned |
+| v1.16.0 | Language-aware hyphenation | Planned |
+| v1.17.0 | Reading statistics | Planned |
+| v1.18.0 | Reading streaks and goals | Planned |
+
+### v1.3.0 — Cover Flow
+
+Development branch: [feature/cover-flow](https://github.com/lampsonlnguyen/q2-books/tree/feature/cover-flow). Checked items indicate code committed, **not** verified behavior on hardware.
+
+- [x] 1.3-M1 — Color thumbnail infrastructure: bounded RGB565 thumbnails (up to 144 × 200), preserve original proportions, persistent SD cache, file-identity invalidation, and legacy monochrome thumbnail compatibility.
+- [x] 1.3-M2 — Extract PNG/JPEG artwork from unopened EPUBs during idle indexing; placeholder covers for missing or unsupported images.
+- [x] 1.3-M3 — Perspective renderer, shared horizon, depth, shading, fading reflections and independent ARGB presentation path; keep CrossPoint reading canvas unchanged.
+- [x] 1.3-M4 — Integrate library browsing, wheel-driven transitions, bounded neighboring-cover cache (up to eight slots), title and author, default Cover Flow and persistent List View alternative.
+- [x] 1.3-M5 — Implement touch hit testing, swipe navigation, saved whole-book percentage, theme colors and initial Vietnamese labels; release shelf buffers when leaving the graphical view.
+- [ ] 1.3-M6 — Complete remaining language packs; refine typography, alignment, reflections and touch interactions against firmware and CrossInk; preserve folder browsing, search, sort and OPDS behavior. Verify rapid wheel input and sensitivity.
+- [ ] 1.3-M7 — Run host regression suite and Q2 MIPS build; validate simulator screenshots, cache migration, missing/corrupt covers, large libraries, idle CPU, RAM, battery and physical-device behavior. Fix regressions before tagging.
+
+**Acceptance:** Users can switch views and restart without losing preferences or reading state; artwork stays proportional and navigation feels native; no continuous redraw at rest. Existing books, reader and network features remain functional. No release until validation gates pass.
+
+### v1.4.0 — Grid View
+
+- [ ] 1.4-M1 — Design responsive multi-column cover grid within rounded display bounds; reuse existing color thumbnail cache and placeholders.
+- [ ] 1.4-M2 — Implement bounded visible-tile rendering and incremental loading, proportional artwork, selection indicator, title truncation and progress where available.
+- [ ] 1.4-M3 — Support wheel traversal, touch selection/open, paging/scrolling and back behavior; retain sort, search and folder navigation.
+- [ ] 1.4-M4 — Add Grid View as third persistent library view alongside Cover Flow and List View; restore selection across view changes.
+- [ ] 1.4-M5 — Translate labels, compare light/dark themes, test empty/large libraries and measure RAM, scrolling and SD activity.
+
+**Acceptance:** All three views share the same library and selection model, with no duplicate indexing or unbounded cover loads.
+
+### v1.5.0 — Alphabetical navigation
+
+- [ ] 1.5-M1 — Define alphabetical grouping and Unicode-aware collation consistent with library sorting; handle accents, numbers, symbols and non-Latin scripts.
+- [ ] 1.5-M2 — Add Q2-style quick-jump selector and wheel/touch controls; skip empty groups.
+- [ ] 1.5-M3 — Integrate with Cover Flow, Grid and List, honoring active search and filters; return focus to the selected book.
+- [ ] 1.5-M4 — Test multilingual and 4000-book libraries, rapid wheel input and boundary behavior; keep index generation off the frame-critical path.
+
+**Acceptance:** Users can jump to populated groups quickly without corrupting search, sort or selection.
+
+### v1.6.0 — Book information panel
+
+- [ ] 1.6-M1 — Extend bounded metadata extraction/cache for description, author, title, publisher, language and available identifiers.
+- [ ] 1.6-M2 — Build themed detail panel with cover, metadata, reading progress and open/resume action; wrap multilingual text and scroll long descriptions.
+- [ ] 1.6-M3 — Add discoverable wheel/button and touch access from all library views without interfering with opening books; distinguish local details from online catalog actions.
+- [ ] 1.6-M4 — Handle absent/malformed metadata, safe plain-text description rendering, cache invalidation and localization; regression-test EPUB2/EPUB3.
+
+**Acceptance:** View book details without opening or paginating the book; missing metadata does not block reading.
+
+### v1.7.0 — Collections and favorites
+
+- [ ] 1.7-M1 — Design versioned, bounded, atomic SD-backed storage for collection names, membership and favorites; use stable book identity.
+- [ ] 1.7-M2 — Implement create, rename and delete collection, add/remove membership and favorite toggle using accessible wheel/touch menus.
+- [ ] 1.7-M3 — Integrate collection and favorite browsing with all views, sort and search; permit books in multiple collections.
+- [ ] 1.7-M4 — Handle renamed, removed and re-added files, duplicate names, empty collections and interrupted/read-only writes.
+
+**Acceptance:** Collections and favorites survive restarts; deleting a collection never deletes ebook files or reading state.
+
+### v1.8.0 — Reading status filters
+
+- [ ] 1.8-M1 — Define unread, reading and completed states using existing reading history and whole-book progress; handle legacy positions without a percentage.
+- [ ] 1.8-M2 — Provide All, Unread, Reading and Completed filters and counts; allow explicit mark read/unread without discarding resume position.
+- [ ] 1.8-M3 — Combine filters with collections, search, sort and library views; persist selected filter and maintain valid selection.
+- [ ] 1.8-M4 — Test completion boundaries, old state migration, rereading and missing files.
+
+**Acceptance:** Status is consistent across views and restarts and does not falsely mark unknown-progress books completed.
+
+### v1.9.0 — Recently read carousel
+
+- [ ] 1.9-M1 — Reuse existing recent-book history and color thumbnail cache; define bounded recency order and missing-file handling.
+- [ ] 1.9-M2 — Add compact home-screen carousel with current book, title, author and progress, keeping Browse and other home actions accessible.
+- [ ] 1.9-M3 — Support wheel/touch selection and one-action resume at the saved location; refresh recency only after successful opens.
+- [ ] 1.9-M4 — Validate no-history, single-book and full-history layouts across themes and languages; test startup latency.
+
+**Acceptance:** Resume a recent book directly from Home without opening the full library or rebuilding artwork.
+
+### v1.10.0 — Series grouping
+
+- [ ] 1.10-M1 — Parse EPUB series metadata, including supported Calibre and EPUB3 collection conventions and numeric volume order.
+- [ ] 1.10-M2 — Cache normalized series identity, display name and volume; handle missing, fractional and duplicate volume numbers.
+- [ ] 1.10-M3 — Add series browser and volume ordering, compatible with collection/status filters, search and existing views.
+- [ ] 1.10-M4 — Test multilingual names, standalone books, mixed metadata conventions, sorting and cache invalidation.
+
+**Acceptance:** Series group reliably, volumes appear in meaningful numeric order and standalone titles remain accessible.
+
+### v1.11.0 — Cover Flow customization
+
+- [ ] 1.11-M1 — Define bounded settings for cover size, spacing, reflections and animation speed; use firmware-style defaults.
+- [ ] 1.11-M2 — Add themed wheel/touch settings controls and immediate visual preview; support reset to defaults.
+- [ ] 1.11-M3 — Persist settings atomically and clamp invalid values; adapt geometry, hit testing and cache reach consistently.
+- [ ] 1.11-M4 — Test extreme settings, rounded-screen clipping, light/dark themes, rendering cost and idle behavior.
+
+**Acceptance:** Customization stays within safe geometry and memory limits and does not alter reader typography or system theme.
+
+### v1.12.0 — In-book search
+
+- [ ] 1.12-M1 — Design chapter-streaming text search using the existing EPUB/TXT engine, normalized Unicode and bounded buffers.
+- [ ] 1.12-M2 — Add query entry, next/previous match, snippets and chapter-aware results; make long searches cancellable.
+- [ ] 1.12-M3 — Jump to the matching text using stable chapter/text anchors, highlight matches, and provide return to the original reading position.
+- [ ] 1.12-M4 — Test Vietnamese accents, CJK, RTL, chapter boundaries, very large books, corrupt content and different font sizes.
+
+**Acceptance:** Search across the entire book without loading the entire text into RAM; match navigation preserves a recoverable reading position.
+
+### v1.13.0 — Embedded EPUB fonts
+
+- [ ] 1.13-M1 — Inspect CrossPoint CSS/font pipeline and EPUB manifest handling; resolve supported @font-face references safely inside archives.
+- [ ] 1.13-M2 — Validate supported TTF/OTF font data and license/embedding restrictions; reject unsupported, oversized, malformed or unsafe resources with fallback.
+- [ ] 1.13-M3 — Implement bounded on-demand font loading, glyph caching and family/style selection; respect publisher CSS and user override.
+- [ ] 1.13-M4 — Preserve script fallback, shaping, pagination and text anchors; test mixed-script books, missing glyphs and memory under font churn.
+
+**Acceptance:** Supported embedded fonts render faithfully with safe fallback and no regressions in reading resume or resource usage.
+
+### v1.14.0 — Markdown support
+
+- [ ] 1.14-M1 — Recognize .md files in the local library and define safe conversion to the existing XHTML/layout pipeline (no separate reader).
+- [ ] 1.14-M2 — Support headings, paragraphs, lists, emphasis, links, code blocks, blockquotes and supported local images; document unsupported extensions.
+- [ ] 1.14-M3 — Integrate chapter navigation, reading position, bookmarks, search, typography and library metadata.
+- [ ] 1.14-M4 — Bound conversion resources, handle UTF-8 and malformed input, restrict local paths and disable active/remote content by default; test long and multilingual files.
+
+**Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
+
+### v1.15.0 — HTML support
+
+- [ ] 1.15-M1 — Recognize .html and .htm files; adapt safe HTML parsing/repair to the existing reader pipeline.
+- [ ] 1.15-M2 — Support common static HTML text, headings, lists, links, supported CSS and local images; no browser engine or JavaScript execution.
+- [ ] 1.15-M3 — Integrate anchors, navigation, reading state, bookmarks, search and library metadata; keep local resource access confined to allowed paths.
+- [ ] 1.15-M4 — Test malformed HTML, encodings, multilingual pages, missing resources, remote URLs and large documents; document fidelity limits.
+
+**Acceptance:** Read local static HTML offline without scripts, unrestricted file access or automatic remote requests.
+
+### v1.16.0 — Language-aware hyphenation
+
+- [ ] 1.16-M1 — Read EPUB language metadata and supported inline language overrides; normalize language tags independently of system UI language.
+- [ ] 1.16-M2 — Reuse existing Liang hyphenation helpers and licensed dictionaries/patterns; load only needed languages with bounded caches.
+- [ ] 1.16-M3 — Add automatic language selection, preserve user hyphenation controls and fall back safely when no rules are available.
+- [ ] 1.16-M4 — Test multilingual books, mixed-language passages, CJK/RTL line-breaking, layout changes and saved text-anchor restoration.
+
+**Acceptance:** Supported languages use correct rules without overriding intentional user settings or breaking other scripts.
+
+### v1.17.0 — Reading statistics
+
+- [ ] 1.17-M1 — Define active reading time, pages read, completed books and daily averages; exclude idle, menus, suspend and background activity.
+- [ ] 1.17-M2 — Design compact versioned local statistics storage with rate-limited atomic saves and crash recovery; do not transmit reading activity.
+- [ ] 1.17-M3 — Add themed statistics screen with daily/weekly totals and per-book summaries; avoid double-counting backward turns, repagination and repeated resume events.
+- [ ] 1.17-M4 — Test session boundaries, clock changes, offline operation, rereads, unexpected exits and long-session write/CPU cost.
+
+**Acceptance:** Statistics survive restart and reflect defined active-reading behavior without affecting progress or battery materially.
+
+### v1.18.0 — Reading streaks and goals
+
+- [ ] 1.18-M1 — Build on v1.17.0 statistics; define qualifying reading days, current/longest streak, daily minute/page targets and local date boundaries.
+- [ ] 1.18-M2 — Add configurable daily goals, progress indicators and streak summary using native theme and wheel/touch controls.
+- [ ] 1.18-M3 — Persist goal preferences; handle missed days, timezone/clock changes, month/year boundaries and goal changes predictably.
+- [ ] 1.18-M4 — Test deterministic streak calculations, offline usage, restart, missing history and localization; keep reminders optional or omit them if firmware does not support them safely.
+
+**Acceptance:** Goals and streaks derive from accurate local statistics, never invent reading days, and require no background service.
+
+### Shared engineering and release gates
+
+- Preserve faithful CrossPoint EPUB rendering, multilingual support, responsive click-wheel navigation and low RAM/CPU use, in that priority order. The Q2 has 128 MB physical RAM shared with Linux, firmware and audio services; working-memory targets are not measured results.
+- Keep the existing source-level CrossPoint reader, pagination, Unicode/shaping, fonts and storage architecture. Reuse bounded caches, streaming parsing and incremental processing; avoid new dependencies unless justified.
+- Q2 Pod handles device power, suspend and shutdown. Books saves its state and exits cleanly; do not port ESP32 firmware or introduce an independent power-management service.
+- Follow Q2 Pod system theme, language packs and wheel sensitivity. Verify touch, Back and Centre, rounded-screen bounds, light/dark variants and multilingual text. Add translated UI labels for every release, with safe English fallback.
+- Maintain compatibility with positions, bookmarks, highlights, settings, library cache and network/OPDS functionality. Version new persistent formats, validate input, recover from corrupt or read-only storage, and minimize SD writes.
+- Use [Q2 Pod](https://github.com/DiamondBond/q2-pod) as the primary visual/interaction reference; [CrossInk](https://github.com/uxjulia/CrossInk) for rectangular book-cover layout; [Q2-Boy](https://github.com/lampsonlnguyen/q2-boy) for texture caching and prefetch; [Q2-PICO-8](https://github.com/lampsonlnguyen/q2-pico8) for perspective rendering and touch; [CrossPoint](https://github.com/crosspoint-reader/crosspoint-reader) and [KOReader](https://github.com/koreader/koreader) for reader behavior and architecture. Preserve attribution and comply with original licenses; public source availability alone does not waive license obligations.
+- For each release: work on a feature branch, add focused regression tests, pass GCC/Clang host tests and Q2 MIPS cross-build, check simulator visuals and device behavior, measure memory/CPU/input latency and relevant battery/SD impact, document changes and known limits, review compatibility and licenses, merge only after validation, then publish versioned card ZIP, SHA-256 and release notes. Physical-Q2 validation remains the stable-release gate (M1 below).
+- Keep historical M0–M7 porting milestones and their outstanding work in scope as cross-cutting requirements; do not treat this roadmap as evidence those tasks are complete.
+
+### Explicitly out of scope
+
+DRM-free MOBI/PRC support, CBZ comic book support, custom reading themes and text-to-speech are excluded from this roadmap. Cover Flow customization is limited to library presentation and is not a custom reading-theme feature.
+
 ## Milestones
 
 Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, fonts and languages (0.11; menus follow Q2 Pod's language since 1.1.2) and M4 library and servers (1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md)). Their remaining follow-ups are listed below.

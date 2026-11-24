@@ -4361,7 +4361,7 @@ int runCardApp(const std::string& bookDir) {
             auto next=reader->typography();
             if(typeSelection==0) {
               next.family=books::nextInstalledTypographyFamily(next);
-             next.size=books::nearestTypographySize(next);
+              next.size=books::nearestTypographySize(next);
             } else next.size=books::nextInstalledTypographySize(next);
             (void)reader->configureTypography(next);
           }
@@ -5243,10 +5243,10 @@ int main(int argc,char** argv) {
         if(typeSelection>=2)(void)reader.adjustPreference(typeSelection);
         else {
           auto next=reader.typography();
-          if(typeSelection==0)
+          if(typeSelection==0) {
             next.family=books::nextInstalledTypographyFamily(next);
-             next.size=books::nearestTypographySize(next);
-          else next.size=books::nextInstalledTypographySize(next);
+            next.size=books::nearestTypographySize(next);
+          } else next.size=books::nextInstalledTypographySize(next);
           (void)reader.configureTypography(next);
         }
         reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);

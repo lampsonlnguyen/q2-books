@@ -18,13 +18,6 @@ User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 
 Finished: M0 HTTPS transport (0.9), M2 reader essentials (0.10), M3 dictionary, fonts and languages (0.11; menus follow Q2 Pod's language since 1.1.2) and M4 library and servers (1.1.2; see [the M4 guide](docs/v0.12-library-and-servers.md)). Their remaining follow-ups are listed below.
 
-| Milestone | Scope | Status |
-|---|---|---|
-| M1 — Physical-device validation | Measured behavior on a real Q2: launch, wheel sensitivity, suspend/resume, SD and USB edge cases, Wi-Fi failures, RAM/CPU/battery/thermal | **Not started**: needs the device |
-| M5 — EPUB3 fidelity and resilience (v0.13) | Difficult-book corpus (tables, ruby, RTL, footnotes, anchors, images, embedded fonts, broken EPUBs); stray HTML entities and unclosed or mismatched tags repaired | Paragraph formatting repair and public-domain excerpts are covered by the [M5 corpus](docs/v0.13-epub-fidelity.md). Open: upstream pixel comparison, full-length books and Q2 measurements |
-| M6 — Optional polish (v0.14) | Only features with a Q2 use case: smooth text (TrueType, 8-bit), menus in Q2 Pod's own faces, clock and battery, text clear of the rounded corners, night mode that follows the system | Smooth text, status and list layout in 1.2.0; TrueType text, corners and night mode on `main`; see [the M6 notes](docs/v0.14-polish.md). Open: Q2 page-turn measurement, a smooth-text switch, CJK and Thai menu tables |
-| M7 — Stable readiness (v1.0) | Device-proven daily reading | Latest release is 1.2.0 (1.0.0 was the first stable tag); the criteria below are not all met yet |
-
 ## What still needs doing
 
 **On a physical Q2 (M1, the release gate for "stable")**

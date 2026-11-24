@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "FlowRenderer.hpp"
 #include "ShelfProgress.hpp"
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <vector>
@@ -18,9 +19,14 @@ int main() {
   assert(!flow::hit(c,0,0,120));
   assert(!flow::hit(c,0,187,300));
   std::vector<uint32_t> frame(flow::width*flow::height+2,0xffeeeeee);
-  for(float d=-4;d<=4;d+=0.125f)
+  for(float d=-4;d<=4;d+=0.125f) {
+    // Each animation position starts with a fresh background.
+    std::fill(frame.begin()+1,frame.end()-1,0xffeeeeee);
     flow::draw(frame.data()+1,c,d,0xeeeeee);
-  assert(frame.front()==0xffeeeeee && frame.back()==0xffeeeeee);
+    assert(frame.front()==0xffeeeeee && frame.back()==0xffeeeeee);
+  }
+  std::fill(frame.begin()+1,frame.end()-1,0xffeeeeee);
+  flow::draw(frame.data()+1,c,0.f,0xeeeeee);
   assert(frame[1+187+120*flow::width]==0xffff0000);
   assert(frame[1+187+10*flow::width]==0xffeeeeee);
   char dir[]="/tmp/books-flow-XXXXXX";

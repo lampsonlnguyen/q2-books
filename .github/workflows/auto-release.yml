@@ -1,0 +1,101 @@
+name: Automatic Books release
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crosspoint-core/**'
+      - 'tools/**'
+      - 'Makefile'
+  workflow_dispatch:
+
+# Serialize version reservations. release.yml owns tested binaries and publishing.
+concurrency:
+  group: books-auto-release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reserve next version and dispatch validated release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if [[ "$(git rev-parse origin/main)" != "$SOURCE_SHA" ]]; then
+            echo "Main advanced; refusing to release stale source. Run again on current main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Ignore empty releases when choosing the changelog predecessor.
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and (.assets | length) > 0) | .tag_name' > "$RUNNER_TEMP/published-tags"
+          export PUBLISHED_TAGS="$RUNNER_TEMP/published-tags"
+          tag="$(python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+
+          def version(tag):
+              m = re.fullmatch(r"v\.?(\d+)\.(\d+)\.(\d+)(?:-(?:alpha|beta|rc)(?:\.\d+)?)?", tag)
+              return tuple(map(int, m.groups())) if m else None
+
+          version_file = pathlib.Path("crosspoint-core/VERSION")
+          current = version("v" + version_file.read_text().strip())
+          if current is None:
+              raise SystemExit("Invalid application VERSION")
+          tags = git("tag", "--list", "v*").splitlines()
+          reserved = max((v for t in tags if (v := version(t))), default=(0, 0, 0))
+          target = current if current > reserved else (reserved[0], reserved[1], reserved[2] + 1)
+          number = ".".join(map(str, target))
+          tag = "v" + number
+          notes = pathlib.Path("docs/release-notes") / (tag + ".md")
+          if not notes.exists():
+              prior = sorted(
+                  (t for t in pathlib.Path(os.environ["PUBLISHED_TAGS"]).read_text().splitlines() if version(t)),
+                  key=version, reverse=True)
+              base = next((t for t in prior if subprocess.run(
+                  ["git", "merge-base", "--is-ancestor", "refs/tags/" + t, "HEAD"],
+                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0), None)
+              commits = git("log", "--no-merges", "--format=- %s (%h)", base + "..HEAD" if base else "HEAD")
+              notes.parent.mkdir(parents=True, exist_ok=True)
+              notes.write_text(
+                  f"# Books {tag} for Shanling Q2\n\n"
+                  "## Changes\n\n"
+                  + (commits or "- Maintenance release.") + "\n\n"
+                  "## Installation and validation\n\n"
+                  f"Extract books-q2-{tag}.zip to the SD card root; preserve existing reading data and settings. "
+                  "Verify the accompanying SHA-256 checksum. Publication requires the full host and Q2 build tests; "
+                  "physical-device and battery testing are not implied.\n")
+          version_file.write_text(number + "\n")
+          print(tag)
+          PY
+          )"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add crosspoint-core/VERSION "docs/release-notes/$tag.md"
+          if ! git diff --cached --quiet; then
+            git commit -m "Prepare Books $tag"
+          fi
+          git tag "$tag"
+          # Never overwrite a tag or force-push main. Both refs move together.
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/$tag"
+          # GITHUB_TOKEN pushes do not trigger tag workflows; explicit dispatch does.
+          gh workflow run release.yml --ref main -f "release_tag=$tag"
+          echo "Reserved $tag and dispatched release validation. Publication is conditional on all tests." >> "$GITHUB_STEP_SUMMARY"

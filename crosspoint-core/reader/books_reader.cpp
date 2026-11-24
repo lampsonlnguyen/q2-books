@@ -44,6 +44,7 @@
 #include "ShelfFolders.hpp"
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
+#include "FlowRenderer.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
 #include "Highlights.hpp"
@@ -2725,6 +2726,34 @@ class CardShelf {
   bool currentCoverChecked_=false;
   bool currentCoverAvailable_=false;
   bool browsing_ = false;
+  bool flowView_=true;
+  struct FlowSlot {size_t index=0; bool used=false; books::FlowCover cover;};
+  std::array<FlowSlot,8> flowSlots_{};
+  books::FlowCover fallbackCover_=books::flow::placeholder();
+  std::vector<uint32_t> flowFrame_;
+  std::vector<uint8_t> flowAlpha_;
+  float flowPosition_=0;
+  bool flowMoving_=false;
+  ReaderClock::time_point flowAt_{};
+  static std::string viewFile() {return books::uiStateDir()+"/library-view.conf";}
+  static bool loadFlowView() {
+    FILE* f=std::fopen(viewFile().c_str(),"rb");
+    if(!f)return true;
+    char line[32]{};
+    const bool list=std::fgets(line,sizeof(line),f) && std::strcmp(line,"list\n")==0;
+    std::fclose(f);return !list;
+  }
+  bool saveFlowView() const {
+    const auto path=viewFile(),tmp=path+".tmp";
+    FILE* f=std::fopen(tmp.c_str(),"wb");
+    if(!f)return false;
+    bool ok=std::fputs(flowView_?"cover\n":"list\n",f)>=0;
+    if(std::fflush(f)!=0)ok=false;
+    if(ok&&fsync(fileno(f))!=0)ok=false;
+    if(std::fclose(f)!=0)ok=false;
+    if(ok&&std::rename(tmp.c_str(),path.c_str())==0)return true;
+    std::remove(tmp.c_str());return false;
+  }
   bool onlineMode_=false;
   std::string onlineUrl_;
   std::string onlineTitle_;
@@ -2773,6 +2802,7 @@ class CardShelf {
       books_(books),root_(std::move(root)),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
+    flowView_=loadFlowView();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
     refreshVisible();
@@ -2800,6 +2830,17 @@ class CardShelf {
     return browsing_ && selected_>=first && selected_-first<visible_.size()?
         visible_[selected_-first]:current_;
   }
+  bool flowActive() const {
+    return flowView_ && browsing_ && !onlineMode_ && !searchEditing_ &&
+        folderRows()==0 && !visible_.empty();
+  }
+  bool viewChosen() const {return !browsing_ && homeSelection_==4;}
+  void toggleView() {
+    flowView_=!flowView_;
+    if(!saveFlowView()) {flowView_=!flowView_;notice_="Cannot save setting";}
+    flowMoving_=false;flowPosition_=float(selected_);
+  }
+  bool animating() const {return flowActive()&&flowMoving_;}
   bool folderMode() const {
     return sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
   }
@@ -3200,7 +3241,7 @@ class CardShelf {
       return searchKey_!=before;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,3);
+      const int next=std::clamp(homeSelection_+direction,0,4);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -3209,6 +3250,10 @@ class CardShelf {
     const auto before=selected_;
     if(direction>0 && selected_+1<rowCount())++selected_;
     else if(direction<0 && selected_>0)--selected_;
+    if(selected_!=before && flowActive()) {
+      if(!flowMoving_)flowPosition_=float(before);
+      flowMoving_=true;flowAt_=ReaderClock::now();
+    }
     return selected_!=before;
   }
   bool tap(int x,int y) {
@@ -3231,12 +3276,19 @@ class CardShelf {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
       else if(y>=244&&y<267)homeSelection_=x<HOME_ONLINE_X?2:3;
+      else if(y>=269&&y<301)homeSelection_=4;
       else return false;
       return true;
     }
     if(y>=39 && y<74) {
       if(x>=190)return enterOnline();
       enterSearch();return true;
+    }
+    if(flowActive()) {
+      if(y<books::flow::top || y>=books::flow::bottom)return false;
+      if(x<120 && selected_>0) {change(-1);return false;}
+      if(x>255 && selected_+1<rowCount()) {change(1);return false;}
+      return x>=120&&x<=255;
     }
     if(rowCount()==0||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
@@ -3280,6 +3332,7 @@ class CardShelf {
     // Refresh only that book's lazy metadata (and current cover, if any).
     for(size_t i=0;i<books_.size();++i) {
       if(books_[i].path!=path)continue;
+      for(auto& slot:flowSlots_)if(slot.used&&slot.index==i)slot.used=false;
       detailsChecked_[i]=false;
       cachedDetails_[i]={};
       if(i==current_) {
@@ -3510,6 +3563,9 @@ class CardShelf {
       drawRowLabel(HOME_ONLINE_X+10,244,23,"Online");
       if(homeSelection_==2)books::paintSelection(display_,12,244,HOME_ONLINE_X-22,23);
       if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
+      const std::string view=std::string(books::tr("Library View"))+": "+books::tr(flowView_?"Cover Flow":"List View");
+      drawRowLabel(68,269,30,view.c_str());
+      if(homeSelection_==4)books::paintSelection(display_,62,269,251,30);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};
@@ -3588,7 +3644,13 @@ class CardShelf {
       } else drawCompactLabel(16,61,count);
       drawCompactLabel(212,61,"Search | Online",133);
       renderer_.drawLine(15,72,359,72,true);
-      if(rowCount()==0) {
+      if(flowActive()) {
+        const size_t index=visible_[selected_];
+        const auto& info=details(index);
+        const auto title=info.title.empty()?books_[index].label:info.title;
+        drawRowLabel(55,244,23,fitWidth(title,265).c_str());
+        drawRowLabel(55,267,23,fitWidth(info.author,265).c_str());
+      } else if(rowCount()==0) {
         renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));
         renderer_.drawText(1,16,144,
             books_.empty()?"Copy EPUBs to /Books":"Tap title to edit search");
@@ -3716,7 +3778,66 @@ class CardShelf {
       drawListRow(y,clippedLabel(title,31),detail,index==pick);
     }
   }
-  void present() {paint();display_.displayBuffer();}
+  const books::FlowCover& flowCoverAt(size_t row) {
+    const size_t index=visible_[row];
+    for(auto& slot:flowSlots_)if(slot.used&&slot.index==index)
+      return slot.cover.valid()?slot.cover:fallbackCover_;
+    auto* target=&flowSlots_[0];
+    for(auto& slot:flowSlots_) {
+      if(!slot.used){target=&slot;break;}
+      const auto it=std::find(visible_.begin(),visible_.end(),slot.index);
+      if(it==visible_.end() || std::abs(float(it-visible_.begin())-flowPosition_)>=books::flow::reach) {
+        target=&slot;break;
+      }
+    }
+    target->index=index;target->used=true;target->cover={};
+    (void)books::loadFlowCover(books_[index].path,target->cover);
+    return target->cover.valid()?target->cover:fallbackCover_;
+  }
+  void present() {
+    paint();
+    if(!flowActive()) {
+      flowMoving_=false;flowPosition_=float(selected_);
+      flowFrame_.clear();flowAlpha_.clear();
+      display_.displayBuffer();return;
+    }
+    if(!flowMoving_)flowPosition_=float(selected_);
+    const auto& theme=books::uiTheme();
+    const uint32_t paper=theme.active()?theme.box:0xffffff;
+    const uint32_t ink=theme.active()?theme.title:0;
+    flowFrame_.assign(HalDisplay::PIXELS,0xff000000u|paper);
+    flowAlpha_.resize(HalDisplay::PIXELS);
+    if(display_.currentAlpha(flowAlpha_.data()))
+      for(size_t i=0;i<flowFrame_.size();++i)
+        flowFrame_[i]=books::flow::mix(paper,ink,unsigned(flowAlpha_[i])*256/255);
+    std::array<size_t,8> rows{};
+    size_t count=0;
+    const int first=std::max(0,int(std::floor(flowPosition_-books::flow::reach)));
+    for(size_t row=size_t(first);row<visible_.size()&&count<rows.size();++row) {
+      if(float(row)-flowPosition_>=books::flow::reach)break;
+      if(std::abs(float(row)-flowPosition_)<books::flow::reach)rows[count++]=row;
+    }
+    std::sort(rows.begin(),rows.begin()+count,[&](size_t a,size_t b){
+      return std::abs(float(a)-flowPosition_)>std::abs(float(b)-flowPosition_);
+    });
+    for(size_t i=0;i<count;++i) {
+      const size_t row=rows[i];
+      books::flow::draw(flowFrame_.data(),flowCoverAt(row),float(row)-flowPosition_,paper);
+    }
+    if(!display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))display_.displayBuffer();
+  }
+  void animationTick() {
+    if(!animating())return;
+    const auto now=ReaderClock::now();
+    const float ms=std::chrono::duration<float,std::milli>(now-flowAt_).count();
+    if(ms<16)return;
+    flowAt_=now;
+    flowPosition_+=(float(selected_)-flowPosition_)*(1.f-std::exp(-ms/55.f));
+    if(std::abs(float(selected_)-flowPosition_)<.015f) {
+      flowPosition_=float(selected_);flowMoving_=false;
+    }
+    present();
+  }
   bool savePgm(const std::string& out) {
     paint();
     const uint8_t* pixels=display_.getFrameBuffer();
@@ -3841,7 +3962,8 @@ int runCardApp(const std::string& bookDir) {
       // Work only while idle on the bookshelf, not when reading or during
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
       // never parse chapter pages or write an index on every wheel turn.
-      if(!reader && shelf && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+      if(!reader && shelf && shelf->animating())shelf->animationTick();
+      if(!reader && shelf && !shelf->animating() && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
         const auto result=books::indexShelfBook(book);
         if(result.updated) {
@@ -3877,7 +3999,8 @@ int runCardApp(const std::string& bookDir) {
          beforeTurn<=ReaderClock::now())continue;  // a page was turned: loop again
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
       deadline=std::min(deadline,turnDue);
-      if(!reader && shelf && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(!reader && shelf && shelf->animating())deadline=std::min(deadline,ReaderClock::now()+std::chrono::milliseconds(16));
+      if(!reader && shelf && !shelf->animating() && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
         std::fputs("Books: input socket poll failed\n",stderr);
@@ -4387,7 +4510,8 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
-    if(!activate)continue;
+    if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && shelf->animating())shelf->present();continue;}
+    if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->searching()) {shelf->present();continue;}
     if(shelf->onlineChosen()) {
       (void)shelf->enterOnline();

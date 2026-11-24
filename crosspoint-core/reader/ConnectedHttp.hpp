@@ -165,6 +165,7 @@ struct HttpResponse {
   int status=0;
   size_t bytes=0;
   std::string error;
+  std::string etag{};
   bool ok() const {return status>=200 && status<300 && error.empty();}
 };
 using HttpSink=std::function<bool(const char*,size_t)>;
@@ -189,6 +190,7 @@ struct HttpsStream {
   int status=0;
   std::string location;
   bool aborted=false;
+  std::string etag{};
 };
 inline size_t httpsBodyCallback(char* bytes,size_t unit,size_t count,void* context) {
   auto& state=*static_cast<HttpsStream*>(context);
@@ -207,6 +209,14 @@ inline size_t httpsBodyCallback(char* bytes,size_t unit,size_t count,void* conte
 inline int httpsProgressCallback(void*,long long,long long,long long,long long) {
   return httpAborted()?1:0;  // non-zero: CURLE_ABORTED_BY_CALLBACK
 }
+inline bool validHttpEtag(std::string_view tag) {
+  if(tag.substr(0,2)=="W/")tag.remove_prefix(2);
+  if(tag.size()<2 || tag.size()>256 || tag.front()!='"' || tag.back()!='"')return false;
+  tag=tag.substr(1,tag.size()-2);
+  return std::all_of(tag.begin(),tag.end(),[](unsigned char ch) {
+    return ch>=0x21 && ch!=0x7f && ch!='"';
+  });
+}
 inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* context) {
   auto& state=*static_cast<HttpsStream*>(context);
   if(unit && count>std::numeric_limits<size_t>::max()/unit)return 0;
@@ -221,20 +231,19 @@ inline size_t httpsHeaderCallback(char* bytes,size_t unit,size_t count,void* con
         line[space+3]>='0' && line[space+3]<='9' ?
         (line[space+1]-'0')*100+(line[space+2]-'0')*10+line[space+3]-'0':0;
     state.location.clear();
-  } else if(line.size()>=9) {
-    std::string prefix(line.substr(0,9));
-    std::transform(prefix.begin(),prefix.end(),prefix.begin(),[](unsigned char c){
+    state.etag.clear();
+  } else if(const auto colon=line.find(':');colon!=std::string_view::npos && colon<=8) {
+    std::string name(line.substr(0,colon));
+    std::transform(name.begin(),name.end(),name.begin(),[](unsigned char c){
       return static_cast<char>(std::tolower(c));});
-    if(prefix=="location:") {
-      line.remove_prefix(9);
-      const auto begin=line.find_first_not_of(" \t");
-      if(begin!=std::string_view::npos) {
-        line.remove_prefix(begin);
-        const auto end=line.find_first_of("\r\n");
-        line=line.substr(0,end);
-        if(line.size()<=1536 && !unsafeHttpString(line))
-          state.location=std::string(line);
-      }
+    line.remove_prefix(colon+1);
+    const auto begin=line.find_first_not_of(" \t");
+    const auto end=line.find_last_not_of(" \t\r\n");
+    if(begin!=std::string_view::npos && end!=std::string_view::npos && begin<=end) {
+      line=line.substr(begin,end-begin+1);
+      if(name=="location" && line.size()<=1536 && !unsafeHttpString(line))
+        state.location=std::string(line);
+      else if(name=="etag" && validHttpEtag(line))state.etag=std::string(line);
     }
   }
   return length;
@@ -359,6 +368,7 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
   if(code==0)(void)curl_easy_getinfo(curl,0x200002,&status);
   result.status=static_cast<int>(status);
   result.bytes=stream.count;
+  result.etag=std::move(stream.etag);
   if(code!=0) {
     result.error=code==42?"Transfer stopped":   // CURLE_ABORTED_BY_CALLBACK
         stream.aborted?"HTTPS download too large or rejected":
@@ -367,10 +377,13 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
         "HTTPS transfer failed ("+std::to_string(code)+")";
     return result;
   }
+  const bool conditional=extra.size()==1 && extra.count("If-None-Match") &&
+      validHttpEtag(extra.at("If-None-Match"));
+  if(status==304 && method=="GET" && conditional)return result;
   if(status>=300 && status<400) {
     if(method=="GET" && redirect<2 && !stream.location.empty()) {
       auto next=resolveHttpHref(original,stream.location);
-      if(next.empty() && publicReleaseAsset && extra.empty())
+      if(next.empty() && publicReleaseAsset && (extra.empty() || conditional))
         next=githubReleaseAssetRedirect(original,stream.location);
       if(!next.empty() && parseHttpUrl(next).secure)
         return httpsRequest(next,sink,maxBytes,method,body,extra,redirect+1,publicReleaseAsset);

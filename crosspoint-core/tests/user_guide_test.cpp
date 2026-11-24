@@ -7,14 +7,17 @@
 #include <iterator>
 
 static std::string payload;
-static int downloads=0;
+static std::string remoteEtag;
+static int requests=0,downloads=0;
 static bool online=true;
 
-static books::HttpResponse fetch(const books::HttpSink& sink) {
-  ++downloads;
+static books::HttpResponse fetch(const books::HttpSink& sink,const std::string& etag) {
+  ++requests;
   if(!online)return {0,0,"Offline"};
+  if(!etag.empty() && etag==remoteEtag)return {304,0,{},remoteEtag};
+  ++downloads;
   assert(sink(payload.data(),payload.size()));
-  return {200,payload.size(),{}};
+  return {200,payload.size(),{},remoteEtag};
 }
 
 static std::string read(const std::string& path) {
@@ -38,22 +41,33 @@ int main() {
   assert(books::openUserGuide(error,fetch).empty() && !error.empty());
 
   online=true;
+  remoteEtag="\"guide-1\"";
   payload=books::buildTxtEpub("Guide.txt","First edition");
   const auto path=books::openUserGuide(error,fetch);
   assert(!path.empty() && books::validUserGuideEpub(path) && read(path)==payload && error.empty());
   struct stat first{},second{};
   assert(stat(path.c_str(),&first)==0);
   assert(books::openUserGuide(error,fetch)==path && error.empty());
+  assert(stat(path.c_str(),&second)==0 && first.st_ino==second.st_ino && downloads==1);
+  // A v1.3.3 cache has no validator. Bootstrap it once without replacing
+  // identical EPUB bytes, then check even a same-size update by its tag.
+  assert(unlink((path+".etag").c_str())==0);
+  assert(books::openUserGuide(error,fetch)==path && downloads==2 && error.empty());
   assert(stat(path.c_str(),&second)==0 && first.st_ino==second.st_ino);
 
-  payload=books::buildTxtEpub("Guide.txt","Newer edition");
+  remoteEtag="\"guide-2\"";
+  payload=books::buildTxtEpub("Guide.txt","Other edition");
+  assert(static_cast<off_t>(payload.size())==first.st_size);
   assert(books::openUserGuide(error,fetch)==path && read(path)==payload && error.empty());
   const auto latest=payload;
+  remoteEtag="\"bad\"";
   payload="Not an EPUB";
   assert(books::openUserGuide(error,fetch)==path && read(path)==latest && !error.empty());
   online=false;
   assert(books::openUserGuide(error,fetch)==path && read(path)==latest && !error.empty());
-  assert(downloads==6);
+  assert(requests==7 && downloads==4);
+  assert(books::cachedUserGuideEtag(path)=="\"guide-2\"");
+  assert(unlink((path+".etag").c_str())==0);
   assert(unlink(path.c_str())==0);
   assert(rmdir(dir)==0);
 }

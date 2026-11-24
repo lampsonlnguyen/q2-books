@@ -4774,7 +4774,7 @@ int runCardApp(const std::string& bookDir) {
     const bool userGuide=shelf->guideSelected();
     std::string chosen;
     if(userGuide) {
-      shelf->setNotice("Downloading userguide...");
+      shelf->setNotice("Checking userguide...");
       shelf->present();
       std::string error;
       chosen=books::openUserGuide(error);

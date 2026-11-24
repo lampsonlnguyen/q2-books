@@ -62,48 +62,85 @@ inline bool sameUserGuide(const std::string& cached,const std::string& fresh) {
   return same;
 }
 
-inline HttpResponse downloadUserGuideEpub(const HttpSink& sink) {
-  return httpsRequest(std::string("https://github.com")+q2PodGuideAssetPath,
-      sink,userGuideMaxBytes,"GET",{},{},0,true);
+inline std::string cachedUserGuideEtag(const std::string& path) {
+  struct stat info{};
+  if(lstat(path.c_str(),&info)!=0 || !S_ISREG(info.st_mode))return {};
+  FILE* file=std::fopen((path+".etag").c_str(),"rb");
+  if(!file)return {};
+  char stamp[64]{},tag[260]{};
+  const bool read=std::fgets(stamp,sizeof(stamp),file) &&
+      std::fgets(tag,sizeof(tag),file) && std::fgetc(file)==EOF;
+  std::fclose(file);
+  std::string value(tag);
+  const auto expected=std::to_string(info.st_size)+" "+std::to_string(info.st_mtime)+"\n";
+  if(!read || stamp!=expected || value.empty() || value.back()!='\n')return {};
+  value.pop_back();
+  return validHttpEtag(value)?value:std::string();
 }
 
-// A fresh transfer on every open, with an offline fallback to the last
-// validated EPUB. Keep the virtual title outside the scanned library.
+inline void saveUserGuideEtag(const std::string& path,const std::string& tag) {
+  struct stat info{};
+  if(!validHttpEtag(tag) || stat(path.c_str(),&info)!=0)return;
+  const int fd=open((path+".etag").c_str(),O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC,0600);
+  if(fd<0)return;
+  if(FILE* file=fdopen(fd,"wb")) {
+    std::fprintf(file,"%lld %lld\n%s\n",static_cast<long long>(info.st_size),
+                 static_cast<long long>(info.st_mtime),tag.c_str());
+    std::fclose(file);
+  } else close(fd);
+}
+
+inline HttpResponse downloadUserGuideEpub(const HttpSink& sink,const std::string& etag) {
+  std::map<std::string,std::string> headers;
+  if(!etag.empty())headers.emplace("If-None-Match",etag);
+  return httpsRequest(std::string("https://github.com")+q2PodGuideAssetPath,
+      sink,userGuideMaxBytes,"GET",{},headers,0,true);
+}
+
+// Revalidate on open. A 304 response leaves the cached EPUB untouched.
 inline std::string openUserGuide(std::string& error,
-    HttpResponse (*download)(const HttpSink&)=downloadUserGuideEpub) {
+    HttpResponse (*download)(const HttpSink&,const std::string&)=downloadUserGuideEpub) {
   const auto dir=uiStateDir();
   const auto path=dir+"/Q2 Pod User Guide.epub";
   error.clear();
-  const auto fallback=[&]() {return validUserGuideEpub(path)?path:std::string();};
-  (void)mkdir(dir.c_str(),0755);
-  std::string temporary=path+".part-XXXXXX";
-  const int fd=mkstemp(temporary.data());
-  if(fd<0) {
-    error="Cannot save userguide";
-    return fallback();
-  }
+  const bool cached=validUserGuideEpub(path);
+  const std::string etag=cached?cachedUserGuideEtag(path):std::string();
+  std::string temporary;
   struct TempFile {
     const std::string& path;
-    ~TempFile(){unlink(path.c_str());}
+    ~TempFile(){if(!path.empty())unlink(path.c_str());}
   } cleanup{temporary};
-  FILE* file=fdopen(fd,"wb");
-  if(!file) {
-    close(fd);
-    error="Cannot save userguide";
-    return fallback();
-  }
+  FILE* file=nullptr;
+  bool writeFailed=false;
   const auto response=download([&](const char* data,size_t length) {
-    return std::fwrite(data,1,length,file)==length;
-  });
-  const bool written=response.ok() && !httpAborted() &&
-      std::fflush(file)==0 && fsync(fd)==0;
-  const bool closed=std::fclose(file)==0;
-  if(!response.ok())error="Userguide unavailable";
-  else if(!written || !closed)error="Cannot save userguide";
+    if(!file) {
+      (void)mkdir(dir.c_str(),0755);
+      std::string name=path+".part-XXXXXX";
+      const int fd=mkstemp(name.data());
+      if(fd<0) {writeFailed=true;return false;}
+      temporary=std::move(name);
+      file=fdopen(fd,"wb");
+      if(!file) {close(fd);writeFailed=true;return false;}
+    }
+    writeFailed=std::fwrite(data,1,length,file)!=length;
+    return !writeFailed;
+  },etag);
+  if(file) {
+    if(response.ok() && (std::fflush(file)!=0 || fsync(fileno(file))!=0))writeFailed=true;
+    if(std::fclose(file)!=0)writeFailed=true;
+  }
+  if(response.status==304 && response.error.empty() && !etag.empty())return path;
+  if(writeFailed || httpAborted())error="Cannot save userguide";
+  else if(!response.ok() || response.status!=200)error="Userguide unavailable";
   else if(!validUserGuideEpub(temporary))error="Invalid userguide";
-  else if(sameUserGuide(path,temporary) || std::rename(temporary.c_str(),path.c_str())==0)
+  else if(cached && sameUserGuide(path,temporary)) {
+    if(response.etag!=etag)saveUserGuideEtag(path,response.etag);
     return path;
-  else error="Cannot save userguide";
-  return fallback();
+  } else if((unlink((path+".etag").c_str())==0 || errno==ENOENT) &&
+            std::rename(temporary.c_str(),path.c_str())==0) {
+    saveUserGuideEtag(path,response.etag);
+    return path;
+  } else error="Cannot save userguide";
+  return cached?path:std::string();
 }
 }  // namespace books

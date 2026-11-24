@@ -6,14 +6,12 @@
 // Q2 Pod's copy of that language, /mnt/data/q2-lang-<code>.tsv, is there.
 // Anything else (no key, a reset config, the pack removed) is English.
 //
-// A text is looked up, by its English, in Books' own table for that
-// language, .books/lang/<code>.tsv, else it stays English (as Q2 Pod shows
-// a text its pack lacks). The table is in Q2 Pod's language-pack format: a
+// Books' table (.books/lang/<code>.tsv) takes precedence over generic
+// labels from the active firmware pack. The pack's stock identifier rows
+// are specific to firmware screens and are skipped. The table format is a
 // first line "# <name>", then key<TAB>English<TAB>translation, with \n, \t
 // and \\ escaped. As in Q2 Pod, a line counts only for the English it was
 // written for, and only when its printf conversions match the English's.
-// Q2 Pod's own table is not borrowed from: half a menu in each language
-// reads worse than one language.
 //
 // A translation whose letters the menu font can't draw (setUiGlyphCheck)
 // is shown in English, never as boxes or question marks.
@@ -38,6 +36,11 @@ inline std::string uiStateDir() {
 inline std::string systemConfigFile() {
   const char* env = std::getenv("BOOKS_SYSTEM_CONFIG");
   return env && *env ? env : "/mnt/data/config.ini";
+}
+inline std::string firmwareLanguageTable(const std::string& config, const std::string& code) {
+  const auto slash = config.find_last_of('/');
+  const std::string dir = slash == std::string::npos ? "." : config.substr(0, slash);
+  return dir + "/q2-lang-" + code + ".tsv";
 }
 // Q2 Pod's codes: letters and '_', 2 to 11 of them (de, zh_CN...).
 inline bool validLanguageCode(const std::string& code) {
@@ -82,9 +85,7 @@ inline std::string readSystemLanguage() {
   const std::string config = systemConfigFile();
   const std::string code = readIniValue(config, "Q2POD", "LANG");
   if (!validLanguageCode(code)) return {};
-  const auto slash = config.find_last_of('/');
-  const std::string copy =
-      (slash == std::string::npos ? std::string(".") : config.substr(0, slash)) + "/q2-lang-" + code + ".tsv";
+  const std::string copy = firmwareLanguageTable(config, code);
   return ::access(copy.c_str(), R_OK) == 0 ? code : std::string();
 }
 
@@ -130,7 +131,8 @@ inline UiLanguageState& uiLanguageState() {
 }
 // Adds a language-pack table's lines to |table| (lines already there win).
 // Returns how many it added. At most 2 MB is read.
-inline size_t loadLanguageTable(const std::string& file, std::unordered_map<std::string, UiTranslation>& table) {
+inline size_t loadLanguageTable(const std::string& file, std::unordered_map<std::string, UiTranslation>& table,
+                                bool sharedLabelsOnly = false) {
   struct stat info {};
   if (::stat(file.c_str(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > 2 * 1024 * 1024) return 0;
   FILE* f = std::fopen(file.c_str(), "rb");
@@ -150,6 +152,7 @@ inline size_t loadLanguageTable(const std::string& file, std::unordered_map<std:
     const auto tab2 = tab1 == std::string::npos ? std::string::npos : line.find('\t', tab1 + 1);
     if (tab2 == std::string::npos) continue;
     const std::string english = unescapeLanguageField(line.substr(tab1 + 1, tab2 - tab1 - 1));
+    if (sharedLabelsOnly && unescapeLanguageField(line.substr(0, tab1)) != english) continue;
     const std::string translation = unescapeLanguageField(line.substr(tab2 + 1));
     if (english.empty() || translation.empty() || tab1 == 0) continue;
     if (printfConversions(english) != printfConversions(translation)) continue;  // would read the wrong argument
@@ -163,6 +166,8 @@ inline void loadUiLanguage(UiLanguageState& s) {
   s.code = readSystemLanguage();
   if (s.code.empty()) return;
   loadLanguageTable(uiStateDir() + "/lang/" + s.code + ".tsv", s.table);
+  if (!std::getenv("BOOKS_LANG"))
+    loadLanguageTable(firmwareLanguageTable(systemConfigFile(), s.code), s.table, true);
 }
 // The code of the language the menus are in ("" for English).
 inline const std::string& uiLanguageCode() {

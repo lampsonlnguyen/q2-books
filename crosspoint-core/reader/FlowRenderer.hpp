@@ -9,9 +9,9 @@
 
 namespace books {
 namespace flow {
-constexpr int width=375,height=320,top=48,bottom=251;
+constexpr int width=375,height=320,top=76,bottom=240;
 constexpr float reach=3.5f,eye=256.f;
-constexpr int maxArtHeight=160;
+constexpr int maxArtHeight=132;
 inline uint32_t rgb(uint16_t p) {
   unsigned r=(p>>11)&31,g=(p>>5)&63,b=p&31;
   return ((r*255/31)<<16)|((g*255/63)<<8)|(b*255/31);
@@ -35,7 +35,7 @@ inline bool project(const FlowCover& cover,float distance,int x,Column& col) {
   const float denominator=eye*c+dx*s;
   if(denominator<=.001f)return false;
   const float u=(dx*depth-eye*center)/denominator;
-  const float scale=std::min(160.f/cover.height,144.f/cover.width);
+  const float scale=std::min(float(maxArtHeight)/cover.height,144.f/cover.width);
   const float w=cover.width*scale,h=cover.height*scale;
   const float sample=.5f+sign*u/w;
   const float z=depth-u*s;
@@ -65,7 +65,7 @@ inline void draw(uint32_t* frame,const FlowCover& cover,float distance,uint32_t 
       auto& pixel=frame[y*width+x];
       pixel=mix(pixel,mix(0,rgb(cover.pixels[sy*cover.width+c.source]),brightness),fade);
     }
-    const int reflection=std::max(1,c.h*46/160);
+    const int reflection=std::max(1,c.h*32/maxArtHeight);
     for(int y=std::max(top,end);y<std::min(bottom,end+reflection);++y) {
       const unsigned sy=cover.height-1-unsigned((y-end)*cover.height/c.h);
       const unsigned opacity=unsigned((reflection-(y-end))*90/reflection)*brightness*fade/65536u;

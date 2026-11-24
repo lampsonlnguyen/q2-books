@@ -725,6 +725,7 @@ add_test(NAME crosspoint_original_chapter_parser_interface
 # Card app is the same CrossPoint reader ELF: q2-pod invokes it with argc==1.
 # The binary gets its book path from its own scrollable /Books/ picker.
 add_test(NAME books_reader_shelf_options COMMAND books-reader --test-shelf-options)
+add_test(NAME books_reader_shelf_jump COMMAND books-reader --test-shelf-jump)
 add_test(NAME books_reader_grid_view COMMAND books-reader --test-grid-shelf)
 add_test(NAME books_reader_card_user_guide
     COMMAND books-reader --test-user-guide-shelf)

@@ -21,7 +21,7 @@ Each minor release has one primary feature. Patch releases address fixes, compat
 
 | Release | Primary feature | Status |
 | --- | --- | --- |
-| v1.5.0 | Alphabetical navigation | Planned |
+| v1.5.0 | Alphabetical navigation | In development |
 | v1.6.0 | Book information panel | Planned |
 | v1.7.0 | Collections and favorites | Planned |
 | v1.8.0 | Reading status filters | Planned |
@@ -37,6 +37,8 @@ Each minor release has one primary feature. Patch releases address fixes, compat
 | v1.18.0 | Reading streaks and goals | Planned |
 
 ### v1.5.0 — Alphabetical navigation
+
+In Browse files, tap **A-Z** or hold Centre and release to open the picker. Turn the wheel to a group and press Centre, or tap a group directly. Back cancels. The picker jumps to the first matching item in the current sort order and respects the current folder or search. Groups follow the same filenames as Title A-Z sorting. Accented Latin initials share their base letter, digits group under **0-9**, and non-Latin titles group by script.
 
 - [ ] 1.5-M1 — Define alphabetical grouping and Unicode-aware collation consistent with library sorting; handle accents, numbers, symbols and non-Latin scripts.
 - [ ] 1.5-M2 — Add Q2-style quick-jump selector and wheel/touch controls; skip empty groups.

@@ -103,6 +103,19 @@ int main() {
     std::string where;
     assert(!books::shelfRelativeFolder(r,"/mnt/mmc/Books2/x.epub",where));
   }
+  // The same groups order filenames and drive quick jumps.
+  using books::alphabet::titleGroup;
+  assert(titleGroup("Ắ") == titleGroup("A\xcc\x86\xcc\x81"));
+  assert(titleGroup("Đà Lạt") == titleGroup("D"));
+  assert(titleGroup("École") == titleGroup(" ecole"));
+  assert(books::compareShelfNames("école", "E\xcc\x81" "COLE") == 0);
+  assert(books::compareShelfNames("Écho", "Fable") < 0);
+  assert(books::alphabet::label(titleGroup("１２３")) == "0-9");
+  assert(books::alphabet::label(titleGroup("۱۲۳")) == "0-9");
+  assert(books::alphabet::label(titleGroup("📚 Books")) == "#");
+  assert(books::alphabet::label(titleGroup("漢字")) == "Han");
+  assert(books::alphabet::label(titleGroup("かな")) == "Kana");
+  assert(books::alphabet::label(titleGroup("한글")) == "Hangul");
   // M4 large library: 4000 books in 400 folders, scanned, sorted and shown
   // folder by folder well within a second on the host.
   {

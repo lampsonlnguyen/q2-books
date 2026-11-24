@@ -45,6 +45,7 @@
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
 #include "FlowRenderer.hpp"
+#include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
 #include "Highlights.hpp"
@@ -1081,8 +1082,10 @@ class Reader {
     // Rate-limit retries too. A removed or read-only card should not cause
     // immediate repeated writes. The dirty position survives a failed attempt.
     lastPositionAttempt_=now;
-    if(books::saveReadingPosition(bookPath_,currentPosition()))
+    if(books::saveReadingPosition(bookPath_,currentPosition())) {
       positionDirty_=false;
+      (void)books::saveShelfProgress(bookPath_,bookProgressPpm());
+    }
   }
   ReaderClock::time_point nextPositionFlush() const {
     return positionDirty_?lastPositionAttempt_+positionSaveInterval:
@@ -2732,8 +2735,14 @@ class CardShelf {
   books::FlowCover fallbackCover_=books::flow::placeholder();
   std::vector<uint32_t> flowFrame_;
   std::vector<uint8_t> flowAlpha_;
+  size_t flowProgressIndex_=size_t(-1);
+  int flowProgressPercent_=-1;
   float flowPosition_=0;
   bool flowMoving_=false;
+  bool flowTouch_=false;
+  int flowTouchX_=0,flowTouchY_=0;
+  float flowTouchStart_=0;
+  bool flowDragged_=false;
   ReaderClock::time_point flowAt_{};
   static std::string viewFile() {return books::uiStateDir()+"/library-view.conf";}
   static bool loadFlowView() {
@@ -2840,7 +2849,30 @@ class CardShelf {
     if(!saveFlowView()) {flowView_=!flowView_;notice_="Cannot save setting";}
     flowMoving_=false;flowPosition_=float(selected_);
   }
-  bool animating() const {return flowActive()&&flowMoving_;}
+  bool animating() const {return flowActive()&&flowMoving_&&!flowTouch_;}
+  bool flowTouchEvent(const books::PhysicalEvent& event) {
+    using K=books::PhysicalKind;
+    if(!flowActive()) {flowTouch_=false;return false;}
+    if(event.kind==K::TouchDown && event.y>=books::flow::top && event.y<books::flow::bottom) {
+      flowTouch_=true;flowDragged_=false;flowTouchX_=event.x;flowTouchY_=event.y;
+      flowTouchStart_=flowMoving_?flowPosition_:float(selected_);
+      flowMoving_=false;return true;
+    }
+    if(!flowTouch_)return false;
+    if(event.kind!=K::TouchMove && event.kind!=K::TouchUp) {flowTouch_=false;return false;}
+    const int dx=event.x-flowTouchX_,dy=event.y-flowTouchY_;
+    if(std::abs(dx)>12 && std::abs(dx)>std::abs(dy))flowDragged_=true;
+    if(flowDragged_) {
+      flowPosition_=std::clamp(flowTouchStart_-float(dx)/90.f,0.f,float(visible_.size()-1));
+      selected_=size_t(std::lround(flowPosition_));
+      if(event.kind==K::TouchUp) {
+        flowTouch_=false;flowMoving_=true;flowAt_=ReaderClock::now();
+      }
+      present();return true;
+    }
+    if(event.kind==K::TouchUp) {flowTouch_=false;return false;}
+    return true;
+  }
   bool folderMode() const {
     return sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
   }
@@ -3286,9 +3318,19 @@ class CardShelf {
     }
     if(flowActive()) {
       if(y<books::flow::top || y>=books::flow::bottom)return false;
-      if(x<120 && selected_>0) {change(-1);return false;}
-      if(x>255 && selected_+1<rowCount()) {change(1);return false;}
-      return x>=120&&x<=255;
+      const float position=flowMoving_?flowPosition_:float(selected_);
+      size_t picked=visible_.size();
+      float nearest=books::flow::reach;
+      for(size_t row=0;row<visible_.size();++row) {
+        const float d=float(row)-position;
+        if(std::abs(d)>=nearest)continue;
+        if(books::flow::hit(flowCoverAt(row),d,x,y)) {picked=row;nearest=std::abs(d);}
+      }
+      if(picked==visible_.size())return false;
+      if(picked==selected_ && !flowMoving_)return true;
+      flowPosition_=position;selected_=picked;
+      flowMoving_=true;flowAt_=ReaderClock::now();
+      return false;
     }
     if(rowCount()==0||y<TOP_Y||y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
     const size_t start=(selected_/VISIBLE_ROWS)*VISIBLE_ROWS;
@@ -3649,7 +3691,16 @@ class CardShelf {
         const auto& info=details(index);
         const auto title=info.title.empty()?books_[index].label:info.title;
         drawRowLabel(55,244,23,fitWidth(title,265).c_str());
-        drawRowLabel(55,267,23,fitWidth(info.author,265).c_str());
+        drawRowLabel(55,264,23,fitWidth(info.author,265).c_str());
+        if(flowProgressIndex_!=index) {
+          flowProgressIndex_=index;
+          uint32_t ppm=0;
+          flowProgressPercent_=books::loadShelfProgress(books_[index].path,ppm)?int(ppm/10000u):-1;
+        }
+        if(flowProgressPercent_>=0) {
+          const auto percent=std::to_string(flowProgressPercent_)+"%";
+          drawRowLabel(163,287,22,percent.c_str());
+        }
       } else if(rowCount()==0) {
         renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));
         renderer_.drawText(1,16,144,
@@ -3797,11 +3848,12 @@ class CardShelf {
   void present() {
     paint();
     if(!flowActive()) {
-      flowMoving_=false;flowPosition_=float(selected_);
-      flowFrame_.clear();flowAlpha_.clear();
+      flowMoving_=false;flowTouch_=false;flowPosition_=float(selected_);
+      std::vector<uint32_t>().swap(flowFrame_);std::vector<uint8_t>().swap(flowAlpha_);
+      for(auto& slot:flowSlots_)slot={};
       display_.displayBuffer();return;
     }
-    if(!flowMoving_)flowPosition_=float(selected_);
+    if(!flowMoving_ && !flowTouch_)flowPosition_=float(selected_);
     const auto& theme=books::uiTheme();
     const uint32_t paper=theme.active()?theme.box:0xffffff;
     const uint32_t ink=theme.active()?theme.title:0;
@@ -4500,6 +4552,7 @@ int runCardApp(const std::string& bookDir) {
       if(shelf->browsing()) {shelf->goHome();shelf->present();continue;}
       break;
     }
+    if(shelf->flowTouchEvent(event))continue;
     if(action==books::LogicalAction::Previous && shelf->change(-1))shelf->present();
     if(action==books::LogicalAction::Next && shelf->change(1))shelf->present();
     bool activate=action==books::LogicalAction::Confirm;

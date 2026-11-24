@@ -2840,7 +2840,7 @@ class CardShelf {
         visible_[selected_-first]:current_;
   }
   bool flowActive() const {
-    return flowView_ && browsing_ && !onlineMode_ && !searchEditing_ &&
+    return selected_<visible_.size() && flowView_ && browsing_ && !onlineMode_ && !searchEditing_ &&
         folderRows()==0 && !visible_.empty();
   }
   bool viewChosen() const {return !browsing_ && homeSelection_==4;}
@@ -2870,7 +2870,13 @@ class CardShelf {
       }
       present();return true;
     }
-    if(event.kind==K::TouchUp) {flowTouch_=false;return false;}
+    if(event.kind==K::TouchUp) {
+      flowTouch_=false;
+      if(std::abs(dx)>12 || std::abs(dy)>12 || std::abs(flowPosition_-float(selected_))>.015f) {
+        flowMoving_=true;flowAt_=ReaderClock::now();present();return true;
+      }
+      return false;
+    }
     return true;
   }
   bool folderMode() const {
@@ -3227,6 +3233,7 @@ class CardShelf {
     return true;
   }
   void refreshVisible() {
+    flowMoving_=false;flowTouch_=false;
     visible_.clear();
     folders_.clear();
     if(folderMode()) {
@@ -3284,7 +3291,11 @@ class CardShelf {
     else if(direction<0 && selected_>0)--selected_;
     if(selected_!=before && flowActive()) {
       if(!flowMoving_)flowPosition_=float(before);
-      flowMoving_=true;flowAt_=ReaderClock::now();
+      if(std::abs(float(selected_)-flowPosition_)>3.f)
+        flowPosition_=float(selected_)+(direction>0?-3.f:3.f);
+      if(!flowMoving_)flowAt_=ReaderClock::now();
+      flowMoving_=true;
+      animationTick();
     }
     return selected_!=before;
   }
@@ -3607,7 +3618,8 @@ class CardShelf {
       if(homeSelection_==2)books::paintSelection(display_,12,244,HOME_ONLINE_X-22,23);
       if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
       const std::string view=std::string(books::tr("Library View"))+": "+books::tr(flowView_?"Cover Flow":"List View");
-      drawRowLabel(68,269,30,view.c_str());
+      const auto viewLabel=fitWidth(view,239);
+      drawRowLabel(68,269,30,viewLabel.c_str());
       if(homeSelection_==4)books::paintSelection(display_,62,269,251,30);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
@@ -3691,8 +3703,19 @@ class CardShelf {
         const size_t index=visible_[selected_];
         const auto& info=details(index);
         const auto title=info.title.empty()?books_[index].label:info.title;
-        drawRowLabel(55,244,23,fitWidth(title,265).c_str());
-        drawRowLabel(55,264,23,fitWidth(info.author,265).c_str());
+        const auto caption=[this](const std::string& value,int y,int px,int width) {
+          if(value.empty())return;
+          auto& ui=books::UiText::instance();
+          if(ui.available()&&ui.drawable(value)) {
+            const auto text=fitWidth(value,width,px);
+            uiDraw((375-ui.width(text,px))/2,y,text,px,375);
+          } else {
+            const auto text=fitWidth(value,width);
+            drawRowLabel((375-renderer_.getTextWidth(1,text.c_str()))/2,y,20,text.c_str());
+          }
+        };
+        caption(title,243,19,275);
+        caption(info.author,266,15,235);
         if(flowProgressIndex_!=index) {
           flowProgressIndex_=index;
           uint32_t ppm=0;
@@ -3700,7 +3723,7 @@ class CardShelf {
         }
         if(flowProgressPercent_>=0) {
           const auto percent=std::to_string(flowProgressPercent_)+"%";
-          drawRowLabel(163,287,22,percent.c_str());
+          caption(percent,287,14,135);
         }
       } else if(rowCount()==0) {
         renderer_.drawText(1,16,102,books::tr(books_.empty()?"No EPUB books found":"No matching books"));

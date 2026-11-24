@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: q2-books-release-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+  group: q2-books-release-pipeline
   cancel-in-progress: false
 
 env:
@@ -171,6 +171,19 @@ jobs:
           sha="$zip.sha256"
           notes="docs/release-notes/$tag.md"
           title="Books $tag (Shanling Q2)"
+          # A retry of an older version must not replace a newer latest release.
+          gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.draft == false and .prerelease == false and (.assets | length) > 0) | .tag_name' > "$RUNNER_TEMP/books-published-tags"
+          latest_flag="$(python3 - "$tag" "$RUNNER_TEMP/books-published-tags" <<'PY'
+          import pathlib, re, sys
+          def version(value):
+              m = re.fullmatch(r"v\.?(\d+)\.(\d+)\.(\d+)", value)
+              return tuple(map(int, m.groups())) if m else None
+          current = version(sys.argv[1])
+          previous = [v for t in pathlib.Path(sys.argv[2]).read_text().splitlines() if (v := version(t))]
+          print("--latest" if current is not None and current >= max(previous, default=(0,0,0)) else "--latest=false")
+          PY
+          )"
           if gh release view "$tag" >/dev/null 2>&1; then
             # Recover only empty web-created releases; never replace published assets.
             count="$(gh release view "$tag" --json assets --jq '.assets | length')"
@@ -179,11 +192,11 @@ jobs:
             if [[ "$tag" == *-* ]]; then
               gh release edit "$tag" --title "$title" --notes-file "$notes" --prerelease
             else
-              gh release edit "$tag" --title "$title" --notes-file "$notes"
+              gh release edit "$tag" --title "$title" --notes-file "$notes" "$latest_flag"
             fi
           elif [[ "$tag" == *-* ]]; then
             gh release create "$tag" "$zip" "$sha" --verify-tag --prerelease --title "$title" --notes-file "$notes"
           else
-            gh release create "$tag" "$zip" "$sha" --verify-tag --latest --title "$title" --notes-file "$notes"
+            gh release create "$tag" "$zip" "$sha" --verify-tag "$latest_flag" --title "$title" --notes-file "$notes"
           fi
           echo "Published https://github.com/$GH_REPO/releases/tag/$tag" >> "$GITHUB_STEP_SUMMARY"

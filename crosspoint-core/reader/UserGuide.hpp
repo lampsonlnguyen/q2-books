@@ -17,8 +17,8 @@
 #include <unistd.h>
 
 namespace books {
-inline constexpr char userGuideLabel[]="userguide";
-inline constexpr char userGuideTitle[]="Q2 Pod User Guide";
+inline constexpr char userGuideLabel[]="User Guide";
+inline constexpr char userGuideSubtitle[]="Q2 Pod";
 inline constexpr size_t userGuideMaxBytes=32u*1024u*1024u;
 
 inline bool validUserGuideEpub(const std::string& path) {

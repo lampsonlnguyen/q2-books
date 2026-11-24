@@ -47,6 +47,7 @@
 #include "ShelfDetails.hpp"
 #include "ShelfCover.hpp"
 #include "ShelfGrid.hpp"
+#include "ShelfArtwork.hpp"
 #include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
 #include "ReaderLinks.hpp"
@@ -2816,7 +2817,6 @@ class CardShelf {
     int progress=-1;
   };
   std::array<FlowSlot,8> flowSlots_{};
-  books::FlowCover fallbackCover_=books::flow::placeholder();
   std::vector<uint32_t> flowFrame_;
   std::vector<uint8_t> flowAlpha_;
   size_t flowProgressIndex_=size_t(-1);
@@ -2851,6 +2851,7 @@ class CardShelf {
     std::remove(tmp.c_str());return false;
   }
   bool onlineMode_=false;
+  bool onlineFromOptions_=false;
   std::string onlineUrl_;
   std::string onlineTitle_;
   std::vector<books::OpdsEntry> onlineEntries_;
@@ -2894,7 +2895,8 @@ class CardShelf {
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
   static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
-  static constexpr int OPTION_COUNT=3;
+  static constexpr int OPTION_COUNT=4;
+  static constexpr char addOpdsServerLabel[]="Add a OPDS server";
 
  public:
   explicit CardShelf(const std::vector<ShelfEntry>& books,size_t selection=0,
@@ -3104,17 +3106,18 @@ class CardShelf {
   bool guideSelected() const {return browsing_ && selected()==books_.size();}
   bool browsing() const {return browsing_;}
   bool browseChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==1;}
-  bool onlineChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==3;}
+  bool onlineChosen() const {return optionsOpen_ && optionSelection_==3;}
   bool onlineMode() const {return onlineMode_;}
   bool searching() const {return browsing_ && searchEditing_;}
   // The server list: no network until a server is opened.
   bool enterOnline() {
     config_=books::loadConnectedConfig();
+    onlineFromOptions_=optionsOpen_;optionsOpen_=false;
     onlineMode_=true;browsing_=true;searchEditing_=false;fieldEditing_=false;
     onlineScreen_=OnlineScreen::Servers;serverEditMode_=false;
     onlineEntries_.clear();onlineHistory_.clear();
     serverSelection_=0;
-    notice_=config_.servers.empty()?"Add a catalog server":"";
+    notice_=config_.servers.empty()?addOpdsServerLabel:"";
     return true;
   }
   bool detailsOpen() const {return onlineMode_ && detailsOpen_;}
@@ -3194,7 +3197,11 @@ class CardShelf {
       notice_.clear();
       if(form)onlineScreen_=OnlineScreen::Servers;
       else if(serverEditMode_){serverEditMode_=false;serverSelection_=0;}
-      else goHome();
+      else {
+        const bool returnToOptions=onlineFromOptions_;
+        goHome();
+        if(returnToOptions) {enterOptions();optionSelection_=3;}
+      }
       return ServerAction::Redraw;
     }
     if(action==A::Next || action==A::Previous) {
@@ -3395,7 +3402,7 @@ class CardShelf {
     browsed_=true;
   }
   void goHome() {
-    browsing_=false;onlineMode_=false;searchEditing_=false;optionsOpen_=false;
+    browsing_=false;onlineMode_=false;onlineFromOptions_=false;searchEditing_=false;optionsOpen_=false;
     homeSelection_=books_.empty()?1:0;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
     detailsOpen_=false;
@@ -3499,7 +3506,7 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,3);
+      const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -3543,7 +3550,7 @@ class CardShelf {
       if(x<12 || x>=362 || y<HOME_TOP_Y)return false;
       const int offset=y-HOME_TOP_Y;
       const int row=offset/HOME_ROW_STEP;
-      if(row>3 || offset%HOME_ROW_STEP>=HOME_ROW_H || (row==0 && books_.empty()))return false;
+      if(row>2 || offset%HOME_ROW_STEP>=HOME_ROW_H || (row==0 && books_.empty()))return false;
       homeSelection_=row;
       return true;
     }
@@ -3603,14 +3610,10 @@ class CardShelf {
                        x+books::ShelfCover::width,y+books::ShelfCover::height,true);
     renderer_.drawLine(x-1,y+books::ShelfCover::height,
                        x+books::ShelfCover::width,y+books::ShelfCover::height,true);
-    if(!currentCoverAvailable_) {
-      renderer_.drawLine(x+7,y+12,x+39,y+12,true);
-      renderer_.drawLine(x+7,y+18,x+39,y+18,true);
-      return;
-    }
+    const auto& cover=currentCoverAvailable_?currentCover_:books::shelf_art::defaultThumbnail();
     for(int py=0;py<books::ShelfCover::height;++py)
       for(int px=0;px<books::ShelfCover::width;++px)
-        if(currentCover_.ink[py*books::ShelfCover::stride+px/8] &
+        if(cover.ink[py*books::ShelfCover::stride+px/8] &
            (0x80u>>(px&7)))
           renderer_.drawPixel(x+px,y+py,true);
     books::paintPicture(display_,x,y,books::ShelfCover::width,books::ShelfCover::height);
@@ -3802,9 +3805,9 @@ class CardShelf {
       }
     } else if(optionsOpen_) {
       const std::array<std::string,OPTION_COUNT> labels{
-        books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store")};
+        books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store"),books::tr("Online")};
       const std::array<std::string,OPTION_COUNT> details{
-        books::tr(books::shelfSortLabel(sortMode_)),books::tr(viewLabel()),{}};
+        books::tr(books::shelfSortLabel(sortMode_)),books::tr(viewLabel()),{},{}};
       for(int row=0;row<OPTION_COUNT;++row)
         drawListRow(TOP_Y+row*ROW_H,labels[row],details[row],row==optionSelection_);
     } else if(serverScreen()) {
@@ -3864,8 +3867,8 @@ class CardShelf {
         drawRowLabel(textX,titleY,lineHeight,"No books yet");
       }
       renderer_.drawLine(15,bottom,right,bottom,true);
-      static constexpr const char* homeLabels[]={"Continue reading","Browse files","Options","Online"};
-      for(int row=books_.empty()?1:0;row<4;++row) {
+      static constexpr const char* homeLabels[]={"Continue reading","Browse files","Options"};
+      for(int row=books_.empty()?1:0;row<static_cast<int>(std::size(homeLabels));++row) {
         const int y=HOME_TOP_Y+row*HOME_ROW_STEP;
         drawRowLabel(22,y,HOME_ROW_H,homeLabels[row]);
         if(homeSelection_==row)books::paintSelection(display_,12,y,350,HOME_ROW_H);
@@ -3952,7 +3955,7 @@ class CardShelf {
       else if(flowActive()) {
         const size_t index=visible_[selected_];
         const bool guide=index==books_.size();
-        const books::ShelfDetails guideDetails{books::userGuideLabel,books::userGuideTitle};
+        const books::ShelfDetails guideDetails{books::tr(books::userGuideLabel),books::userGuideSubtitle};
         const auto& info=guide?guideDetails:details(index);
         const auto title=info.title.empty()?books_[index].label:info.title;
         const auto caption=[this](const std::string& value,int y,int px,int width) {
@@ -3990,7 +3993,7 @@ class CardShelf {
           }
           const size_t index=visible_[filtered-first];
           if(index==books_.size()) {
-            drawListRow(y,books::userGuideLabel,books::userGuideTitle,active);
+            drawListRow(y,books::tr(books::userGuideLabel),books::userGuideSubtitle,active);
             continue;
           }
           const auto& info=details(index);
@@ -4122,12 +4125,12 @@ class CardShelf {
   }
   const books::FlowCover& flowCoverAt(size_t row) {
     const size_t index=visible_[row];
-    if(index==books_.size())return fallbackCover_;
+    if(index==books_.size())return books::shelf_art::guideCover();
     const size_t first=static_cast<size_t>(std::max(0,int(std::floor(flowPosition_-books::flow::reach))));
     const size_t end=std::min(visible_.size(),
         static_cast<size_t>(std::ceil(flowPosition_+books::flow::reach)));
     const auto& cover=coverSlot(index,first,end).cover;
-    return cover.valid()?cover:fallbackCover_;
+    return cover.valid()?cover:books::shelf_art::defaultCover();
   }
   FlowSlot& gridSlot(size_t index,size_t start) {
     const size_t folders=folderRows();
@@ -4150,7 +4153,7 @@ class CardShelf {
         title=folders_[row];
         renderer_.drawRect(x+29,y+27,52,32,true);
         renderer_.drawRect(x+29,y+21,22,7,true);
-      } else if(guide)title=books::userGuideLabel;
+      } else if(guide)title=books::tr(books::userGuideLabel);
       else {
         const auto& info=details(index);
         title=info.title.empty()?books_[index].label:info.title;
@@ -4185,8 +4188,8 @@ class CardShelf {
       const size_t row=start+cell;
       if(row<folders)continue;
       const size_t index=visible_[row-folders];
-      const auto& cover=index==books_.size()?fallbackCover_:gridSlot(index,start).cover;
-      books::grid::drawCover(flowFrame_.data(),cover.valid()?cover:fallbackCover_,books::grid::tile(cell));
+      const auto& cover=index==books_.size()?books::shelf_art::guideCover():gridSlot(index,start).cover;
+      books::grid::drawCover(flowFrame_.data(),cover.valid()?cover:books::shelf_art::defaultCover(),books::grid::tile(cell));
     }
   }
   void present() {
@@ -5078,13 +5081,17 @@ int main(int argc,char** argv) {
     if(!shelf.optionsOpen() || !shelf.sortChosen() || shelf.browseChosen() ||
        shelf.change(-1))return 3;
     if(!shelf.change(1) || !shelf.viewChosen() ||
-       !shelf.tap(28,178) || !shelf.fontsChosen() || shelf.change(1))return 4;
+       !shelf.tap(28,178) || !shelf.fontsChosen())return 4;
     shelf.enterFontManager();
     shelf.fontManagerInput(books::LogicalAction::Back,{});
     if(shelf.fontManager() || !shelf.optionsOpen() || !shelf.fontsChosen())return 5;
+    if(!shelf.change(1) || !shelf.onlineChosen() || shelf.change(1) ||
+       !shelf.enterOnline() || !shelf.serverScreen() || shelf.optionsOpen())return 6;
+    if(shelf.serverInput(books::LogicalAction::Back,0,0,false)!=CardShelf::ServerAction::Redraw ||
+       !shelf.optionsOpen() || !shelf.onlineChosen() || shelf.onlineMode())return 7;
     shelf.closeOptions();
-    if(shelf.optionsOpen() || !shelf.optionsChosen() || !shelf.change(1) ||
-       !shelf.onlineChosen() || shelf.change(1))return 6;
+    if(shelf.optionsOpen() || !shelf.optionsChosen() || shelf.change(1) ||
+       shelf.tap(28,250))return 8;
     return 0;
   }
   if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {
@@ -5105,6 +5112,8 @@ int main(int argc,char** argv) {
     emptyShelf.enterBrowser(true);
     if(!emptyShelf.open() || !emptyShelf.gridActive() || !emptyShelf.guideSelected() ||
        emptyShelf.change(1) || emptyShelf.tap(x+1,y+1))return 2;
+    const auto& guideCover=emptyShelf.flowCoverAt(0);
+    if(!guideCover.valid() || &guideCover!=&books::shelf_art::guideCover())return 11;
 
     std::vector<ShelfEntry> books;
     for(int i=0;i<4000;++i)books.push_back({"/Books/"+std::to_string(i)+".epub","Book"});
@@ -5112,6 +5121,8 @@ int main(int argc,char** argv) {
     shelf.enterBrowser(true);
     if(!shelf.open() || !shelf.gridActive() || shelf.tap(x+1,y+1) ||
        shelf.bookPath()!=books[0].path || !shelf.tap(x+1,y+1))return 3;
+    const auto& missingCover=shelf.flowCoverAt(1);
+    if(!missingCover.valid() || &missingCover!=&books::shelf_art::defaultCover())return 12;
     for(int i=0;i<grid::pageSize;++i)if(!shelf.change(1))return 4;
     if(shelf.bookPath()!=books[grid::pageSize].path)return 5;
     using K=books::PhysicalKind;

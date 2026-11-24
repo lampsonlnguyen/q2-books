@@ -2782,6 +2782,12 @@ class CardShelf {
   size_t selected_ = 0;  // index within filtered browsing rows
   size_t current_ = 0;   // index within the unfiltered library
   std::vector<size_t> visible_;
+  std::vector<uint8_t> alphabetGroups_;
+  struct JumpGroup {std::string label;size_t row;};
+  std::vector<JumpGroup> jumpGroups_;
+  size_t jumpSelection_=0;
+  bool jumpOpen_=false;
+  ReaderClock::time_point jumpHold_{};
   // Folders mode: the folder shown ("" is Books) and its child folders,
   // listed before its books.
   std::string root_;
@@ -2896,6 +2902,8 @@ class CardShelf {
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
   static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
   static constexpr int OPTION_COUNT=4;
+  static constexpr int JUMP_X=12,JUMP_Y=78,JUMP_W=117,JUMP_H=46;
+  static constexpr size_t JUMP_COLS=3,JUMP_ROWS=4,JUMP_PAGE=JUMP_COLS*JUMP_ROWS;
   static constexpr char addOpdsServerLabel[]="Add a OPDS server";
 
  public:
@@ -2910,6 +2918,8 @@ class CardShelf {
     libraryView_=loadLibraryView();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
+    alphabetGroups_.reserve(books_.size());
+    for(const auto& book:books_)alphabetGroups_.push_back(books::alphabet::titleGroup(book.label));
     refreshVisible();
     if(!books_.empty()) {
       selected_=std::min(selection,books_.size()-1)+1;
@@ -2940,13 +2950,95 @@ class CardShelf {
         visible_[selected_-first]:current_;
   }
   bool flowActive() const {
-    return selected_<visible_.size() && libraryView_==LibraryView::CoverFlow && browsing_ && !onlineMode_ && !searchEditing_ &&
+    return selected_<visible_.size() && libraryView_==LibraryView::CoverFlow && browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
         folderRows()==0 && !visible_.empty();
   }
   bool gridActive() const {
-    return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_;
+    return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_;
   }
   bool hasBrowsed() const {return browsed_;}
+  bool jumpOpen() const {return jumpOpen_;}
+  bool canJump() const {
+    return browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ && rowCount()>1;
+  }
+  bool enterJump() {
+    if(!canJump())return false;
+    // Build the destinations once from the visible shelf, in its current
+    // order. Wheel and touch input use only the resulting bounded groups.
+    std::array<size_t,books::alphabet::groupCount> first;
+    first.fill(rowCount());
+    const size_t folders=folderRows();
+    const auto add=[&](size_t group,size_t row) {first[group]=std::min(first[group],row);};
+    for(size_t row=0;row<folders;++row)
+      add(books::alphabet::titleGroup(folders_[row]),row);
+    for(size_t i=0;i<visible_.size();++i) {
+      const auto index=visible_[i];
+      if(index<books_.size())add(alphabetGroups_[index],folders+i);
+    }
+
+    size_t current=first.size();
+    if(selected_<folders)current=books::alphabet::titleGroup(folders_[selected_]);
+    else if(const size_t index=selected();index<books_.size())current=alphabetGroups_[index];
+    jumpSelection_=0;
+    jumpGroups_.clear();
+    for(size_t group=0;group<first.size();++group) {
+      if(first[group]==rowCount())continue;
+      if(current==group)jumpSelection_=jumpGroups_.size();
+      jumpGroups_.push_back({books::alphabet::label(group),first[group]});
+    }
+    jumpOpen_=!jumpGroups_.empty();
+    flowMoving_=false;flowTouch_=false;gridTouchX_=-1;notice_.clear();
+    return jumpOpen_;
+  }
+  void closeJump() {jumpOpen_=false;}
+  void applyJump() {
+    selected_=jumpGroups_[jumpSelection_].row;
+    flowPosition_=float(selected_);
+    closeJump();
+  }
+  bool jumpInput(books::LogicalAction action,const books::PhysicalEvent& event,size_t steps=1) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    if(action==A::Back || (event.kind==K::TouchUp && event.y<74)) {
+      closeJump();return true;
+    }
+    if(action==A::Confirm) {applyJump();return true;}
+    if(action==A::Next || action==A::Previous) {
+      const size_t before=jumpSelection_;
+      if(action==A::Next)jumpSelection_+=std::min(steps,jumpGroups_.size()-jumpSelection_-1);
+      else jumpSelection_-=std::min(steps,jumpSelection_);
+      return before!=jumpSelection_;
+    }
+    if(event.kind!=K::TouchUp)return false;
+    const size_t start=jumpSelection_/JUMP_PAGE*JUMP_PAGE;
+    if(event.y>=269 && event.y<303) {
+      if(event.x>=30 && event.x<115 && start>=JUMP_PAGE)jumpSelection_=start-JUMP_PAGE;
+      else if(event.x>=260 && event.x<345 && start+JUMP_PAGE<jumpGroups_.size())
+        jumpSelection_=start+JUMP_PAGE;
+      else return false;
+      return true;
+    }
+    if(event.x<JUMP_X || event.x>=JUMP_X+int(JUMP_COLS)*JUMP_W ||
+       event.y<JUMP_Y || event.y>=JUMP_Y+int(JUMP_ROWS)*JUMP_H)return false;
+    const size_t index=start+(event.y-JUMP_Y)/JUMP_H*JUMP_COLS+(event.x-JUMP_X)/JUMP_W;
+    if(index>=jumpGroups_.size())return false;
+    jumpSelection_=index;
+    applyJump();return true;
+  }
+  bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    if(!canJump()) {jumpHold_={};return false;}
+    if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
+      jumpHold_=ReaderClock::now();
+    if(action==A::Confirm || event.kind==K::KeyUp || event.kind==K::TouchDown) {
+      const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
+          ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
+      jumpHold_={};
+      if(held)return enterJump();
+    }
+    return false;
+  }
   bool optionsChosen() const {return !browsing_ && !optionsOpen_ && homeSelection_==2;}
   bool optionsOpen() const {return optionsOpen_;}
   void enterOptions() {
@@ -3555,7 +3647,8 @@ class CardShelf {
       return true;
     }
     if(y>=39 && y<74) {
-      if(x>=190)return enterOnline();
+      if(x>=291)return enterOnline();
+      if(x>=232)return enterJump();
       enterSearch();return true;
     }
     if(flowActive()) {
@@ -3637,7 +3730,7 @@ class CardShelf {
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
   // glyph scaler. Reader/body fonts and multilingual fallbacks are unchanged.
-  void drawCompactLabel(int x,int baseline,const char* label,int scale=192) {
+  void drawCompactLabel(int x,int baseline,const char* label,int scale=192,int right=362) {
     // UI labels, translated; UTF-8 so translations keep their accents.
     const std::string text=books::tr(label);
     {
@@ -3645,13 +3738,16 @@ class CardShelf {
       const bool classic=books::uiTheme().style==books::UiTheme::Style::Classic;
       const int px=std::max(classic?16:13,scale*24/256);
       if(ui.available() && ui.drawable(text) &&
-         uiDraw(x,baseline-ui.ascent(px),text,px,362))return;
+         uiDraw(x,baseline-ui.ascent(px),text,px,right))return;
     }
     const auto* p=reinterpret_cast<const unsigned char*>(text.c_str());
     while(*p) {
       const uint32_t cp=utf8NextCodepoint(&p);
-      x+=renderer_.drawScaledCodepoint(menuLanguageFont.glyphSlot(1,cp),cp,
-                                        EpdFontFamily::REGULAR,x,baseline,scale);
+      const int slot=menuLanguageFont.glyphSlot(1,cp);
+      int32_t advance=0;int top=0;
+      if(renderer_.getCodepointMetrics(slot,cp,EpdFontFamily::REGULAR,advance,top) &&
+         x+fp4::toPixel(advance*scale/256)>right)break;
+      x+=renderer_.drawScaledCodepoint(slot,cp,EpdFontFamily::REGULAR,x,baseline,scale);
     }
   }
   // A list row's second line (an author), in font 1's own glyphs scaled down:
@@ -3759,7 +3855,7 @@ class CardShelf {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
     // Invert the header raster so its text stays white on the dark title bar.
-    const char* title=fontManager_?"Font Store":optionsOpen_?"Options":onlineMode_?"Online":"Books";
+    const char* title=jumpOpen_?"A-Z":fontManager_?"Font Store":optionsOpen_?"Options":onlineMode_?"Online":"Books";
     if(books::uiTheme().active()) {
       // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
       int width=0;
@@ -3803,6 +3899,8 @@ class CardShelf {
             std::string(books::tr("Download"))+"  "+size;
         drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,books::tr(pack.label),detail,index==fontSelection_);
       }
+    } else if(jumpOpen_) {
+      paintJump();
     } else if(optionsOpen_) {
       const std::array<std::string,OPTION_COUNT> labels{
         books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store"),books::tr("Online")};
@@ -3947,9 +4045,11 @@ class CardShelf {
       if(folderMode()) {  // where you are instead of the count
         std::string crumb=books::shelfBreadcrumb(folder_,24);
         if(crumb.compare(0,5,"Books")==0)crumb=books::tr("Books")+crumb.substr(5);
-        drawCompactLabel(16,61,crumb.c_str(),160);
-      } else drawCompactLabel(16,61,count);
-      drawCompactLabel(212,61,"Search | Online",133);
+        drawCompactLabel(16,61,crumb.c_str(),145,146);
+      } else drawCompactLabel(16,61,count,145,146);
+      drawCompactLabel(155,61,"Search",145,227);
+      if(canJump())drawCompactLabel(243,61,"A-Z",145,283);
+      drawCompactLabel(301,61,"Online",145,360);
       renderer_.drawLine(15,72,359,72,true);
       if(gridActive()) paintGrid();
       else if(flowActive()) {
@@ -4137,6 +4237,20 @@ class CardShelf {
     const size_t first=start>folders?start-folders:0;
     const size_t end=std::min(rowCount(),start+books::grid::pageSize)-folders;
     return coverSlot(index,first,end);
+  }
+  void paintJump() {
+    const size_t start=jumpSelection_/JUMP_PAGE*JUMP_PAGE;
+    for(size_t cell=0;cell<JUMP_PAGE && start+cell<jumpGroups_.size();++cell) {
+      const int x=JUMP_X+int(cell%JUMP_COLS)*JUMP_W;
+      const int y=JUMP_Y+int(cell/JUMP_COLS)*JUMP_H;
+      const auto& label=jumpGroups_[start+cell].label;
+      const auto& text=fitWidth(label,JUMP_W-14);
+      drawRowLabel(x+7,y,JUMP_H-4,text.c_str());
+      if(start+cell==jumpSelection_)books::paintSelection(display_,x,y,JUMP_W-4,JUMP_H-4);
+      else renderer_.drawRect(x,y,JUMP_W-4,JUMP_H-4,true);
+    }
+    if(start>=JUMP_PAGE)drawRowLabel(48,269,34,"<");
+    if(start+JUMP_PAGE<jumpGroups_.size())drawRowLabel(305,269,34,">");
   }
   void paintGrid() {
     namespace grid=books::grid;
@@ -4390,7 +4504,7 @@ int runCardApp(const std::string& bookDir) {
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
       // never parse chapter pages or write an index on every wheel turn.
       if(!reader && shelf && shelf->animating())shelf->animationTick();
-      if(!reader && shelf && !shelf->animating() && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
+      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
         const std::string& book=books[nextShelfIndex++].path;
         const auto result=books::indexShelfBook(book);
         if(result.updated) {
@@ -4427,7 +4541,7 @@ int runCardApp(const std::string& bookDir) {
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
       deadline=std::min(deadline,turnDue);
       if(!reader && shelf && shelf->animating())deadline=std::min(deadline,ReaderClock::now()+std::chrono::milliseconds(16));
-      if(!reader && shelf && !shelf->animating() && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
         std::fputs("Books: input socket poll failed\n",stderr);
@@ -4927,6 +5041,13 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
+    if(shelf->jumpOpen()) {
+      const size_t steps=1+pendingRepeat;
+      pendingRepeat=0;
+      if(shelf->jumpInput(action,event,steps))shelf->present();
+      continue;
+    }
+    if(shelf->jumpShortcut(action,event)) {shelf->present();continue;}
     if(shelf->optionsOpen() && (action==books::LogicalAction::Back ||
        (event.kind==books::PhysicalKind::TouchUp && event.y<74))) {
       shelf->closeOptions();
@@ -4942,14 +5063,9 @@ int runCardApp(const std::string& bookDir) {
     if(action==books::LogicalAction::Previous && shelf->change(-1))shelf->present();
     if(action==books::LogicalAction::Next && shelf->change(1))shelf->present();
     bool activate=action==books::LogicalAction::Confirm;
-    if(event.kind==books::PhysicalKind::TouchUp && shelf->browsing() &&
-       event.y>=39 && event.y<74 && event.x>=190) {
-      (void)shelf->enterOnline();
-      shelf->present();
-      continue;
-    }
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && (shelf->animating() || shelf->gridActive()))shelf->present();continue;}
+    if(shelf->jumpOpen() || shelf->onlineMode()) {shelf->present();continue;}
     if(shelf->optionsChosen()) {shelf->enterOptions();shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
@@ -5071,6 +5187,65 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==2 && std::strcmp(argv[1],"--test-shelf-jump")==0) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    char state[]="/tmp/books-jump-test-XXXXXX";
+    if(!mkdtemp(state) || setenv("BOOKS_STATE_DIR",state,1)!=0)return 1;
+    const std::string setting=std::string(state)+"/library-view.conf";
+    struct Cleanup {
+      const std::string& setting;
+      const char* state;
+      ~Cleanup(){unlink(setting.c_str());rmdir(state);}
+    } cleanup{setting,state};
+    std::vector<ShelfEntry> collection={
+      {"/Books/3.epub","３ books"},{"/Books/AP.epub","Ánh"},
+      {"/Books/D.epub","Đà Lạt"},{"/Books/H.epub","漢字"}};
+    books::sortShelfBooks(collection,books::ShelfSortMode::Title,{});
+    for(int mode=0;mode<3;++mode) {
+      CardShelf shelf(collection);
+      for(int turn=0;turn<mode;++turn)shelf.toggleView();
+      if(!shelf.open())return 2;
+      shelf.enterBrowser(true);
+      if(shelf.flowActive()!=(mode==0) || shelf.gridActive()!=(mode==2))return 8;
+      if(!shelf.tap(247,55) || !shelf.jumpOpen() || !shelf.jumpInput(A::Next,{},2) ||
+         !shelf.jumpInput(A::Confirm,{}) || shelf.bookPath()!="/Books/D.epub")return 3;
+      if(!shelf.enterJump() || !shelf.jumpInput(A::Next,{},64) ||
+         shelf.jumpInput(A::Next,{},64) || !shelf.jumpInput(A::Back,{}) ||
+         shelf.bookPath()!="/Books/D.epub")return 4;
+      if(!shelf.enterJump() || !shelf.jumpInput(A::None,{K::TouchUp,0,14,125}) ||
+         shelf.bookPath()!="/Books/H.epub")return 5;
+      if(!shelf.tap(170,55) || !shelf.searching() ||
+         !shelf.tap(110,116) || !shelf.tap(110,116))return 6;
+      shelf.endSearch();
+      if(!shelf.enterJump() || shelf.jumpInput(A::Next,{},64) ||
+         !shelf.jumpInput(A::Confirm,{}) || shelf.bookPath()!="/Books/3.epub")return 7;
+      unlink(setting.c_str());
+    }
+    std::vector<ShelfEntry> large;
+    for(int i=0;i<4000;++i) {
+      const std::string name=std::string(1,char('A'+i%26))+" "+std::to_string(i);
+      large.push_back({"/Books/"+name+".epub",name});
+    }
+    books::sortShelfBooks(large,books::ShelfSortMode::Title,{});
+    CardShelf big(large);
+    if(!big.open())return 9;
+    big.enterBrowser(true);
+    if(!big.enterJump() || !big.jumpInput(A::None,{K::TouchUp,0,310,281}) ||
+       !big.jumpInput(A::None,{K::TouchUp,0,14,80}) ||
+       big.bookPath().find("/Books/M ")!=0)return 10;
+    const std::vector<ShelfEntry> nested={{"/Books/Álbum/a.epub","a"},{"/Books/Z/a.epub","a"}};
+    CardShelf folders(nested,0,0,books::ShelfSortMode::Folders,"/Books");
+    if(!folders.open())return 11;
+    folders.enterBrowser(true);
+    if(!folders.folderUp())return 12;
+    if(!folders.enterJump() || !folders.jumpInput(A::Next,{},64) ||
+       !folders.jumpInput(A::Confirm,{}) || !folders.folderSelected())return 13;
+    folders.openSelectedFolder();
+    if(!folders.enterJump() || !folders.jumpInput(A::Confirm,{}) ||
+       folders.bookPath()!="/Books/Z/a.epub")return 14;
+    return 0;
+  }
   if(argc==2 && std::strcmp(argv[1],"--test-shelf-options")==0) {
     const std::vector<ShelfEntry> empty;
     CardShelf shelf(empty);

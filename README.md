@@ -138,20 +138,3 @@ Q2 Pod, if installed, may offer a Library launcher but must not be used as the e
 ## Licensing
 
 The code copied unmodified from CrossPoint is governed by CrossPoint's original MIT license and associated third-party notices: see [LICENSE-CROSSPOINT](crosspoint-core/LICENSE-CROSSPOINT). Check every third-party dependency's license before distribution.
-
-### Q2 MIPS / hardware diagnostic
-
-The `books-hwcheck` diagnostic was merged from [PR #7](https://github.com/lampsonlnguyen/q2-crosspoint/pull/7). Its MIPS cross-build, ELF check and QEMU command-line smoke test passed, but it has **not been tested on the actual Q2 device**. The diagnostic is **not an ebook reader**; physical-device behavior and runtime compatibility are still unverified. See [MIPS hardware test gates](docs/q2-mips-hardware-validation.md) once that PR merges.
-
-### End-to-end reader integration status
-
-Source-level checks are intentionally distinct from an installable Q2 reader. The original
-GfxRenderer, SD fonts, OpenType shaping and bitmap decompression are staged under
-[draft PR #15](https://github.com/lampsonlnguyen/q2-crosspoint/pull/15), with a
-mandatory full-link smoke test. The original XHTML chapter parser was compiler-validated
-and merged in [PR #17](https://github.com/lampsonlnguyen/q2-crosspoint/pull/17).
-The full renderer linker check still needs resolving upstream font/cache/shaping
-implementation dependencies. Do **not** install the development binaries as
-`/mnt/mmc/.books/books`; a correct reader executable has not been produced.
-Physical Q2 testing, font coverage, actual page-turn latency, RAM and battery
-measurements remain unverified until the full reader runs on the device.

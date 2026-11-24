@@ -85,7 +85,7 @@ Books repaginates the current chapter and saves your choices in
 /mnt/mmc/.books/typography.conf. The book's page number may shift when
 font size changes; location anchoring is still a follow-up.
 
-The card app CI installs original CrossPoint NotoSansExtended and
+The card app CI tests original CrossPoint NotoSansExtended and
 NotoSerifExtended at 8–14 pt, using the official pinned 12 pt release
 and source-rasterized variants. Seven additional reading families
 come from CrossInk's pinned font manifest, rasterized into genuine
@@ -112,11 +112,21 @@ selected upstream release. For Chinese, the CJK font uses Japanese regional
 Han forms; distinct Simplified Chinese glyph shapes are not guaranteed.
 Font files do not imply support for every language or every ligature.
 
-The expanded font assets increase the ZIP substantially. Install to SD root
-with adequate space and retain the complete .books/fonts folder.
-An older ZIP with missing script files still opens using available fonts;
-startup logs report the count of loaded script families. See the upstream
-catalog at https://github.com/crosspoint-reader/crosspoint-fonts
+The default ZIP ships only Noto Sans (8–14 pt) and matching TrueType faces.
+Install updates over the existing SD root; do not uninstall the app or delete
+.books/fonts first. Existing optional fonts remain usable offline.
+
+To add fonts, open Books > Home > Fonts, select a pack with the wheel or
+touchscreen, and confirm. Wi-Fi and a correct device clock are required.
+Downloads are streamed to SD and checked against pinned release SHA-256
+digests. The current catalog uses fonts-v1.0.0. Alternatively, download the
+desired ZIP from https://github.com/lampsonlnguyen/q2-books-fonts/releases
+and extract its contents into .books/fonts/ (not SD root).
+Latin-script and Vietnamese text is available with the default extended
+Noto Sans. Other scripts require the corresponding optional reading font
+unless covered by the active face. UI translations remain bundled; the
+system UI face determines which menu glyphs can be displayed.
+Physical-device download validation remains pending.
 
 ## Online library (OPDS / Kavita) over HTTPS
 

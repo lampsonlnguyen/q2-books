@@ -4,7 +4,7 @@ on:
   # All versioned release publishing is owned by release.yml.
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/cover-flow]
     paths:
       - "crosspoint-core/tools/build_q2_github.sh"
       - "crosspoint-core/tools/build_q2_small_font_assets.py"

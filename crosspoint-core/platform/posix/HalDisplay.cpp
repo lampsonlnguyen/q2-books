@@ -107,15 +107,21 @@ static void reportCornerInk(const uint8_t* raster) {
   std::fprintf(stderr,"Books corner check: %d ink pixels under the glass%s",count,count?"":"\n");
   if(count)std::fprintf(stderr," (first at %d,%d)\n",fx,fy);
 }
+static books::Q2PagePresenter& sharedPresenter() {
+  static books::Q2PagePresenter presenter;
+  static const bool opened=presenter.open();
+  (void)opened;
+  return presenter;
+}
+bool HalDisplay::presentColorFrame(const uint32_t* frame,size_t pixels) {
+  return frame && pixels==PIXELS && sharedPresenter().presentARGB(frame,pixels);
+}
 void HalDisplay::displayBuffer(RefreshMode,bool) {
   if (!raster_ || !inkRaster_ || loaned_) return;
   reportCornerInk(raster_.get());
   // Upstream CrossPoint framebuffer is 1=paper, 0=ink. Q2PagePresenter's
   // bridge is 1=ink. Invert only the bounded 15KB 1bpp image, not the renderer.
-  static books::Q2PagePresenter presenter;
-  static bool tried=false, available=false;
-  if (!tried) {tried=true; available=presenter.open();}
-  if (!available) return;
+  auto& presenter=sharedPresenter();
   for(unsigned i=0;i<BUFFER_SIZE;i++)inkRaster_[i]=static_cast<uint8_t>(~raster_[i]);
   const uint8_t* levels=nullptr;
   if(alpha_ && expect_ && shown_) {

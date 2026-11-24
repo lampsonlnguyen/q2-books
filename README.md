@@ -11,6 +11,12 @@ bookmarks, highlights and settings from the old card folder into `.books`.
 User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 [release notes](docs/release-notes/v1.1.1.md).
 
+## Automatic releases
+
+Source changes merged to `main` automatically reserve the next patch version (or honor a newer explicitly selected `crosspoint-core/VERSION`), preserve existing version-specific release notes or generate a commit changelog, and dispatch the validated release workflow. The release ZIP and SHA-256 are published only after GCC/Clang and Q2 MIPS/QEMU checks pass. Feature branches remain test-only. README-only changes do not publish releases.
+
+The **Automatic Books release** workflow can also be run manually on main. If version/tag preparation succeeds but a later build or dispatch fails, retry **Build, test and publish Books for Q2** with that existing tag; do not recreate or force-push the tag. Automatic release preparation requires the GitHub Actions token to be permitted to commit the version file and create tags. A failed build can reserve a version without publishing it. Automated tests do not replace physical-device QA.
+
 ## Release roadmap (v1.3.0–v1.18.0)
 
 One primary feature per minor release. Stabilize v1.3.0 before starting v1.4.0; complete each release's milestones and release gates before moving on. Patch releases (for example v1.4.1 and v1.4.2) are reserved for fixes, compatibility and performance regressions. Versions below are planned targets, not published releases.

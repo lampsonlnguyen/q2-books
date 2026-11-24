@@ -943,3 +943,9 @@ add_executable(books_flow_renderer_tests tests/flow_renderer_test.cpp)
 target_include_directories(books_flow_renderer_tests PRIVATE reader)
 target_compile_options(books_flow_renderer_tests PRIVATE -UNDEBUG)
 add_test(NAME books_cover_flow_renderer_cache_progress COMMAND books_flow_renderer_tests)
+
+# Optional fonts: host fixture exercises the same streaming ZIP installer as Q2.
+if(NOT CMAKE_CROSSCOMPILING)
+  add_test(NAME books_font_pack_install
+    COMMAND python3 "${CMAKE_CURRENT_SOURCE_DIR}/tests/font_pack_install_test.py" "$<TARGET_FILE:books-reader>")
+endif()

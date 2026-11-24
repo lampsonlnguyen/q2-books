@@ -545,7 +545,7 @@ find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-book
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
 find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
 find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
-# Full fonts were required for regression tests above, but optional packs are
+# All font families were required for regression tests above, but optional packs are
 # distributed by q2-books-fonts. Never prune the user's SD card: this is only
 # the temporary CI staging tree.
 python3 - "$card/.books/fonts" <<'PY'

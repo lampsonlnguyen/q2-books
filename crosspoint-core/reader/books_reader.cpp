@@ -23,6 +23,7 @@
 #include <Q2Controls.hpp>
 #include <SdCardFont.h>
 #include "Typography.hpp"
+#include "FontPacks.hpp"
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
@@ -2797,6 +2798,8 @@ class CardShelf {
   size_t detailsRoom_=6;  // description lines the last paint had room for
   bool searchSubmit_=false;
   int homeSelection_ = 0;
+  bool fontManager_=false;
+  size_t fontSelection_=0;
   std::string notice_;
   // 4 rows of 47 px: a title line and an author line need about 45 px with
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
@@ -2844,6 +2847,49 @@ class CardShelf {
         folderRows()==0 && !visible_.empty();
   }
   bool viewChosen() const {return !browsing_ && homeSelection_==4;}
+  bool fontsChosen() const {return !browsing_ && homeSelection_==5;}
+  bool fontManager() const {return fontManager_;}
+  void enterFontManager() {
+    fontManager_=true;fontSelection_=0;notice_.clear();
+  }
+  void fontManagerInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    const bool touch=event.kind==books::PhysicalKind::TouchUp;
+    if(action==books::LogicalAction::Back || (touch && event.y<74)) {
+      fontManager_=false;notice_.clear();present();return;
+    }
+    if(action==books::LogicalAction::Next || action==books::LogicalAction::Previous) {
+      if(action==books::LogicalAction::Next && fontSelection_+1<books::fontPackCount)
+        ++fontSelection_;
+      else if(action==books::LogicalAction::Previous && fontSelection_>0)--fontSelection_;
+      notice_.clear();present();return;
+    }
+    bool activate=action==books::LogicalAction::Confirm;
+    if(touch && event.y>=TOP_Y && event.y<TOP_Y+VISIBLE_ROWS*ROW_H) {
+      const size_t index=(fontSelection_/VISIBLE_ROWS)*VISIBLE_ROWS+
+          static_cast<size_t>((event.y-TOP_Y)/ROW_H);
+      if(index>=books::fontPackCount)return;
+      fontSelection_=index;activate=true;
+    }
+    if(!activate)return;
+    const auto& pack=books::fontPacks[fontSelection_];
+    if(books::fontPackInstalled(pack)) {
+      notice_="Already installed";present();return;
+    }
+    notice_="Downloading font...";present();
+    std::string error;
+    const bool installed=books::downloadFontPack(pack,error);
+    if(interrupted)return;
+    if(installed) {
+      // New script fallbacks are immediately usable by the shelf; the next
+      // reader opens its own fonts from disk, including existing saved faces.
+      scriptFonts_.load(renderer_,12,{1});
+      notice_="Font installed";
+    } else {
+      notice_="Font download failed";
+      std::fprintf(stderr,"Books font pack %s: %s\n",pack.slug,error.c_str());
+    }
+    present();
+  }
   void toggleView() {
     flowView_=!flowView_;
     if(!saveFlowView()) {flowView_=!flowView_;notice_="Cannot save setting";}
@@ -3280,7 +3326,7 @@ class CardShelf {
       return searchKey_!=before;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,0,4);
+      const int next=std::clamp(homeSelection_+direction,0,5);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       return true;
@@ -3316,10 +3362,11 @@ class CardShelf {
       return applySearchChoice();
     }
     if(!browsing_) {
-      if(y>=158&&y<195)homeSelection_=0;
-      else if(y>=204&&y<241)homeSelection_=1;
-      else if(y>=244&&y<267)homeSelection_=x<HOME_ONLINE_X?2:3;
-      else if(y>=269&&y<295)homeSelection_=4;
+      if(y>=153&&y<182)homeSelection_=0;
+      else if(y>=185&&y<214)homeSelection_=1;
+      else if(y>=217&&y<242)homeSelection_=x<HOME_ONLINE_X?2:3;
+      else if(y>=244&&y<269)homeSelection_=4;
+      else if(y>=271&&y<296)homeSelection_=5;
       else return false;
       return true;
     }
@@ -3523,7 +3570,7 @@ class CardShelf {
     // Invert the header raster so its text stays white on the dark title bar.
     if(books::uiTheme().active()) {
       // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
-      const char* title=onlineMode_?"Online":"Books";
+      const char* title=fontManager_?"Fonts":onlineMode_?"Online":"Books";
       int width=0;
       auto& ui=books::UiText::instance();
       if(ui.available() && ui.drawable(books::tr(title))) {  // Q2 Pod's 21 px bar title
@@ -3543,11 +3590,24 @@ class CardShelf {
       }
     } else {
       // Centred, as the themed bar: the strip's ends are under the glass.
-      const char* title=books::tr(onlineMode_?"Online":"Books");
+      const char* title=books::tr(fontManager_?"Fonts":onlineMode_?"Online":"Books");
       drawRowLabel((375-renderer_.getTextWidth(1,title))/2,0,39,title);
       books::paintBar(display_,0,0,375,39);  // the title strip
     }
-    if(serverScreen()) {
+    if(fontManager_) {
+      drawRowLabel(16,39,35,"Font packs");
+      renderer_.drawLine(15,74,359,74,true);
+      const size_t start=(fontSelection_/VISIBLE_ROWS)*VISIBLE_ROWS;
+      for(size_t row=0;row<VISIBLE_ROWS && start+row<books::fontPackCount;++row) {
+        const size_t index=start+row;
+        const auto& pack=books::fontPacks[index];
+        char size[40]{};
+        std::snprintf(size,sizeof size,"%.1f MiB",double(pack.bytes)/1048576.);
+        const std::string detail=books::fontPackInstalled(pack)?books::tr("Installed"):
+            std::string(books::tr("Download"))+"  "+size;
+        drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,books::tr(pack.label),detail,index==fontSelection_);
+      }
+    } else if(serverScreen()) {
       paintServers();
     } else if(onlineMode_ && !searchEditing_ && detailsOpen_) {
       paintDetails();
@@ -3605,22 +3665,23 @@ class CardShelf {
       }
       renderer_.drawLine(15,bottom,right,bottom,true);
       if(!books_.empty()) {
-        drawRowLabel(22,158,37,"Continue reading");
-        if(homeSelection_==0)books::paintSelection(display_,12,158,350,37);
+        drawRowLabel(22,153,29,"Continue reading");
+        if(homeSelection_==0)books::paintSelection(display_,12,153,350,29);
       }
-      drawRowLabel(22,204,37,"Browse files");
-      if(homeSelection_==1 || books_.empty())books::paintSelection(display_,12,204,350,37);
+      drawRowLabel(22,185,29,"Browse files");
+      if(homeSelection_==1 || (books_.empty() && homeSelection_==0))
+        books::paintSelection(display_,12,185,350,29);
       std::string sortText=books::tr("Sort: ");
       sortText+=books::tr(books::shelfSortLabel(sortMode_));
-      drawRowLabel(22,244,23,
+      drawRowLabel(22,217,25,
           renderer_.truncatedText(1,sortText.c_str(),HOME_ONLINE_X-42).c_str());
-      drawRowLabel(HOME_ONLINE_X+10,244,23,"Online");
-      if(homeSelection_==2)books::paintSelection(display_,12,244,HOME_ONLINE_X-22,23);
-      if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
+      drawRowLabel(HOME_ONLINE_X+10,217,25,"Online");
+      if(homeSelection_==2)books::paintSelection(display_,12,217,HOME_ONLINE_X-22,25);
+      if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,217,362-HOME_ONLINE_X,25);
       const std::string view=std::string(books::tr("Library View"))+": "+books::tr(flowView_?"Cover Flow":"List View");
       // Keep the setting inside the rounded lower corners. Measure in the
       // actual UI face, not the larger reader font, before reducing size.
-      constexpr int viewY=269,viewH=26,viewX=49,viewRight=326;
+      constexpr int viewY=244,viewH=25,viewX=49,viewRight=326;
       auto& viewUi=books::UiText::instance();
       if(viewUi.available()&&viewUi.drawable(view)) {
         int px=shelfRowPx();
@@ -3641,6 +3702,13 @@ class CardShelf {
           drawRowLabel(viewX+leftWidth+6,viewY,viewH,fitWidth(value,rightWidth).c_str());
       }
       if(homeSelection_==4)books::paintSelection(display_,viewX-5,viewY,viewRight-viewX+10,viewH);
+      const std::string fontsLabel=books::tr("Fonts");
+      auto& fontsUi=books::UiText::instance();
+      if(fontsUi.available() && fontsUi.drawable(fontsLabel))
+        uiDraw((375-fontsUi.width(fontsLabel,18))/2,271+(25-fontsUi.lineHeight(18))/2,
+               fontsLabel,18,326);
+      else drawRowLabel((375-renderer_.getTextWidth(1,fontsLabel.c_str()))/2,271,25,fontsLabel.c_str());
+      if(homeSelection_==5)books::paintSelection(display_,44,271,287,25);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};
@@ -3996,6 +4064,7 @@ ReaderClock::time_point autoTurnTick(Reader& reader,bool allowed,ReaderClock::ti
 int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
+  books::sweepFontPackStages();
   // Downloads cut off by a kill leave an unlocked .part each: remove them.
   if(const int stale=books::sweepStaleOpdsDownloads(bookDir))
     std::fprintf(stderr,"Books: removed %d interrupted download(s)\n",stale);
@@ -4472,6 +4541,9 @@ int runCardApp(const std::string& bookDir) {
       if(changed)reader->present();
       continue;
     }
+    if(shelf->fontManager()) {
+      shelf->fontManagerInput(action,event);continue;
+    }
     if(shelf->onlineSearching() || shelf->fieldEditing()) {
       if(action==books::LogicalAction::Back)shelf->endSearch();
       else if(action==books::LogicalAction::Previous)(void)shelf->change(-1);
@@ -4609,6 +4681,7 @@ int runCardApp(const std::string& bookDir) {
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && shelf->animating())shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
+    if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
     if(shelf->searching()) {shelf->present();continue;}
     if(shelf->onlineChosen()) {
       (void)shelf->enterOnline();
@@ -4707,6 +4780,39 @@ int main(int argc,char** argv) {
     if(onCard)(void)books::migrateLegacyState();
     return runCardApp("/mnt/mmc/Books");
   }
+#ifndef BOOKS_Q2_RUNTIME
+  if(argc==2 && std::strcmp(argv[1],"--test-font-pack-sha")==0) {
+    books::FontPackSha256 sha;
+    if(sha.hexDigest()!="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")return 1;
+    sha.update("a",1);sha.update("bc",2);
+    if(sha.hexDigest()!="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")return 2;
+    books::FontPackSha256 longSha;
+    const std::string block(1000,'a');
+    for(int i=0;i<1000;++i)longSha.update(block.data(),block.size());
+    if(longSha.hexDigest()!="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")return 3;
+    const std::string url="https://github.com/lampsonlnguyen/q2-books-fonts/releases/download/fonts-v1.0.0/serif.zip";
+    if(books::githubFontRedirect(url,"https://release-assets.githubusercontent.com/asset?sig=abc").empty() ||
+       !books::githubFontRedirect(url,"https://example.org/asset").empty() ||
+       !books::githubFontRedirect(url,"http://release-assets.githubusercontent.com/asset").empty() ||
+       !books::githubFontRedirect("https://github.com/other/repo", "https://release-assets.githubusercontent.com/asset").empty())
+      return 4;
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-font-pack-install")==0 && stateOverride && *stateOverride) {
+    const auto root=books::fontPackRoot();
+    if(!books::fontPackDirectory(root)||!books::fontPackDirectory(root+"/ttf")||
+       !books::fontPackDirectory(root+"/licenses"))return 1;
+    std::string temp=root+"/.font-pack-XXXXXX";
+    if(!::mkdtemp(temp.data()))return 2;
+    books::FontPackStage stage{temp,{}};
+    if(!books::fontPackDirectory(temp+"/ttf")||!books::fontPackDirectory(temp+"/licenses"))return 2;
+    std::string error;
+    if(!books::installVerifiedFontArchive(books::fontPacks[0],stage,argv[2],error)) {
+      std::fprintf(stderr,"%s\n",error.c_str());return 3;
+    }
+    return 0;
+  }
+#endif
   if(argc==3 && std::strcmp(argv[1],"--opds-probe")==0) {
     // The credentials of the saved server on the same origin, if any.
     books::OpdsServer server;

@@ -3321,7 +3321,8 @@ class CardShelf {
       const float position=flowMoving_?flowPosition_:float(selected_);
       size_t picked=visible_.size();
       float nearest=books::flow::reach;
-      for(size_t row=0;row<visible_.size();++row) {
+      for(size_t row=size_t(std::max(0,int(std::floor(position-books::flow::reach))));
+          row<visible_.size() && float(row)-position<books::flow::reach;++row) {
         const float d=float(row)-position;
         if(std::abs(d)>=nearest)continue;
         if(books::flow::hit(flowCoverAt(row),d,x,y)) {picked=row;nearest=std::abs(d);}

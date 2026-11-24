@@ -3319,7 +3319,7 @@ class CardShelf {
       if(y>=158&&y<195)homeSelection_=0;
       else if(y>=204&&y<241)homeSelection_=1;
       else if(y>=244&&y<267)homeSelection_=x<HOME_ONLINE_X?2:3;
-      else if(y>=269&&y<301)homeSelection_=4;
+      else if(y>=269&&y<295)homeSelection_=4;
       else return false;
       return true;
     }
@@ -3618,9 +3618,29 @@ class CardShelf {
       if(homeSelection_==2)books::paintSelection(display_,12,244,HOME_ONLINE_X-22,23);
       if(homeSelection_==3)books::paintSelection(display_,HOME_ONLINE_X,244,362-HOME_ONLINE_X,23);
       const std::string view=std::string(books::tr("Library View"))+": "+books::tr(flowView_?"Cover Flow":"List View");
-      const auto viewLabel=fitWidth(view,239);
-      drawRowLabel(68,269,30,viewLabel.c_str());
-      if(homeSelection_==4)books::paintSelection(display_,62,269,251,30);
+      // Keep the setting inside the rounded lower corners. Measure in the
+      // actual UI face, not the larger reader font, before reducing size.
+      constexpr int viewY=269,viewH=26,viewX=49,viewRight=326;
+      auto& viewUi=books::UiText::instance();
+      if(viewUi.available()&&viewUi.drawable(view)) {
+        int px=shelfRowPx();
+        while(px>12 && (viewUi.width(view,px)>viewRight-viewX ||
+                        viewUi.lineHeight(px)>viewH))--px;
+        const auto label=fitWidth(view,viewRight-viewX,px);
+        uiDraw((375-viewUi.width(label,px))/2,
+               viewY+(viewH-viewUi.lineHeight(px))/2,label,px,viewRight);
+      } else {
+        // The reader's script fallback remains available for unsupported UI
+        // glyphs. Split into separate compact labels rather than cut the value.
+        const auto label=std::string(books::tr("Library View"))+":";
+        const auto value=std::string(books::tr(flowView_?"Cover Flow":"List View"));
+        const int leftWidth=130,rightWidth=135;
+        if(!drawSmallLine(viewX,viewY+19,label,leftWidth,150))
+          drawRowLabel(viewX,viewY,viewH,fitWidth(label,leftWidth).c_str());
+        if(!drawSmallLine(viewX+leftWidth+6,viewY+19,value,rightWidth,150))
+          drawRowLabel(viewX+leftWidth+6,viewY,viewH,fitWidth(value,rightWidth).c_str());
+      }
+      if(homeSelection_==4)books::paintSelection(display_,viewX-5,viewY,viewRight-viewX+10,viewH);
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};

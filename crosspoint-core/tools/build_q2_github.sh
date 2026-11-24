@@ -542,7 +542,7 @@ BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
 # new kind of state can never leak into a release.
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
   ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
-  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts -exec rm -rf -- {} +
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
 find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
 find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
@@ -562,4 +562,5 @@ bad=[n for n in names_all if not re.fullmatch(
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
 names=set(n for n in names_all)
 assert ".books/fonts/ttf/sans-regular.ttf" in names and ".books/fonts/ttf/serif-regular.ttf" in names, "smooth text TrueType files missing from the ZIP"
+assert ".books/lang/vi.tsv" in names and ".books/lang/ja.tsv" in names, "menu translations missing from the ZIP"
 print("Release ZIP contents: PASS")'

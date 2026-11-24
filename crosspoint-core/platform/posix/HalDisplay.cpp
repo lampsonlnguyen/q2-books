@@ -113,6 +113,24 @@ static books::Q2PagePresenter& sharedPresenter() {
   (void)opened;
   return presenter;
 }
+bool HalDisplay::composeColorFrame(uint32_t* frame,size_t pixels) {
+  if(!frame || pixels!=PIXELS || !raster_ || !inkRaster_ || loaned_)return false;
+  for(unsigned i=0;i<BUFFER_SIZE;++i)inkRaster_[i]=static_cast<uint8_t>(~raster_[i]);
+  const uint8_t* levels=nullptr;
+  if(alpha_ && expect_ && shown_) {
+    books::Q2Display::computeAlpha(inkRaster_.get(),alpha_.get(),expect_.get(),shown_.get());
+    levels=shown_.get();
+  }
+  if(!themed_)
+    return books::Q2Display::presentBW(inkRaster_.get(),BUFFER_SIZE,frame,pixels,0,inverted_,levels);
+  books::Q2Display::Zone zones[kMaxZones];
+  for(int i=0;i<zoneCount_;++i) {
+    const auto& z=zones_[i];
+    zones[i]={z.x,z.y,z.w,z.h,z.radius,z.ink,z.paper,z.paperRows,z.rowCount};
+  }
+  return books::Q2Display::presentThemed(inkRaster_.get(),BUFFER_SIZE,frame,pixels,
+                                         baseInk_,basePaper_,zones,zoneCount_,levels);
+}
 bool HalDisplay::presentColorFrame(const uint32_t* frame,size_t pixels) {
   return frame && pixels==PIXELS && sharedPresenter().presentARGB(frame,pixels);
 }

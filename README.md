@@ -7,10 +7,7 @@ EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books
 differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
-**Status:** 1.1.1 is the current release (1.0.0 was the first under the name Books)
-(earlier releases were v0.3–v0.9 as CrossPod). It passes the host test suites
-(GCC, Clang, ASan), EPUB fuzzing and the Q2 MIPS/QEMU build, but it has **not
-yet been validated on a physical Q2**: see M1 below.
+**Status:** v1.3.0 is the Cover Flow release target; see [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) for published builds. Full physical-Q2 validation remains outstanding (M1 below). Earlier releases were named CrossPod.
 User notes: [v0.10–v0.11](docs/v0.10-v0.11-reading-dictionaries-opds.md),
 [release notes](docs/release-notes/v1.1.1.md).
 
@@ -20,7 +17,7 @@ One primary feature per minor release. Stabilize v1.3.0 before starting v1.4.0; 
 
 | Release | Primary feature | Status |
 | --- | --- | --- |
-| v1.3.0 | Cover Flow | In development; validation pending |
+| v1.3.0 | Cover Flow | Release candidate; hardware QA outstanding |
 | v1.4.0 | Grid View | Planned |
 | v1.5.0 | Alphabetical navigation | Planned |
 | v1.6.0 | Book information panel | Planned |
@@ -49,7 +46,7 @@ Development branch: [feature/cover-flow](https://github.com/lampsonlnguyen/q2-bo
 - [ ] 1.3-M6 — Complete remaining language packs; refine typography, alignment, reflections and touch interactions against firmware and CrossInk; preserve folder browsing, search, sort and OPDS behavior. Verify rapid wheel input and sensitivity.
 - [ ] 1.3-M7 — Run host regression suite and Q2 MIPS build; validate simulator screenshots, cache migration, missing/corrupt covers, large libraries, idle CPU, RAM, battery and physical-device behavior. Fix regressions before tagging.
 
-**Acceptance:** Users can switch views and restart without losing preferences or reading state; artwork stays proportional and navigation feels native; no continuous redraw at rest. Existing books, reader and network features remain functional. No release until validation gates pass.
+**Acceptance:** Users can switch views and restart without losing preferences or reading state; artwork stays proportional and navigation feels native; no continuous redraw at rest. Existing books, reader and network features remain functional. Automated release gates must pass before publishing; full physical-device certification remains open. The M6 test build passed CI and user visual review identified a truncated Home label, addressed in the next patch. All language tables now contain the view labels; native-speaker and physical-device review remain pending.
 
 ### v1.4.0 — Grid View
 

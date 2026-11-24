@@ -248,9 +248,12 @@ inline std::string httpsCaBundle() {
   return "/etc/scrobble-ca.pem";
 }
 // GitHub release assets redirect to signed, expiring CDN URLs. This
-// exception is opt-in for public font packs only; OPDS/sync requests keep
+// exception is opt-in for the Books font packs and Q2 Pod guide; OPDS/sync keep
 // their same-origin rule and credentials are never sent across origins.
-inline std::string githubFontRedirect(const std::string& from,const std::string& location) {
+inline constexpr char q2PodGuideAssetPath[]=
+    "/DiamondBond/q2-pod/releases/download/guide/Q2-Pod-User-Guide.epub";
+
+inline std::string githubReleaseAssetRedirect(const std::string& from,const std::string& location) {
   const auto source=parseHttpUrl(from), target=parseHttpUrl(location);
   const auto cdn=[](const std::string& host) {
     return host=="release-assets.githubusercontent.com" ||
@@ -260,7 +263,8 @@ inline std::string githubFontRedirect(const std::string& from,const std::string&
   if(!source.valid || !source.secure || source.port!="443" ||
      !target.valid || !target.secure || target.port!="443" || !cdn(target.host))return {};
   const std::string prefix="/lampsonlnguyen/q2-books-fonts/releases/download/";
-  if(!(source.host=="github.com" && source.target.rfind(prefix,0)==0) && !cdn(source.host))
+  if(!(source.host=="github.com" && (source.target.rfind(prefix,0)==0 ||
+                                     source.target==q2PodGuideAssetPath)) && !cdn(source.host))
     return {};
   return location;
 }
@@ -268,7 +272,7 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
                                  size_t maxBytes,const std::string& method,
                                  const std::string& body,
                                  const std::map<std::string,std::string>& extra,
-                                 unsigned redirect=0,bool fontRelease=false) {
+                                 unsigned redirect=0,bool publicReleaseAsset=false) {
   HttpResponse result;
   if(redirect>2 || !parseHttpUrl(original).secure) {
     result.error="Invalid HTTPS request";return result;
@@ -366,10 +370,10 @@ inline HttpResponse httpsRequest(const std::string& original,const HttpSink& sin
   if(status>=300 && status<400) {
     if(method=="GET" && redirect<2 && !stream.location.empty()) {
       auto next=resolveHttpHref(original,stream.location);
-      if(next.empty() && fontRelease && extra.empty())
-        next=githubFontRedirect(original,stream.location);
+      if(next.empty() && publicReleaseAsset && extra.empty())
+        next=githubReleaseAssetRedirect(original,stream.location);
       if(!next.empty() && parseHttpUrl(next).secure)
-        return httpsRequest(next,sink,maxBytes,method,body,extra,redirect+1,fontRelease);
+        return httpsRequest(next,sink,maxBytes,method,body,extra,redirect+1,publicReleaseAsset);
     }
     result.error="HTTPS redirect refused (origin or scheme changed)";
   } else if(status<200 || status>=300)

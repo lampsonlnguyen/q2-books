@@ -121,6 +121,7 @@ struct UiTranslation {
 };
 struct UiLanguageState {
   bool loaded = false;
+  bool englishFallback = false;
   std::string code;
   std::unordered_map<std::string, UiTranslation> table;  // English -> translation
   bool (*glyphCheck)(uint32_t) = nullptr;
@@ -163,9 +164,12 @@ inline size_t loadLanguageTable(const std::string& file, std::unordered_map<std:
 inline void loadUiLanguage(UiLanguageState& s) {
   s.loaded = true;
   s.table.clear();
-  s.code = readSystemLanguage();
+  s.code = s.englishFallback ? std::string() : readSystemLanguage();
   if (s.code.empty()) return;
-  loadLanguageTable(uiStateDir() + "/lang/" + s.code + ".tsv", s.table);
+  const auto directory = uiStateDir() + "/lang/";
+  loadLanguageTable(directory + s.code + ".tsv", s.table);
+  if (const auto region = s.code.find('_'); region != std::string::npos && region >= 2)
+    loadLanguageTable(directory + s.code.substr(0, region) + ".tsv", s.table);
   if (!std::getenv("BOOKS_LANG"))
     loadLanguageTable(firmwareLanguageTable(systemConfigFile(), s.code), s.table, true);
 }
@@ -181,6 +185,12 @@ inline bool uiTranslated() { return !uiLanguageCode().empty(); }
 // Read Q2 Pod's language again (tests; Books itself reads it once a run, as
 // Q2 Pod restarts to change it).
 inline void reloadUiLanguage() { loadUiLanguage(uiLanguageState()); }
+inline void setUiEnglishFallback(bool enabled) {
+  auto& s = uiLanguageState();
+  if (s.englishFallback == enabled) return;
+  s.englishFallback = enabled;
+  s.loaded = false;
+}
 inline void setUiGlyphCheck(bool (*check)(uint32_t)) {
   auto& s = uiLanguageState();
   s.glyphCheck = check;

@@ -87,6 +87,10 @@ int main() {
   books::reloadUiLanguage();
   assert(books::uiLanguageCode() == "vi" && books::tr(std::string("Books")) == "Sách");
   assert(books::tr(std::string("Cannot save EPUB")) == "Không thể lưu EPUB");
+  setenv("BOOKS_LANG", "hi_IN", 1);
+  books::reloadUiLanguage();
+  assert(books::uiLanguageCode() == "hi_IN" && books::tr(std::string("Books")) == "पुस्तकें");
+  unsetenv("BOOKS_LANG");
   assert(unlink((data + "/q2-lang-vi.tsv").c_str()) == 0);
   books::reloadUiLanguage();
   assert(!books::uiTranslated() && books::tr(english) == english);
@@ -102,6 +106,13 @@ int main() {
   // BOOKS_LANG (host and tests) picks the language without Q2 Pod.
   setenv("BOOKS_LANG", "de", 1);
   books::reloadUiLanguage();
+  assert(books::uiLanguageCode() == "de" && books::tr(std::string("Search")) == "Suchen (Books)");
+  books::setUiEnglishFallback(true);
+  assert(books::readSystemLanguage() == "de");
+  assert(!books::uiTranslated() && books::tr(std::string("Search")) == "Search");
+  books::reloadUiLanguage();
+  assert(!books::uiTranslated());
+  books::setUiEnglishFallback(false);
   assert(books::uiLanguageCode() == "de" && books::tr(std::string("Search")) == "Suchen (Books)");
   unsetenv("BOOKS_LANG");
   assert(books::printfConversions("%zu / %zu 100%% %s") == "%zu%zu%s");
@@ -120,7 +131,7 @@ int main() {
     }
   }
   assert(templ.count("Reading settings") && templ.count("Catalog servers") && templ.count("Books: %zu/%zu"));
-  for (const char* code : {"de", "es", "fr", "it", "ja", "ko", "pl", "ru", "th", "uk", "vi", "zh_CN", "zh_HK"}) {
+  for (const char* code : {"de", "es", "fr", "hi", "it", "ja", "ko", "pl", "ru", "th", "uk", "vi", "zh_CN", "zh_HK"}) {
     std::ifstream in(std::string(BOOKS_LANG_DIR "/") + code + ".tsv");
     std::string line;
     assert(std::getline(in, line) && line.rfind("# ", 0) == 0);

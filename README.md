@@ -1,6 +1,6 @@
-# Books — direct CrossPoint Reader port to Shanling Q2
+# CrossPod — a port of CrossPoint Reader for Shanling Q2
 
-**Books** is an ebook reader card app for [Q2 Pod](https://github.com/DiamondBond/q2-pod)
+**CrossPod** a.k.a. as Q2 Books, is an ebook reader card app for [Q2 Pod](https://github.com/DiamondBond/q2-pod)
 on the Shanling Q2: a port of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)'s
 EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books**
 (card folder `.books`, program `.books/q2-books`). Earlier releases were named

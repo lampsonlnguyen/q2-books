@@ -27,6 +27,7 @@ class HalDisplay {
   void begin(bool seamless=false);
   void clearScreen(uint8_t color=0xFF) const;
   void drawImage(const uint8_t* bytes,uint16_t x,uint16_t y,uint16_t w,uint16_t h,bool fromProgmem=false) const;
+  bool presentColorFrame(const uint32_t* frame,size_t pixels);
   void displayBuffer(RefreshMode mode=FAST_REFRESH,bool turnOffScreen=false);
   void displayBufferAsync(RefreshMode mode=FAST_REFRESH) {displayBuffer(mode);}
   void waitRefreshComplete() {}

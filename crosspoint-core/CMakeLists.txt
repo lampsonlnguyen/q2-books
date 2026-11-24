@@ -938,3 +938,8 @@ set_tests_properties(books_smooth_glyphs_truetype PROPERTIES SKIP_RETURN_CODE 77
 add_test(NAME books_smooth_text_render
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/smooth_text_render_test.py"
       "$<TARGET_FILE:books-reader>" "${VIETNAMESE_EPUB_FIXTURE}")
+
+add_executable(books_flow_renderer_tests tests/flow_renderer_test.cpp)
+target_include_directories(books_flow_renderer_tests PRIVATE reader)
+target_compile_options(books_flow_renderer_tests PRIVATE -UNDEBUG)
+add_test(NAME books_cover_flow_renderer_cache_progress COMMAND books_flow_renderer_tests)

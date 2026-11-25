@@ -39,10 +39,6 @@ jobs:
             echo "Main advanced; refusing to release stale source. Run again on current main." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # Ignore empty releases when choosing the changelog predecessor.
-          gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
-            --jq '.[] | select(.draft == false and (.assets | length) > 0) | .tag_name' > "$RUNNER_TEMP/published-tags"
-          export PUBLISHED_TAGS="$RUNNER_TEMP/published-tags"
           tag="$(python3 - <<'PY'
           import os
           import pathlib
@@ -65,31 +61,13 @@ jobs:
           target = current if current > reserved else (reserved[0], reserved[1], reserved[2] + 1)
           number = ".".join(map(str, target))
           tag = "v" + number
-          notes = pathlib.Path("docs/release-notes") / (tag + ".md")
-          if not notes.exists():
-              prior = sorted(
-                  (t for t in pathlib.Path(os.environ["PUBLISHED_TAGS"]).read_text().splitlines() if version(t)),
-                  key=version, reverse=True)
-              base = next((t for t in prior if subprocess.run(
-                  ["git", "merge-base", "--is-ancestor", "refs/tags/" + t, "HEAD"],
-                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0), None)
-              commits = git("log", "--no-merges", "--format=- %s (%h)", base + "..HEAD" if base else "HEAD")
-              notes.parent.mkdir(parents=True, exist_ok=True)
-              notes.write_text(
-                  f"# Books {tag} for Shanling Q2\n\n"
-                  "## Changes\n\n"
-                  + (commits or "- Maintenance release.") + "\n\n"
-                  "## Installation and validation\n\n"
-                  f"Extract books-q2-{tag}.zip to the SD card root; preserve existing reading data and settings. "
-                  "Verify the accompanying SHA-256 checksum. Publication requires the full host and Q2 build tests; "
-                  "physical-device and battery testing are not implied.\n")
           version_file.write_text(number + "\n")
           print(tag)
           PY
           )"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add crosspoint-core/VERSION "docs/release-notes/$tag.md"
+          git add crosspoint-core/VERSION
           if ! git diff --cached --quiet; then
             git commit -m "Prepare Books $tag"
           fi

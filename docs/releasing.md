@@ -1,62 +1,23 @@
-# Releasing Books for Shanling Q2
+# Build, test and publish Books
 
-The versioned, installable SD-card release is produced by
-[`.github/workflows/release.yml`](../.github/workflows/release.yml).
-The `q2-reader-card.yml` workflow is **CI only** and does not publish releases.
+## Local host build (Ubuntu/WSL)
 
-## Automatic release
+```sh
+sudo apt-get update
+sudo apt-get install -y git cmake g++ clang libexpat1-dev zlib1g-dev libjpeg-dev libcurl4-openssl-dev openssl libfreetype-dev fonts-liberation python3
+cmake -S crosspoint-core -B build/core-host -DCMAKE_BUILD_TYPE=Release
+cmake --build build/core-host --parallel 2
+ctest --test-dir build/core-host --output-on-failure
+````
 
-1. Merge the desired changes to `main`.
-2. Update `crosspoint-core/VERSION` (for example, `1.2.2`).
-3. Add `docs/release-notes/v<version>.md`.
-4. Confirm the normal main-branch CI is passing.
-5. Push an **unmoved** annotated or lightweight tag from the desired main commit:
+Host builds are not Q2-installable. For the actual MIPS card package, use GitHub Actions or the same `crosspoint-core/tools/build_q2_github.sh` with its required Q2 toolchain/runtime dependencies. See `.github/workflows/release.yml` for the authoritative dependency list and gates.
 
-   ```sh
-   git checkout main
-   git pull --ff-only
-   git tag v1.2.2
-   git push origin v1.2.2
-   ```
+## Release workflow
 
-Pushing a `v*` tag automatically runs the versioned-release workflow.
-For a pre-release, use `v1.2.2-beta`, `v1.2.2-beta.1`,
-`v1.2.2-alpha.1`, or `v1.2.2-rc.1`, and add a matching
-release-notes document.
+Source pushes to main trigger Automatic Books release, which reserves the next patch (or a newer explicit VERSION), tags main and dispatches the validated release workflow. No per-version documentation files are required. Release descriptions are generated during publication; historical tags with old notes can still be retried. Manual prereleases use a version-compatible alpha/beta/rc suffix. To retry an existing tag, run **Build, test and publish Books for Q2** from main with that tag. Never move published tags or overwrite existing populated releases.
 
-The pipeline **refuses publication** if the tag is malformed, the source is
-not on main, the source version disagrees with the tag, release notes are
-missing, the host tests fail, the Q2 build/QEMU regressions fail, or the
-produced package does not meet the ZIP, MIPS ABI, and checksum checks.
+Publication requires matching source VERSION, tag ancestry on main, GCC/Clang CTest, Q2 MIPS/QEMU regressions, validated ELF and installable ZIP plus checksum. A reserved tag is not proof that publication succeeded. README/docs-only changes do not reserve versions. Physical hardware QA is separate.
 
-A successful run publishes `books-q2-vX.Y.Z.zip` and its
-`books-q2-vX.Y.Z.zip.sha256` under GitHub Releases. The archive installs
-the `.books` card app on the microSD card; **it is not Q2 firmware**.
+## Install and troubleshoot
 
-## Manual retry or repair of an empty GitHub release
-
-Choose **Actions > Build, test and publish Books for Q2 > Run workflow**,
-select **main**, and provide the **existing** version tag as `release_tag`.
-The run rebuilds and re-tests that tag's source; it does not publish the current
-main branch in place of the tag. A pre-existing release may be filled **only**
-if it has no assets. A populated release is never overwritten.
-
-Avoid moving or deleting a version tag after publication. Publish a new patch
-version instead.
-
-## Historical v1.2.1 note
-
-The `v1.2.1` tag points to code with
-`crosspoint-core/VERSION = 1.2.0`, lacks
-`docs/release-notes/v1.2.1.md`, and has an empty GitHub Release.
-The release gate intentionally refuses to relabel that source as v1.2.1.
-The current source on main is version 1.2.2 with release notes prepared;
-create its tag only after verifying the desired commit.
-
-## Testing scope
-
-Host GCC/Clang CTest, actual Q2 MIPS ABI cross-compilation, QEMU integration
-and rendering tests, EPUB fixtures, font and language tests, connected-library
-integration, card launcher and ELF/package validation run before publication.
-CI is not a substitute for physical Q2 QA (screen output, click wheel,
-suspend/resume, memory, battery, SD card and real network behavior).
+Extract the released ZIP to the SD root, not a subfolder. Preserve existing .books data and fonts. Confirm .books/q2app, .books/q2-books and .books/books-engine exist; put books in Books/. Start from Library → Books. If launch fails inspect .books/startup.log and startup.previous.log. Never flash the app as firmware. For optional session profiling create .books/profile-session, launch and exit normally, then inspect the log. Remove the marker to disable profiling. See [technical reference](TECHNICAL.md) for resource constraints.

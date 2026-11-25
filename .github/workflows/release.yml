@@ -31,7 +31,7 @@ jobs:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Validate version tag, history and notes
+      - name: Validate version tag and history
         id: validate
         shell: bash
         run: |
@@ -43,7 +43,6 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main || { echo "::error::Release tag must be on main"; exit 1; }
           version="$(head -n 1 crosspoint-core/VERSION | tr -d '\r')"
           [[ "$tag" == "v$version" || "$tag" == "v$version-"* ]] || { echo "::error::Tag $tag disagrees with version $version"; exit 1; }
-          test -s "docs/release-notes/$tag.md" || { echo "::error::Missing release notes for $tag"; exit 1; }
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   host-tests:
@@ -169,7 +168,13 @@ jobs:
           tag="$RELEASE_TAG"
           zip="dist/books-q2-$tag.zip"
           sha="$zip.sha256"
-          notes="docs/release-notes/$tag.md"
+          legacy_notes="docs/release-notes/$tag.md"
+          notes="$RUNNER_TEMP/books-release-notes.md"
+          if [[ -s "$legacy_notes" ]]; then
+            cp "$legacy_notes" "$notes"
+          else
+            printf '# Books %s (Shanling Q2)\n\nInstall the ZIP at the SD card root and preserve existing reading data. Verify the accompanying SHA-256 checksum. See the repository README and technical documentation for features and limitations.\n' "$tag" > "$notes"
+          fi
           title="Books $tag (Shanling Q2)"
           prerelease=false
           if [[ "$tag" == *-* ]] || grep -Fxq '<!-- prerelease -->' "$notes"; then prerelease=true; fi

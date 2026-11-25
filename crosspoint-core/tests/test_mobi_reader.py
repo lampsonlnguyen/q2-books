@@ -99,6 +99,7 @@ def test(executable):
         unrelated = shelf / "Application.prc"
         unrelated.write_bytes(b"\0" * 80)
         assert "not a supported" in run("--validate", unrelated, ok=False).lower()
+        assert str(unrelated) not in run("--list-books", shelf)
 
 
 if __name__ == "__main__":

@@ -568,6 +568,37 @@ uint64_t hash(std::string_view bytes) {
 }
 }  // namespace
 
+std::string packageImportedBook(const std::string& source,std::string_view title,
+    std::string_view raw,bool isHtml,const std::string& cacheDir,std::string& error) {
+  if(raw.size()>sourceLimit) {error="Imported ebook exceeds 1 MiB";return {};}
+  std::string payload;
+  if(isHtml) {
+    Html html(-1); // no external file or network access
+    if(!html.parse(cleanDocument(raw))) {error="MOBI HTML exceeded conversion limits";return {};}
+    if(html.title.empty())html.title=cleanDocument(title);
+    payload=html.package();
+  } else {
+    payload=buildTxtEpub(std::string(title)+".txt",cleanDocument(raw));
+  }
+  if(payload.empty()) {error="MOBI/PRC package conversion failed";return {};}
+  const auto path=cacheDir+"/mobi-v1-"+std::to_string(hash(source))+"-"+std::to_string(hash(payload))+".epub";
+  struct stat cached{};
+  if(::lstat(path.c_str(),&cached)==0 && S_ISREG(cached.st_mode) &&
+     static_cast<uint64_t>(cached.st_size)==payload.size())return path;
+  ::mkdir(cacheDir.c_str(),0755);
+  std::string temp=path+".partXXXXXX";
+  const int fd=::mkstemp(temp.data());
+  if(fd>=0) {
+    if(FILE* out=::fdopen(fd,"wb")) {
+      const bool wrote=std::fwrite(payload.data(),1,payload.size(),out)==payload.size();
+      if(std::fclose(out)==0 && wrote && ::rename(temp.c_str(),path.c_str())==0)return path;
+    } else ::close(fd);
+    ::unlink(temp.c_str());
+  }
+  error="could not write the MOBI/PRC cache";
+  return {};
+}
+
 std::string packageHtmlBook(const std::string& source,const std::string& cacheDir,std::string& error) {
   File file(::open(source.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC));
   std::string raw;

@@ -6,7 +6,7 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 
 1. Download an installable `books-q2-v*.zip` from [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) and verify its accompanying SHA-256 checksum.
 2. Extract to the microSD root, preserving the hidden `.books` folder and existing reading data. Place EPUB, TXT, Markdown (`.md`), or local HTML (`.html` / `.htm`) files under `Books/`.
-3. Open **Library → Books** in Q2 Pod (older firmware may list card apps under Games). No firmware flashing is required.
+3. Open **Library → Books** for the firmware-rendered menu. Choose **Continue reading**, **Browse files**, **Books Home**, or **Options**. If the menu asks you to update Q2 Pod, copy `.books/q2app.fullscreen` over `.books/q2app` to launch directly into Books Home on older firmware.
 
 ## Features in the source
 
@@ -23,7 +23,7 @@ Source features may be ahead of the last successfully published binary. CI and p
 
 ## Controls
 
-Wheel moves through menus and pages; Centre opens/confirms; Back returns or exits. On Home, hold Centre on Continue Reading to focus the recent carousel, then turn the wheel and press Centre to resume. Browse files supports A–Z jump and Library tools; a longer Centre hold opens Book Details. Reading settings provide typography, search and other reader options.
+Wheel moves through menus and pages; Centre opens/confirms; Back returns or exits. On Home, hold Centre on Continue Reading to focus the recent carousel, then turn the wheel and press Centre to resume. Browse files supports A–Z jump and Library tools; a longer Centre hold opens Book Details. Reading settings provide typography, search and other reader options. While reading in light mode, select **Page warmth** to cycle through Cool, Default, Warm and Warmer. Books saves the choice for your next reading session.
 
 ## Development
 

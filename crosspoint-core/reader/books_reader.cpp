@@ -51,6 +51,7 @@
 #include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
 #include "ShelfCollections.hpp"
+#include "ShelfReadingStatus.hpp"
 #include "BookSearch.hpp"
 #include "EmbeddedBookFont.hpp"
 #include "ReaderLinks.hpp"
@@ -3114,13 +3115,26 @@ class CardShelf {
   books::ShelfSortMode sortMode_=books::ShelfSortMode::Title;
   std::vector<books::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
-  enum class LibraryMenu {None, Tools, Info, Collections, Collection, Membership, Series, Name};
+  enum class LibraryMenu {None, Tools, Info, Collections, Collection, Membership, Series, Name, StatusFilter, StatusMark};
   LibraryMenu libraryMenu_=LibraryMenu::None;
   size_t libraryChoice_=0;
   bool libraryDeleteArmed_=false;
   books::Collections collections_;
   std::string collectionName_,collectionFilter_,seriesFilter_;
   bool favoritesFilter_=false;
+  books::ReadingStatusFilter statusFilter_=books::ReadingStatusFilter::All;
+  std::vector<int8_t> statusCache_;
+  std::vector<std::string> statusHistory_;
+  std::array<size_t,4> statusCounts_{};
+  books::ReadingStatus bookStatus(size_t index) {
+    auto& cached=statusCache_[index];
+    if(cached<0)cached=static_cast<int8_t>(books::shelfReadingStatus(books_[index].path,statusHistory_));
+    return static_cast<books::ReadingStatus>(cached);
+  }
+  void prepareStatusCounts() {
+    statusCounts_={books_.size(),0,0,0};
+    for(size_t i=0;i<books_.size();++i)++statusCounts_[1+static_cast<size_t>(bookStatus(i))];
+  }
   struct SeriesVolume {size_t index;std::optional<float> number;};
   struct SeriesGroup {std::string label;std::vector<SeriesVolume> volumes;};
   std::map<std::string,SeriesGroup> series_;
@@ -3266,13 +3280,17 @@ class CardShelf {
     }
     if(books_.empty())homeSelection_=1;
     libraryView_=loadLibraryView();
+    statusFilter_=books::loadReadingStatusFilter();
+    statusCache_.assign(books_.size(),-1);
+    statusHistory_=books::loadRecentBooks();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
     alphabetGroups_.reserve(books_.size());
     for(const auto& book:books_)alphabetGroups_.push_back(books::alphabet::titleGroup(book.label));
     refreshVisible();
     if(!books_.empty()) {
-      selected_=std::min(selection,books_.size()-1)+1;
+      if(statusFilter_==books::ReadingStatusFilter::All)selected_=std::min(selection,books_.size()-1)+1;
+      else selectVisiblePath(books_[std::min(selection,books_.size()-1)].path);
       current_=recentIndices_.empty()?std::min(current,books_.size()-1):recentIndices_.front();
     }
   }
@@ -3319,14 +3337,16 @@ class CardShelf {
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
-    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty();}
+    books::ReadingStatusFilter status=books::ReadingStatusFilter::All;
+    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty() || status!=books::ReadingStatusFilter::All;}
   };
   BrowseContext browseContext() const {
-    return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_};
+    return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_,statusFilter_};
   }
   void restoreBrowseContext(const BrowseContext& context) {
     if(!context.filtered())return;
     favoritesFilter_=context.favorites;
+    statusFilter_=context.status;
     collectionFilter_=collections_.groups.count(context.collection)?context.collection:std::string();
     seriesFilter_=context.series;
     searchQuery_=context.query;
@@ -3624,7 +3644,7 @@ class CardShelf {
     return true;
   }
   bool folderMode() const {
-    return !favoritesFilter_ && collectionFilter_.empty() && seriesFilter_.empty() && sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
+    return statusFilter_==books::ReadingStatusFilter::All && !favoritesFilter_ && collectionFilter_.empty() && seriesFilter_.empty() && sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
   }
   size_t folderRows() const {return folderMode()?folders_.size():0;}
   size_t rowCount() const {return folderRows()+visible_.size();}
@@ -3944,7 +3964,7 @@ class CardShelf {
       const auto it=std::find(visible_.begin(),visible_.end(),current_);
       selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
     }
-    if(focusGuide)selected_=folderRows();
+    if(focusGuide && statusFilter_==books::ReadingStatusFilter::All)selected_=folderRows();
     browsed_=true;
   }
   void goHome() {
@@ -4039,6 +4059,7 @@ class CardShelf {
     const auto addBook=[&](size_t i) {
       const auto& path=books_[i].path;
       if(favoritesFilter_ && !collections_.favorites.count(path))return;
+      if(statusFilter_!=books::ReadingStatusFilter::All && !books::matchesReadingStatus(statusFilter_,bookStatus(i)))return;
       if(!collectionFilter_.empty()) {
         const auto group=collections_.groups.find(collectionFilter_);
         if(group==collections_.groups.end() || !group->second.count(path))return;
@@ -4439,7 +4460,15 @@ class CardShelf {
                                     "Remove favorite":"Add favorite"));
           rows.push_back(books::tr("Collection membership"));
         }
+        rows.push_back(books::tr("Reading status"));
+        if(hasBookRow())rows.push_back(books::tr("Mark reading status"));
         rows.push_back(books::tr("Online"));
+        break;
+      case LibraryMenu::StatusFilter:
+        for(size_t i=0;i<4;++i)rows.push_back(std::string(static_cast<size_t>(statusFilter_)==i?"[x] ":"[ ] ")+books::tr(books::readingStatusLabel(static_cast<books::ReadingStatusFilter>(i)))+" ("+std::to_string(statusCounts_[i])+")");
+        break;
+      case LibraryMenu::StatusMark:
+        rows={books::tr("Mark unread"),books::tr("Mark completed"),books::tr("Automatic status")};
         break;
       case LibraryMenu::Collections:
         rows.push_back(books::tr("New collection"));
@@ -4605,11 +4634,22 @@ class CardShelf {
           (void)enterOnline();
           break;
         }
+        if(libraryChoice_==(hasBookRow()?7u:4u)) {
+          prepareStatusCounts();openLibraryMenu(LibraryMenu::StatusFilter);break;
+        }
+        if(hasBookRow() && libraryChoice_==8) {
+          openLibraryMenu(LibraryMenu::StatusMark);break;
+        }
         switch(libraryChoice_) {
           case 0:setLibraryFilter(!favoritesFilter_,collectionFilter_,seriesFilter_);break;
           case 1:openLibraryMenu(LibraryMenu::Collections);break;
           case 2:openLibraryMenu(LibraryMenu::Series);break;
-          case 3:setLibraryFilter(false);break;
+          case 3:
+            if(!books::saveReadingStatusFilter(books::ReadingStatusFilter::All)) {
+              notice_="Cannot save setting";break;
+            }
+            statusFilter_=books::ReadingStatusFilter::All;
+            setLibraryFilter(false);break;
           case 4:showLocalInfo();break;
           case 5: {
             auto next=collections_;
@@ -4624,6 +4664,27 @@ class CardShelf {
           case 6:openLibraryMenu(LibraryMenu::Membership);break;
         }
         break;
+      case LibraryMenu::StatusFilter: {
+        const auto filter=static_cast<books::ReadingStatusFilter>(libraryChoice_);
+        if(!books::saveReadingStatusFilter(filter)) {notice_="Cannot save setting";break;}
+        const std::string previous=hasBookRow()?bookPath():std::string();
+        statusFilter_=filter;
+        openLibraryMenu(LibraryMenu::None);
+        refreshVisible();selectVisiblePath(previous);
+        break;
+      }
+      case LibraryMenu::StatusMark: {
+        if(!hasBookRow()) {openLibraryMenu(LibraryMenu::None);break;}
+        const auto index=selected();
+        const auto path=bookPath();
+        const auto value=libraryChoice_==0?books::ReadingStatusOverride::Unread:
+            libraryChoice_==1?books::ReadingStatusOverride::Completed:books::ReadingStatusOverride::Automatic;
+        if(!books::saveReadingStatusOverride(path,value)) {notice_="Cannot save setting";break;}
+        statusCache_[index]=-1;
+        openLibraryMenu(LibraryMenu::None);
+        refreshVisible();selectVisiblePath(path);
+        break;
+      }
       case LibraryMenu::Collections:
         if(!libraryChoice_)startCollectionName(false);
         else {
@@ -4677,6 +4738,8 @@ class CardShelf {
       case LibraryMenu::Collection:heading=collectionName_.c_str();break;
       case LibraryMenu::Membership:heading="Collection membership";break;
       case LibraryMenu::Series:heading="Series";break;
+      case LibraryMenu::StatusFilter:heading="Reading status";break;
+      case LibraryMenu::StatusMark:heading="Mark reading status";break;
       case LibraryMenu::Name:heading=collectionRename_?"Rename collection":"New collection";break;
       default:break;
     }
@@ -4964,6 +5027,10 @@ class CardShelf {
         if(!collectionFilter_.empty())filterLabel=collectionFilter_;
         else if(group!=series_.end())filterLabel=group->second.label;
         if(favoritesFilter_)filterLabel=filterLabel.empty()?books::tr("Favorites"):"* "+filterLabel;
+        if(statusFilter_!=books::ReadingStatusFilter::All) {
+          const std::string label=books::tr(books::readingStatusLabel(statusFilter_));
+          filterLabel=filterLabel.empty()?label:label+" / "+filterLabel;
+        }
         if(!filterLabel.empty())drawCompactLabel(16,61,filterLabel.c_str(),145,146);
         else drawCompactLabel(16,61,count,145,146);
       }
@@ -5030,7 +5097,7 @@ class CardShelf {
       :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book")
       :browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
        libraryMenu_==LibraryMenu::None && visible_.size()==1 &&
-       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty())?
+       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty() || statusFilter_!=books::ReadingStatusFilter::All)?
        books::tr("No books yet"):std::string();
     if(!footer.empty()) {
       // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).

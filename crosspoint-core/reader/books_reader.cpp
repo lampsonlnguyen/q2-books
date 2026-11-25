@@ -6412,7 +6412,7 @@ int main(int argc,char** argv) {
     CardShelf shelf(empty);
     if(!shelf.open() || !shelf.browseChosen() || shelf.change(-1) ||
        !shelf.change(1) || !shelf.optionsChosen())return 1;
-    if(!shelf.tap(28,220) || !shelf.optionsChosen())return 2;
+    if(!shelf.tap(28,250) || !shelf.optionsChosen())return 2;
     shelf.enterOptions();
     if(!shelf.optionsOpen() || !shelf.sortChosen() || shelf.browseChosen() ||
        shelf.change(-1))return 3;
@@ -6427,7 +6427,7 @@ int main(int argc,char** argv) {
        !shelf.optionsOpen() || !shelf.onlineChosen() || shelf.onlineMode())return 7;
     shelf.closeOptions();
     if(shelf.optionsOpen() || !shelf.optionsChosen() || shelf.change(1) ||
-       shelf.tap(28,250))return 8;
+       shelf.tap(28,270))return 8;
     return 0;
   }
   if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {

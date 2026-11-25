@@ -76,8 +76,23 @@ inline std::string windows1252(std::string_view text) {
   }
   return out;
 }
-struct Book {std::string text,title;bool html=false;};
-inline bool readBook(const std::string& path,Book& book,std::string& error) {
+struct Book {
+  std::string text,title,author,publisher,description,isbn,asin,language,cover;
+  bool html=false,hasCover=false;
+};
+inline std::string metadataText(std::string_view raw,unsigned encoding,size_t limit=1000) {
+  if(raw.size()>limit)return {};
+  std::string result=encoding==1252?windows1252(raw):std::string(raw);
+  if(result.size()>limit || !txtpkg::validUtf8(result))return {};
+  for(char& c:result)if(static_cast<unsigned char>(c)<32)c=' ';
+  const auto first=result.find_first_not_of(' ');
+  if(first==result.npos)return {};
+  return result.substr(first,result.find_last_not_of(' ')-first+1);
+}
+inline bool imageRecord(std::string_view s) {
+  return s.starts_with("\x89PNG\r\n\x1a\n") || s.starts_with("\xff\xd8\xff");
+}
+inline bool readBook(const std::string& path,Book& book,std::string& error,bool metadataOnly=false,bool artwork=true) {
   const auto fail=[&](const char* message){error=message;return false;};
   const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
   if(fd<0)return fail("MOBI/PRC could not be opened");
@@ -117,10 +132,11 @@ inline bool readBook(const std::string& path,Book& book,std::string& error) {
   const unsigned compression=be16(record,0), records=be16(record,8);
   const size_t expected=be32(record,4);
   if(be16(record,12)!=0)return fail("DRM-protected MOBI/PRC is unsupported");
-  if(compression!=1 && compression!=2)return fail("Unsupported MOBI/PRC compression");
-  if(!expected || expected>maxText || !records || records>=count)
+  if(!metadataOnly && compression!=1 && compression!=2)return fail("Unsupported MOBI/PRC compression");
+  if(!expected || (!metadataOnly && expected>maxText) || !records || records>=count)
     return fail("MOBI/PRC text exceeds the 1 MiB limit or has invalid records");
   unsigned encoding=1252,flags=0;
+  size_t firstImage=count,coverOffset=size_t(-1),thumbOffset=size_t(-1);
   book={};
   if(kind=="BOOKMOBI") {
     if(record.size()<40 || record.compare(16,4,"MOBI")!=0)
@@ -135,7 +151,48 @@ inline bool readBook(const std::string& path,Book& book,std::string& error) {
     if(length>=76) {
       const size_t offset=be32(record,84),n=be32(record,88);
       if(n && n<=512 && offset<=record.size() && n<=record.size()-offset)
-        book.title=record.substr(offset,n);
+        book.title=metadataText(std::string_view(record).substr(offset,n),encoding);
+    }
+    // Offsets below are relative to the start of the complete record zero.
+    if(length>=96)firstImage=be32(record,108);
+    if(length>=116 && (be32(record,128)&0x40)) {
+      const size_t exth=16+length;
+      if(record.size()-exth>=12 && record.compare(exth,4,"EXTH")==0) {
+        const size_t bytes=be32(record,exth+4),entries=be32(record,exth+8);
+        if(bytes>=12 && bytes<=record.size()-exth && entries<=4096) {
+          size_t at=exth+12;
+          const size_t end=exth+bytes;
+          for(size_t i=0;i<entries && end-at>=8;++i) {
+            const unsigned type=be32(record,at);
+            const size_t n=be32(record,at+4);
+            if(n<8 || n>end-at)break;
+            const auto value=std::string_view(record).substr(at+8,n-8);
+            switch(type) {
+              case 100: {
+                const auto author=metadataText(value,encoding);
+                if(!author.empty() && book.author.size()+author.size()+2<=1000) {
+                  if(!book.author.empty())book.author+="; ";
+                  book.author+=author;
+                }
+                break;
+              }
+              case 101: book.publisher=metadataText(value,encoding);break;
+              case 103: book.description=metadataText(value,encoding,4096);break;
+              case 104: book.isbn=metadataText(value,encoding);break;
+              case 113: book.asin=metadataText(value,encoding);break;
+              case 201: if(value.size()==4)coverOffset=be32(value,0);break;
+              case 202: if(value.size()==4)thumbOffset=be32(value,0);break;
+              case 503: {
+                const auto title=metadataText(value,encoding);
+                if(!title.empty())book.title=title;
+                break;
+              }
+              case 524: book.language=metadataText(value,encoding,48);break;
+            }
+            at+=n;
+          }
+        }
+      }
     }
     book.html=true;
   }
@@ -143,7 +200,29 @@ inline bool readBook(const std::string& path,Book& book,std::string& error) {
     const auto slash=path.find_last_of('/');
     book.title=path.substr(slash==path.npos?0:slash+1);
     if(const auto dot=book.title.find_last_of('.');dot!=book.title.npos)book.title.resize(dot);
-  } else if(encoding==1252)book.title=windows1252(book.title);
+  }
+  if(!book.html) {
+    auto name=std::string_view(header).substr(0,32);
+    const auto zero=name.find('\0');
+    if(zero!=name.npos)name=name.substr(0,zero);
+    const auto title=metadataText(name,1252);
+    if(!title.empty())book.title=title;
+  }
+  if(firstImage<count && firstImage>records) {
+    constexpr size_t maxCover=4u*1024u*1024u;
+    for(size_t relative:{coverOffset,thumbOffset}) {
+      if(relative>=count-firstImage)continue;
+      const size_t index=firstImage+relative,n=offsets[index+1]-offsets[index];
+      if(n<8 || n>maxCover)continue;
+      std::string signature;
+      if(!read(offsets[index],8,signature) || !imageRecord(signature))continue;
+      book.hasCover=true;
+      if(!artwork)break;
+      if(read(offsets[index],n,book.cover))break;
+      book.cover.clear();
+    }
+  }
+  if(metadataOnly)return true;
   book.text.reserve(expected);
   std::string decoded;
   for(size_t i=1;i<=records;++i) {
@@ -172,6 +251,6 @@ inline bool readBook(const std::string& path,Book& book,std::string& error) {
 inline std::string packageMobiBook(const std::string& path,const std::string& cacheDir,std::string& error) {
   mobipkg::Book book;
   if(!mobipkg::readBook(path,book,error))return {};
-  return packageImportedBook(path,book.title,book.text,book.html,cacheDir,error);
+  return packageImportedBook(path,book.title,book.text,book.html,cacheDir,error,book.author,book.language);
 }
 } // namespace books

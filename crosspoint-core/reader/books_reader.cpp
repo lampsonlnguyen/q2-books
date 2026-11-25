@@ -4729,9 +4729,13 @@ class CardShelf {
         }
         break;
       }
-      case LibraryMenu::Series:
-        setLibraryFilter(favoritesFilter_,collectionFilter_,seriesRows_[libraryChoice_]->first);
+      case LibraryMenu::Series: {
+        const auto key=seriesRows_[libraryChoice_]->first;
+        const bool changed=seriesFilter_!=key;
+        setLibraryFilter(favoritesFilter_,collectionFilter_,key);
+        if(changed)selectVisiblePath({});
         break;
+      }
       default:break;
     }
     return false;

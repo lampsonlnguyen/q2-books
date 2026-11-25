@@ -56,7 +56,7 @@ jobs:
           current = version("v" + version_file.read_text().strip())
           if current is None:
               raise SystemExit("Invalid application VERSION")
-          tags = git("tag", "--list", "v*").splitlines()
+          tags = [t for t in git("tag", "--list", "v*").splitlines() if "-" not in t]
           reserved = max((v for t in tags if (v := version(t))), default=(0, 0, 0))
           target = current if current > reserved else (reserved[0], reserved[1], reserved[2] + 1)
           number = ".".join(map(str, target))

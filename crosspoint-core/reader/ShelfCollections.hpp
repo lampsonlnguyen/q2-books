@@ -19,6 +19,10 @@ struct Collections {
   struct Identity {uint64_t size;std::string checksum;};
   std::map<std::string,Identity> identities;
 
+  static bool validIdentity(const Identity& identity) {
+    return identity.size>0 && identity.checksum.size()==32 &&
+      identity.checksum.find_first_not_of("0123456789abcdef")==std::string::npos;
+  }
   bool nameAvailable(const std::string& name,const std::string& except={}) const {
     if(name.empty() || name.size()>maxNameBytes || name.find_first_of("\n\r\t")!=std::string::npos ||
        name.find('\0')!=std::string::npos || name.find_first_not_of(' ')==std::string::npos)return false;
@@ -110,7 +114,13 @@ inline bool saveCollections(const Collections& value) {
     total+=group.second.size();
     if(!value.nameAvailable(group.first,group.first))return false;
   }
-  if(total>Collections::maxMemberships)return false;
+  if(total>Collections::maxMemberships || value.identities.size()>Collections::maxMemberships)return false;
+  for(const auto& item:value.identities) {
+    if(!collectionsContain(value,item.first))continue;
+    std::string decoded;
+    if(!Collections::validIdentity(item.second) ||
+       !parseHexBookPath(hexBookPath(item.first),decoded) || decoded!=item.first)return false;
+  }
   const auto path=collectionsFile();
   std::string temp=path+".tmp.XXXXXX";
   const int fd=mkstemp(temp.data());
@@ -163,7 +173,7 @@ inline bool restoreMovedCollectionBooks(Collections& value,const std::vector<She
   for(const auto& item:value.identities) {
     const auto& oldPath=item.first;
     const auto& identity=item.second;
-    if(paths.count(oldPath) || !collectionsContain(value,oldPath))continue;
+    if(paths.count(oldPath) || !collectionsContain(value,oldPath) || !Collections::validIdentity(identity))continue;
     const auto possible=sameSize.find(identity.size);
     if(possible==sameSize.end() || possible->second.size()>32)continue;
     std::string match;
@@ -180,6 +190,11 @@ inline bool restoreMovedCollectionBooks(Collections& value,const std::vector<She
       match=candidate->path;
     }
     if(!unique || match.empty())continue;
+    // A present destination already associated with a different identity
+    // must not inherit membership from an unrelated missing file.
+    const auto existing=next.identities.find(match);
+    if(existing!=next.identities.end() &&
+       (existing->second.size!=identity.size || existing->second.checksum!=identity.checksum))continue;
     const auto migrate=[&](std::set<std::string>& list) {
       if(list.erase(oldPath))list.insert(match);
     };
@@ -190,7 +205,7 @@ inline bool restoreMovedCollectionBooks(Collections& value,const std::vector<She
     changed=true;
   }
   if(!changed)return false;
-  (void)saveCollections(next);
+  if(!saveCollections(next))return false;
   value=std::move(next);
   return true;
 }

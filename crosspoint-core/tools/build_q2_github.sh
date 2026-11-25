@@ -279,6 +279,8 @@ cp "$elf" "$card/.books/books-engine"
 cp crosspoint-core/platform/q2/books-launcher.sh "$card/.books/q2-books"
 printf 'name=Books\ngame=1\nrow=library\n' > "$card/.books/q2app"
 cp docs/q2-books-card-app.md "$card/.books/README.txt"
+printf '\nMD4C license\n' >> "$card/.books/README.txt"
+cat crosspoint-core/licenses/MD4C.md >> "$card/.books/README.txt"
 # Optional user-editable offline word definitions (UTF-8 TSV). Do not
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.books/dictionary-starter.tsv"
@@ -576,7 +578,17 @@ for point in 8 9 10 11 12 13 14; do
     | tee "$work/slim-$point.log"
   grep -q "Books typeface: Noto Sans ${point}pt" "$work/slim-$point.log"
   grep -q "Books multilingual fonts: 0/14 scripts loaded" "$work/slim-$point.log"
-  cmp "$work/sans-$point.pgm" "$work/slim-$point.pgm"
+  # The status clock can change between the full and slim renders.
+  python3 - "$work/sans-$point.pgm" "$work/slim-$point.pgm" <<'PYTHON'
+from pathlib import Path
+import sys
+
+header = b"P5\n375 320\n255\n"
+full, slim = (Path(path).read_bytes() for path in sys.argv[1:])
+assert all(data.startswith(header) and len(data) == len(header) + 375 * 320 for data in (full, slim))
+body_start = len(header) + 40 * 375
+assert full[body_start:] == slim[body_start:], "Full/slim reader raster differs below the status bar"
+PYTHON
 done
 # Rendering can create state; remove it again before packaging.
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \

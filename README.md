@@ -5,12 +5,12 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 ## Install
 
 1. Download an installable `books-q2-v*.zip` from [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) and verify its accompanying SHA-256 checksum.
-2. Extract to the microSD root, preserving the hidden `.books` folder and existing reading data. Place EPUB or TXT files under `Books/`.
+2. Extract to the microSD root, preserving the hidden `.books` folder and existing reading data. Place EPUB, TXT, Markdown (`.md`), or local HTML (`.html` / `.htm`) files under `Books/`.
 3. Open **Library → Books** in Q2 Pod (older firmware may list card apps under Games). No firmware flashing is required.
 
 ## Features in the source
 
-- EPUB/TXT reader using CrossPoint pagination, CSS, illustrations, multilingual shaping and font fallback.
+- EPUB, TXT, Markdown, and local HTML reader using CrossPoint pagination, CSS, illustrations, multilingual shaping and font fallback.
 - Cover Flow, Grid and List library views; alphabetical jump, search, metadata, favorites, collections, reading status and numeric series grouping.
 - Home recent-books carousel with color covers, progress and resume; wheel and touchscreen navigation.
 - Bookmarks, highlights, dictionary lookup, footnote/link navigation, reading progress and typography controls; installed reading font sizes 8–14 pt.

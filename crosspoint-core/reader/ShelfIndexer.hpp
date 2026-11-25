@@ -40,7 +40,7 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
                                       bool indexArtwork=true) {
   ShelfIndexResult result{};
   if(bookPath.empty() || bookPath.size()>1000)return result;
-  if(isTxtFilename(bookPath))return result;  // no OPF or cover: the file name is the title
+  if(!isEpubFilename(bookPath))return result;  // source documents have no EPUB cover
   struct stat st{};
   if(::lstat(bookPath.c_str(),&st)!=0 || !S_ISREG(st.st_mode) ||
      st.st_size<=0 || st.st_size>128ll*1024*1024)return result;

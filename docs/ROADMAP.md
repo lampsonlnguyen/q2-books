@@ -1,6 +1,6 @@
 # Outstanding work
 
-Only unfinished work is listed. Version labels identify feature groups, not guaranteed release numbers. Existing features are documented in [technical reference](TECHNICAL.md). The separate v1.13 font optimization is deferred; retain the existing embedded-font implementation. No new font-engine rewrite is planned.
+Only unfinished work is listed. Version labels identify feature groups, not guaranteed release numbers. Existing features are documented in [technical reference](TECHNICAL.md). Embedded font resource use still needs physical-Q2 validation.
 
 ### v1.11.0 — Cover Flow customization
 
@@ -11,23 +11,13 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 **Acceptance:** Customization stays within safe geometry and memory limits and does not alter reader typography or system theme.
 
-### v1.14.0 — Markdown support
+### Markdown hardware validation
 
-- [ ] 1.14-M1 — Recognize .md files in the local library and define safe conversion to the existing XHTML/layout pipeline (no separate reader).
-- [ ] 1.14-M2 — Support headings, paragraphs, lists, emphasis, links, code blocks, blockquotes and supported local images; document unsupported extensions.
-- [ ] 1.14-M3 — Integrate chapter navigation, reading position, bookmarks, search, typography and library metadata.
-- [ ] 1.14-M4 — Bound conversion resources, handle UTF-8 and malformed input, restrict local paths and disable active/remote content by default; test long and multilingual files.
+- [ ] Verify chapter links, images, pagination, resume, and peak RAM on a physical Q2.
 
-**Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
+### Local HTML hardware validation
 
-### v1.15.0 — HTML support
-
-- [ ] 1.15-M1 — Recognize .html and .htm files; adapt safe HTML parsing/repair to the existing reader pipeline.
-- [ ] 1.15-M2 — Support common static HTML text, headings, lists, links, supported CSS and local images; no browser engine or JavaScript execution.
-- [ ] 1.15-M3 — Integrate anchors, navigation, reading state, bookmarks, search and library metadata; keep local resource access confined to allowed paths.
-- [ ] 1.15-M4 — Test malformed HTML, encodings, multilingual pages, missing resources, remote URLs and large documents; document fidelity limits.
-
-**Acceptance:** Read local static HTML offline without scripts, unrestricted file access or automatic remote requests.
+- [ ] Verify chapter navigation, local image rendering, resume, and peak RAM on a physical Q2.
 
 ### Reading activity hardware validation
 

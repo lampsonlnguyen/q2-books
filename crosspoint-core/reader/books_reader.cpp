@@ -3516,16 +3516,20 @@ class CardShelf {
   }
   bool recentInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
-    using K=books::PhysicalKind;
     if(browsing_ || optionsOpen_ || onlineMode_)return false;
     const bool step=action==A::Previous || action==A::Next;
-    if(step && recentFocus_ && recentIndices_.size()>1) {
+    if(step && recentFocus_) {
       changeRecent(action==A::Next?1:-1);
       return true;
     }
     if(action==A::Back && recentFocus_) {recentFocus_=false;return true;}
-    // Confirm must reach jumpShortcut first so a held Centre is consumed,
-    // not interpreted as a second short press.
+    if(action==A::Confirm && homeSelection_==-1) {
+      jumpHold_={};
+      if(!recentFocus_) {recentFocus_=true;return true;}
+      recentFocus_=false;
+      homeSelection_=0;
+      return false; // open the currently selected book
+    }
     return false;
   }
   bool canJump() const {
@@ -3598,8 +3602,7 @@ class CardShelf {
   bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
-    const bool canRecent=!browsing_ && !optionsOpen_ && !onlineMode_ && homeSelection_==0 && recentIndices_.size()>1;
-    if(!browsing_ && !canRecent) {jumpHold_={};return false;}
+    if(!browsing_) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
     if(action==A::Next || action==A::Previous || action==A::Back)jumpHold_={};
@@ -3608,7 +3611,6 @@ class CardShelf {
       const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
           ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
       jumpHold_={};
-      if(held && canRecent) {recentFocus_=true;return true;}
       if(!browsing_ && action==A::Confirm)recentFocus_=false;
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
         if(hasBookRow())showLocalInfo();
@@ -4285,7 +4287,8 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,2);
+      const int first=books_.empty()?1:(recentIndices_.size()>1?-1:0);
+      const int next=std::clamp(homeSelection_+direction,first,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       recentFocus_=false;
@@ -4336,7 +4339,7 @@ class CardShelf {
       if(y>=HOME_CARD_TOP && y<HOME_CARD_BOTTOM && !books_.empty()) {
         if(x<18 || x>=HOME_CARD_RIGHT)return false;
         if(x>=HOME_NAV_X && recentIndices_.size()>1) {
-          homeSelection_=0;
+          homeSelection_=-1;
           recentFocus_=true;
           changeRecent(x<HOME_NAV_MID?-1:1);
           present();
@@ -5173,7 +5176,7 @@ class CardShelf {
           if(recentChoice_+1<recentIndices_.size())drawCompactLabel(337,115,">",176,HOME_CARD_RIGHT);
           const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
           drawCompactLabel(298,145,page.c_str(),138,HOME_CARD_RIGHT);
-          if(recentFocus_)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
+          if(homeSelection_==-1)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
         }
       } else {
         drawRowLabel(20,90,50,"No books yet");
@@ -5185,10 +5188,10 @@ class CardShelf {
         drawRowLabel(22,y,HOME_ROW_H,homeLabels[row]);
         if(homeSelection_==row)books::paintSelection(display_,12,y,350,HOME_ROW_H);
       }
-      if(homeSelection_==0 && multiple && notice_.empty()) {
+      if(homeSelection_==-1 && multiple && notice_.empty()) {
         constexpr int baseline=300;
         const int inset=books::MenuLayout::cornerX(baseline-18,22);
-        drawCompactLabel(inset,baseline,"Hold Centre to browse",145,375-inset);
+        drawCompactLabel(inset,baseline,recentFocus_?"Wheel: browse  Return: back":"Centre: browse recent books",145,375-inset);
       }
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
@@ -6559,9 +6562,14 @@ int main(int argc,char** argv) {
     if(!books::recordRecentBook(argv[2]) || !books::recordRecentBook(argv[3]))return 1;
     CardShelf shelf(shelfBooks);
     if(!shelf.open() || shelf.bookPath()!=argv[3])return 2;
-    // Home wheel navigation is independent until a carousel arrow or hold
-    // explicitly enters carousel focus.
+    // Home wheel navigation remains vertical until Centre activates the carousel.
     if(shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[3])return 2;
+    if(!shelf.change(-1) || !shelf.recentInput(A::Confirm,{}) ||
+       !shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2] ||
+       !shelf.recentInput(A::Back,{}) || shelf.recentInput(A::Previous,{K::WheelStep,0}) ||
+       !shelf.change(1) || !shelf.change(-1) || !shelf.recentInput(A::Confirm,{}) ||
+       !shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3] ||
+       shelf.recentInput(A::Confirm,{}) || !shelf.change(-1))return 2;
     if(shelf.tap(340,115) || shelf.bookPath()!=argv[2])return 2;
     if(!shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3])return 2;
     if(!shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2])return 2;

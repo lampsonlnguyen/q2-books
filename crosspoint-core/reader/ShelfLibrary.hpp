@@ -29,19 +29,22 @@ struct ShelfScanLimits {
   size_t maxFolders=1024;
   size_t maxDepth=5;  // Books/<dir1>/.../<dir5>/
 };
-inline bool hasBookExtension(std::string_view name, std::string_view suffix) {
-  if (name.size() <= suffix.size()) return false;
-  name.remove_prefix(name.size() - suffix.size());
-  for (size_t i = 0; i < suffix.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(name[i])) != suffix[i]) return false;
-  }
+inline bool hasBookSuffix(std::string_view name,std::string_view suffix) {
+  if(name.size()<=suffix.size())return false;
+  name.remove_prefix(name.size()-suffix.size());
+  for(size_t i=0;i<suffix.size();++i)
+    if(std::tolower(static_cast<unsigned char>(name[i]))!=suffix[i])return false;
   return true;
 }
-inline bool isEpubFilename(std::string_view name) { return hasBookExtension(name, ".epub"); }
-inline bool isTxtFilename(std::string_view name) { return hasBookExtension(name, ".txt"); }
+inline bool isEpubFilename(std::string_view name) {return hasBookSuffix(name,".epub");}
+inline bool isTxtFilename(std::string_view name) {return hasBookSuffix(name,".txt");}
 inline bool isMarkdownFilename(std::string_view name) { return hasBookExtension(name, ".md"); }
+inline bool isHtmlFilename(std::string_view name) {
+  return hasBookSuffix(name,".html") || hasBookSuffix(name,".htm");
+}
+inline bool isMarkdownFilename(std::string_view name) {return hasBookSuffix(name,".md");}
 inline bool isBookFilename(std::string_view name) {
-  return isEpubFilename(name) || isTxtFilename(name) || isMarkdownFilename(name);
+  return isEpubFilename(name) || isTxtFilename(name) || isHtmlFilename(name) || isMarkdownFilename(name);
 }
 inline std::vector<ShelfEntry> scanCardBooks(
     const std::string& root,const ShelfScanLimits limits={}) {

@@ -221,8 +221,8 @@ struct Markdown {
     if (images.size() >= maxImages || imagePaths.size() >= maxImages * 2 ||
         imageBytes >= maxImageBytes) return {};
     imagePaths.emplace(path, missing);
-    const bool png = hasBookExtension(path, ".png");
-    const bool jpeg = hasBookExtension(path, ".jpg") || hasBookExtension(path, ".jpeg");
+    const bool png = hasBookSuffix(path, ".png");
+    const bool jpeg = hasBookSuffix(path, ".jpg") || hasBookSuffix(path, ".jpeg");
     std::string data;
     if ((!png && !jpeg) || !readImage(root, path, data) || data.size() > maxImageBytes - imageBytes) return {};
     if (png && data.compare(0, 8, "\x89PNG\r\n\x1A\n", 8) != 0) return {};
@@ -418,7 +418,7 @@ struct Markdown {
       manifest += "<item id=\"" + image.name + "\" href=\"" + image.name +
                   "\" media-type=\"" + image.type + "\"/>";
     }
-    txtpkg::finishEpub(zip, title, "books-markdown", manifest, spine, nav);
+    txtpkg::finishEpub(zip, title, "books-markdown", "und", manifest, spine, nav);
     return zip.finish();
   }
 };

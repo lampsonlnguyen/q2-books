@@ -76,6 +76,7 @@ Home	Home	Trang chủ
 Current book	Current book	Sách đang đọc
 No books yet	No books yet	Chưa có sách
 Continue reading	Continue reading	Đọc tiếp
+Hold Centre to browse	Hold Centre to browse	Giữ nút giữa để duyệt
 Browse files	Browse files	Duyệt sách
 Sort: 	Sort: 	Xếp: 
 Title A-Z	Title A-Z	Tên A-Z
@@ -255,3 +256,27 @@ Some chapters skipped	Some chapters skipped	Đã bỏ qua một số chương
 Chapter	Chapter	Chương
 New search	New search	Tìm mới
 Read from here	Read from here	Đọc từ đây
+Reading statistics	Reading statistics	Thống kê đọc
+Reading by book	Reading by book	Thống kê theo sách
+Streaks and goals	Streaks and goals	Chuỗi đọc và mục tiêu
+By book	By book	Theo sách
+Today	Today	Hôm nay
+Last 7 days	Last 7 days	7 ngày qua
+Daily average (7 days)	Daily average (7 days)	Trung bình ngày (7 ngày)
+Daily minute goal	Daily minute goal	Mục tiêu phút mỗi ngày
+Daily page goal	Daily page goal	Mục tiêu trang mỗi ngày
+Current streak	Current streak	Chuỗi đọc hiện tại
+Longest streak	Longest streak	Chuỗi đọc dài nhất
+min	min	phút
+sec	sec	giây
+pages	pages	trang
+finished	finished	sách đã đọc xong
+days	days	ngày
+No reading activity	No reading activity	Chưa có hoạt động đọc
+Could not save goal	Could not save goal	Không thể lưu mục tiêu
+Page warmth	Page warmth	Tông màu trang
+Cool	Cool	Mát
+Default	Default	Mặc định
+Warm	Warm	Ấm
+Warmer	Warmer	Ấm hơn
+Light only	Light only	Chỉ chế độ sáng

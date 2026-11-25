@@ -41,6 +41,7 @@ bool isXmlWhitespace(const char c) { return c == ' ' || c == '\t' || c == '\r' |
 // far below this anyway, so overflow is clamped, not fatal.
 constexpr size_t MAX_METADATA_TEXT = 512;
 constexpr size_t MAX_COLLECTION_CANDIDATES = 8;
+constexpr size_t MAX_IDENTIFIER_CANDIDATES = 16;
 
 void appendMetadataText(std::string& out, const XML_Char* text, const int len, bool& spacePending,
                         bool* separatorPending = nullptr, size_t maxBytes = MAX_METADATA_TEXT) {
@@ -76,6 +77,8 @@ std::string boundedMetadataValue(const XML_Char* value) {
   if (!value) return {};
   size_t length = 0;
   while (length < MAX_METADATA_TEXT && value[length] != '\0') ++length;
+  // If the byte cap lands inside a UTF-8 codepoint, omit that codepoint.
+  while (length && (static_cast<unsigned char>(value[length]) & 0xc0) == 0x80) --length;
   return std::string(value, length);
 }
 
@@ -190,6 +193,9 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
 
   if (self->state == START && xmlLocalNameEquals(name, "package")) {
     self->state = IN_PACKAGE;
+    for (int i = 0; atts[i]; i += 2)
+      if (strcmp(atts[i], "unique-identifier") == 0)
+        self->primaryIdentifierId = boundedMetadataValue(atts[i + 1]);
     return;
   }
 
@@ -242,9 +248,11 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
     self->state = IN_BOOK_IDENTIFIER;
     self->identifierText.clear();
     self->identifierScheme.clear();
+    self->identifierId.clear();
     self->metadataSpacePending = false;
     for (int i = 0; atts[i]; i += 2) {
       if (xmlLocalNameEquals(atts[i], "scheme")) self->identifierScheme = boundedMetadataValue(atts[i + 1]);
+      if (strcmp(atts[i], "id") == 0) self->identifierId = boundedMetadataValue(atts[i + 1]);
     }
     return;
   }
@@ -317,7 +325,8 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
     }
 
     const std::string property = lowerAscii(self->metaProperty);
-    if (property == "belongs-to-collection" || property == "collection-type" || property == "group-position") {
+    if (property == "belongs-to-collection" || property == "collection-type" || property == "group-position" ||
+        property == "identifier-type") {
       self->state = IN_META_TEXT;
       self->metadataSpacePending = false;
     }
@@ -580,7 +589,17 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
   }
 
   if (self->state == IN_BOOK_IDENTIFIER && xmlLocalNameEquals(name, "identifier")) {
-    if (self->identifier.empty()) self->identifier = self->identifierText;
+    if (self->identifier.empty() || (!self->primaryIdentifierId.empty() &&
+        self->identifierId == self->primaryIdentifierId && !self->identifierText.empty()))
+      self->identifier = self->identifierText;
+    if (!self->identifierId.empty()) {
+      auto& candidates = self->identifierCandidates;
+      auto found = std::find_if(candidates.begin(), candidates.end(),
+          [&](const auto& item) { return item.id == self->identifierId; });
+      if (found != candidates.end()) found->value = self->identifierText;
+      else if (candidates.size() < MAX_IDENTIFIER_CANDIDATES)
+        candidates.push_back({self->identifierId, self->identifierText, {}});
+    }
     const std::string scheme = lowerAscii(self->identifierScheme);
     if (self->isbn.empty() &&
         (scheme.find("isbn") != std::string::npos || hasMetadataPrefix(self->identifierText, "isbn"))) {
@@ -596,7 +615,14 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
 
   if (self->state == IN_META_TEXT && xmlLocalNameEquals(name, "meta")) {
     const std::string property = lowerAscii(self->metaProperty);
-    if (property == "belongs-to-collection" && !self->metaId.empty()) {
+    if (property == "identifier-type" && !self->metaRefines.empty()) {
+      auto& candidates = self->identifierCandidates;
+      auto found = std::find_if(candidates.begin(), candidates.end(),
+          [&](const auto& item) { return item.id == self->metaRefines; });
+      if (found != candidates.end()) found->type = lowerAscii(self->metaText);
+      else if (candidates.size() < MAX_IDENTIFIER_CANDIDATES)
+        candidates.push_back({self->metaRefines, {}, lowerAscii(self->metaText)});
+    } else if (property == "belongs-to-collection" && !self->metaId.empty()) {
       CollectionMetadata* candidate = nullptr;
       for (auto& collection : self->collectionCandidates) {
         if (collection.id == self->metaId) {
@@ -637,6 +663,15 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
   }
 
   if (self->state == IN_METADATA && xmlLocalNameEquals(name, "metadata")) {
+    for (const auto& item : self->identifierCandidates) {
+      if (item.value.empty()) continue;
+      // ONIX codelist 5: 02 ISBN-10, 15 ISBN-13. Also accept explicit names.
+      if (self->isbn.empty() && (item.type == "02" || item.type == "15" ||
+          item.type == "isbn" || item.type == "isbn-10" || item.type == "isbn-13"))
+        self->isbn = stripMetadataPrefix(item.value, "isbn");
+      if (self->asin.empty() && item.type == "asin")
+        self->asin = stripMetadataPrefix(item.value, "asin");
+    }
     if (!self->calibreSeries.empty()) {
       self->series = self->calibreSeries;
       self->seriesIndex = self->calibreSeriesIndex;

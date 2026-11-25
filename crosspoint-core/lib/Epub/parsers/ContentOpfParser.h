@@ -45,6 +45,12 @@ class ContentOpfParser final : public Print {
   bool metadataSpacePending = false;
   bool authorSeparatorPending = false;
 
+  std::string primaryIdentifierId;
+  std::string identifierId;
+  struct IdentifierMetadata {
+    std::string id, value, type;
+  };
+  std::vector<IdentifierMetadata> identifierCandidates;
   std::string identifierText;
   std::string identifierScheme;
   std::string metaText;

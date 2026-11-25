@@ -5556,6 +5556,28 @@ class CardShelf {
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }
+  // Show a stable cover/title while a cold source import is being prepared.
+  // Do not create a second Reader or write reading progress for a preview.
+  void presentOpening(size_t index) {
+    if(index>=books_.size())return;
+    const auto& info=details(index);
+    const auto title=fitWidth(info.title.empty()?books_[index].label:info.title,335);
+    renderer_.clearScreen(0xff);
+    const auto label=books::tr("Opening book...");
+    drawRowLabel((375-renderer_.getTextWidth(1,label))/2,0,39,label);
+    books::paintBar(display_,0,0,375,39);
+    constexpr int w=126,h=174,x=(375-w)/2,y=51;
+    drawBookCover(x,y,index,w,h);
+    drawRowLabel((375-renderer_.getTextWidth(1,title.c_str()))/2,236,37,title.c_str());
+    drawRowLabel(22,274,34,"Preparing book...");
+    flowFrame_.resize(HalDisplay::PIXELS);
+    if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
+      const auto& art=displayedColorCover_.valid()?displayedColorCover_:books::shelf_art::defaultCover();
+      books::grid::drawThumbnail(flowFrame_.data(),art,x,y,w,h);
+      if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+    }
+    display_.displayBuffer();
+  }
   void present() {
     paint();
     if(!flowActive() && !gridActive()) {
@@ -6442,8 +6464,11 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":books::isMobiFilename(chosen)?"Opening MOBI/PRC...":"Opening book...");
-      shelf->present();
+      if(!books::isEpubFilename(chosen))shelf->presentOpening(selection);
+      else {
+        shelf->setNotice("Opening book...");
+        shelf->present();
+      }
     }
     auto next=std::make_unique<Reader>(chosen);
     const bool opened=next->open(true);

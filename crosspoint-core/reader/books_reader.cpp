@@ -37,7 +37,6 @@
 #include "Clippings.hpp"
 #include "UiLanguage.hpp"
 #include "Q2Theme.hpp"
-#include "NativeMenu.hpp"
 #include "Q2Display.hpp"
 #include "StatusBar.hpp"
 #include "MenuLayout.hpp"
@@ -5682,7 +5681,7 @@ ReaderClock::time_point autoTurnTick(Reader& reader,bool allowed,ReaderClock::ti
   return next;
 }
 
-int runCardApp(const std::string& bookDir,std::string_view launch) {
+int runCardApp(const std::string& bookDir) {
   if(!installExitHandlers())return 5;
   SessionProfile profile;
   books::sweepFontPackStages();
@@ -5720,12 +5719,6 @@ int runCardApp(const std::string& bookDir,std::string_view launch) {
     if(interrupted)return 0;
     shelf->setNotice({});
   }
-  if(launch==books::kNativeBrowse)shelf->enterBrowser(true);
-  if(launch==books::kNativeOptions)shelf->enterOptions();
-  const bool resume=launch==books::kNativeResume &&
-      std::any_of(books.begin(),books.end(),[&recent](const ShelfEntry& entry) {
-        return std::find(recent.begin(),recent.end(),entry.path)!=recent.end();
-      });
   shelf->present();
   books::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
@@ -5761,10 +5754,10 @@ int runCardApp(const std::string& bookDir,std::string_view launch) {
   size_t nextShelfIndex=0,nextSeriesIndex=0;
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
-  // A native Resume row queues the same action as confirming Continue Reading.
-  // Wheel repeats also run one step at a time before the next datagram.
-  books::LogicalAction pendingAction=resume?books::LogicalAction::Confirm:books::LogicalAction::None;
-  int pendingRepeat=resume?1:0;
+  // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
+  // its own step, before reading the next datagram.
+  books::LogicalAction pendingAction=books::LogicalAction::None;
+  int pendingRepeat=0;
   const auto pageShowing=[&] {
     return reader && !reader->searchOpen() && !reader->searchPreview() &&
         !typeMenu && !navigationMenu && !linkMenu && !selectionChoosing &&
@@ -6499,8 +6492,6 @@ void usage() {
 } // namespace
 
 int main(int argc,char** argv) {
-  if(argc==2 && std::strcmp(argv[1],"--native-menu")==0)
-    return installExitHandlers()?books::serveNativeMenu(interrupted):5;
   // Menus follow Q2 Pod's language; a translation the menu font can't draw
   // stays English rather than showing boxes.
   books::setUiGlyphCheck([](uint32_t cp) {
@@ -6521,11 +6512,10 @@ int main(int argc,char** argv) {
     std::printf("Books %s\n%s\n",BOOKS_VERSION,books::kAboutText);
     return 0;
   }
-  // Q2 Pod sets Q2_URI when a firmware menu row launches the reader.
+  // Card apps start with NO book argument; the on-device picker owns launch.
   if(argc==1) {
     if(onCard)(void)books::migrateLegacyState();
-    const char* uri=std::getenv("Q2_URI");
-    return runCardApp("/mnt/mmc/Books",uri?uri:"");
+    return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
   if(argc==3 && std::strcmp(argv[1],"--test-reading-statistics")==0) {

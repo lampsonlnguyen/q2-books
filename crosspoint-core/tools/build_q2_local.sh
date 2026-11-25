@@ -62,18 +62,17 @@ reader="$out/build/books-reader"
 "$python" "$repo_root/crosspoint-core/tools/check_q2_elf.py" \
   "$reader" "$readelf" "$objdump"
 mkdir -p "$out/card/.books"
-cp "$reader" "$out/card/.books/books-engine"
-cp "$repo_root/crosspoint-core/platform/q2/books-launcher.sh" "$out/card/.books/q2-books"
-cp "$repo_root/crosspoint-core/platform/q2/books-menu-run.sh" "$out/card/.books/run"
-cp "$repo_root/crosspoint-core/platform/q2/books-native.q2app" "$out/card/.books/q2app"
-cp "$repo_root/crosspoint-core/platform/q2/books-fullscreen.q2app" "$out/card/.books/q2app.fullscreen"
-chmod +x "$out/card/.books/q2-books" "$out/card/.books/run"
+cp "$reader" "$out/card/.books/q2-books"
+cat > "$out/card/.books/q2app" <<'MANIFEST'
+name=Books
+game=1
+row=library
+MANIFEST
 cat > "$out/card/.books/README.txt" <<'NOTICE'
 Books early hardware alpha — NOT a firmware update.
 Requires Q2 Pod card apps with row=library support.
 Extract the hidden .books folder to your microSD root.
 Launch Library > Books; place EPUB files in microSD/Books/.
-Older firmware without full-screen menu rows: copy .books/q2app.fullscreen over .books/q2app.
 Some XHTML/CSS/image features are still incomplete.
 Hold Return to escape if the card app becomes unresponsive.
 Hardware operation is unverified until tested on a real Q2.

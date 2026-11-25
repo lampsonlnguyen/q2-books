@@ -277,9 +277,7 @@ card="$base/dist/card"
 mkdir -p "$card/.books" "$card/Books"
 cp "$elf" "$card/.books/books-engine"
 cp crosspoint-core/platform/q2/books-launcher.sh "$card/.books/q2-books"
-cp crosspoint-core/platform/q2/books-menu-run.sh "$card/.books/run"
-cp crosspoint-core/platform/q2/books-native.q2app "$card/.books/q2app"
-cp crosspoint-core/platform/q2/books-fullscreen.q2app "$card/.books/q2app.fullscreen"
+printf 'name=Books\ngame=1\nrow=library\n' > "$card/.books/q2app"
 cp docs/q2-books-card-app.md "$card/.books/README.txt"
 printf '\nMD4C license\n' >> "$card/.books/README.txt"
 cat crosspoint-core/licenses/MD4C.md >> "$card/.books/README.txt"
@@ -545,8 +543,8 @@ BOOKS_TEST_FONTS="$card/.books/fonts" timeout 180s \
 # logs (v0.8.0-beta shipped a test's progress-*.highlights). Allow-list, so a
 # new kind of state can never leak into a release.
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
-  ! -name q2app ! -name q2app.fullscreen ! -name run ! -name README.txt \
-  ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
+  ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
 find "$card/.books/fonts" -mindepth 1 ! -name '*.cpfont' ! -name '*.txt' ! -name ttf ! -path '*/fonts/ttf/*' -exec rm -rf -- {} +
 find "$card/.books/fonts/ttf" -mindepth 1 ! -name '*.ttf' ! -name books-ttf.txt -exec rm -rf -- {} +
 # All font families were required for regression tests above, but optional packs are
@@ -594,9 +592,9 @@ PYTHON
 done
 # Rendering can create state; remove it again before packaging.
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
-  ! -name q2app ! -name q2app.fullscreen ! -name run ! -name README.txt \
-  ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
-chmod +x "$card/.books/q2-books" "$card/.books/books-engine" "$card/.books/run"
+  ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
+  ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
+chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
 # The test books in $card/Books were only for the checks above: the release
 # carries the app alone, never books in the user's Books folder.
 (cd "$card" && zip -q -r "$base/dist/books-q2-reader-alpha.zip" .books)
@@ -608,11 +606,10 @@ import re,sys
 names_all=sys.stdin.read().split()
 bad=[n for n in names_all if not re.fullmatch(
   r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/fonts/ttf/|\.books/fonts/ttf/[a-z]+-(regular|bold|italic|bolditalic)\.ttf|\.books/fonts/ttf/books-ttf\.txt|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
-  r"\.books/(books-engine|q2-books|q2app(?:\.fullscreen)?|run|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
+  r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
   r"connected\.conf\.example|ca-bundle\.pem))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
 names=set(n for n in names_all)
-assert {".books/run", ".books/q2app.fullscreen"} <= names, "Books native launcher files missing"
 assert ".books/fonts/ttf/sans-regular.ttf" in names, "Noto Sans TrueType missing"
 assert {n for n in names if n.endswith(".cpfont")} == {
   f".books/fonts/sans-{size}.cpfont" for size in range(8,15)}, "unexpected or missing bitmap fonts"

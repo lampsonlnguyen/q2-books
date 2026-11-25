@@ -3255,8 +3255,10 @@ class CardShelf {
   // 4 rows of 47 px: a title line and an author line need about 45 px with
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
-  static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
-  static constexpr int HOME_COVER_X=18, HOME_COVER_Y=(224-books::ShelfCover::height)/2;
+  static constexpr int HOME_CARD_TOP=74,HOME_CARD_BOTTOM=165;
+  static constexpr int HOME_TOP_Y=171, HOME_ROW_H=29, HOME_ROW_STEP=32;
+  static constexpr int HOME_COVER_X=18,HOME_COVER_Y=80,HOME_COVER_W=60,HOME_COVER_H=78;
+  static constexpr int HOME_NAV_X=290,HOME_NAV_MID=323,HOME_CARD_RIGHT=359;
   static constexpr int OPTION_COUNT=4;
   static constexpr int JUMP_X=12,JUMP_Y=78,JUMP_W=117,JUMP_H=46;
   static constexpr size_t JUMP_COLS=3,JUMP_ROWS=4,JUMP_PAGE=JUMP_COLS*JUMP_ROWS;
@@ -4149,10 +4151,10 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
-      if(y>=74 && y<149 && !recentIndices_.empty()) {
-        if(x<18 || x>=359)return false;
-        if(x>=287 && recentIndices_.size()>1) {
-          changeRecent(x<322?-1:1);
+      if(y>=HOME_CARD_TOP && y<HOME_CARD_BOTTOM && !books_.empty()) {
+        if(x<18 || x>=HOME_CARD_RIGHT)return false;
+        if(x>=HOME_NAV_X && recentIndices_.size()>1) {
+          changeRecent(x<HOME_NAV_MID?-1:1);
           return false;
         }
         homeSelection_=0;
@@ -4211,18 +4213,18 @@ class CardShelf {
     }
     return cachedDetails_[index];
   }
-  void drawBookCover(int x,int y,size_t index) {
+  void drawBookCover(int x,int y,size_t index,int width=books::ShelfCover::width,int height=books::ShelfCover::height) {
     if(displayedCoverIndex_!=index) {
       displayedColorCover_={};
       (void)books::loadFlowCover(books_[index].path,displayedColorCover_);
       displayedCoverIndex_=index;
     }
-    renderer_.drawLine(x-1,y-1,x+books::ShelfCover::width,y-1,true);
-    renderer_.drawLine(x-1,y-1,x-1,y+books::ShelfCover::height,true);
-    renderer_.drawLine(x+books::ShelfCover::width,y-1,
-                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
-    renderer_.drawLine(x-1,y+books::ShelfCover::height,
-                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y-1,x+width,y-1,true);
+    renderer_.drawLine(x-1,y-1,x-1,y+height,true);
+    renderer_.drawLine(x+width,y-1,
+                       x+width,y+height,true);
+    renderer_.drawLine(x-1,y+height,
+                       x+width,y+height,true);
   }
   void markArtworkChecked(size_t index) {artworkChecked_[index]=true;}
   std::optional<size_t> featuredArtwork() const {
@@ -4894,50 +4896,47 @@ class CardShelf {
       }
     } else if(!browsing_) {
       drawRowLabel(16,39,35,"Home");
-      constexpr int top=74,bottom=149,right=359;
-      constexpr int textX=82,lineHeight=21;
-      const int textWidth=(recentIndices_.size()>1?289:right)-textX;
-      renderer_.drawLine(15,top,right,top,true);
-      // The shelf only reads the cached thumbnail; the reader decodes the cover.
-      if(!books_.empty())drawBookCover(HOME_COVER_X,HOME_COVER_Y,current_);
-      else renderer_.drawRect(HOME_COVER_X-1,HOME_COVER_Y-1,
-                              books::ShelfCover::width+2,books::ShelfCover::height+2,true);
-
-      const auto* info=books_.empty()?nullptr:&details(current_);
-      const bool hasAuthor=info && !info->author.empty();
-      const int textY=(top+bottom+1-lineHeight*(hasAuthor?3:2))/2;
-      uint32_t ppm=0;
-      const bool haveProgress=info && books::loadShelfProgress(books_[current_].path,ppm);
-      drawCompactLabel(textX,textY+16,recentIndices_.empty()?"Current book":"Recently read",150);
-      if(haveProgress) {
-        const auto progress=std::to_string(ppm/10000)+"%";
-        drawCompactLabel(242,textY+16,progress.c_str(),145,285);
-      }
-      if(recentIndices_.size()>1) {
-        drawCompactLabel(298,textY+16,"<",165);
-        drawCompactLabel(340,textY+16,">",165);
-        const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
-        drawCompactLabel(295,textY+38,page.c_str(),138,355);
-        if(recentFocus_)books::paintSelection(display_,290,textY,68,lineHeight);
-      }
-      const int titleY=textY+lineHeight;
-      if(info) {
-        const auto& title=info->title.empty()?books_[current_].label:info->title;
+      constexpr int textX=88;
+      const bool multiple=recentIndices_.size()>1;
+      const int textRight=multiple?HOME_NAV_X-8:HOME_CARD_RIGHT-4;
+      const int textWidth=textRight-textX;
+      renderer_.drawLine(15,HOME_CARD_TOP,HOME_CARD_RIGHT,HOME_CARD_TOP,true);
+      if(!books_.empty()) {
+        drawBookCover(HOME_COVER_X,HOME_COVER_Y,current_,HOME_COVER_W,HOME_COVER_H);
+        const auto& info=details(current_);
+        const auto& title=info.title.empty()?books_[current_].label:info.title;
+        drawCompactLabel(textX,94,recentIndices_.empty()?"Current book":"Recently read",145,textRight);
         auto& ui=books::UiText::instance();
-        const int titlePx=shelfRowPx()-3;
-        if(ui.available() && ui.drawable(title)) {
-          ui.draw(display_,textX,titleY+(lineHeight-ui.lineHeight(titlePx))/2,
-                  fitWidth(title,textWidth,titlePx),titlePx,right);
-        } else if(!drawSmallLine(textX,titleY+19,title,textWidth,224)) {
-          drawRowLabel(textX,titleY,lineHeight,renderer_.truncatedText(1,title.c_str(),textWidth).c_str());
+        const auto line=[&](const std::string& value,int y,int px,int scale) {
+          if(value.empty())return;
+          if(ui.available() && ui.drawable(value))
+            uiDraw(textX,y,fitWidth(value,textWidth,px),px,textRight);
+          else if(!drawSmallLine(textX,y+px,value,textWidth,scale))
+            drawCompactLabel(textX,y+px,value.c_str(),scale,textRight);
+        };
+        line(title,98,19,192);
+        line(info.author,121,14,150);
+        uint32_t ppm=0;
+        if(books::loadShelfProgress(books_[current_].path,ppm)) {
+          const unsigned percent=std::min(ppm,1000000u)/10000u;
+          const auto label=std::to_string(percent)+"%";
+          drawCompactLabel(textX,155,label.c_str(),138,textX+48);
+          const int barX=textX+52,barW=textRight-barX;
+          renderer_.drawRect(barX,145,barW,9,true);
+          if(percent)renderer_.fillRect(barX+1,146,(barW-2)*percent/100,7,true);
         }
-        if(hasAuthor)
-          drawRowLabel(textX,titleY+lineHeight,lineHeight,
-                       renderer_.truncatedText(1,info->author.c_str(),textWidth).c_str());
+        if(multiple) {
+          renderer_.drawLine(HOME_NAV_X-3,82,HOME_NAV_X-3,158,true);
+          if(recentChoice_>0)drawCompactLabel(300,115,"<",176,HOME_NAV_MID);
+          if(recentChoice_+1<recentIndices_.size())drawCompactLabel(337,115,">",176,HOME_CARD_RIGHT);
+          const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
+          drawCompactLabel(298,145,page.c_str(),138,HOME_CARD_RIGHT);
+          if(recentFocus_)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
+        }
       } else {
-        drawRowLabel(textX,titleY,lineHeight,"No books yet");
+        drawRowLabel(20,90,50,"No books yet");
       }
-      renderer_.drawLine(15,bottom,right,bottom,true);
+      renderer_.drawLine(15,HOME_CARD_BOTTOM,HOME_CARD_RIGHT,HOME_CARD_BOTTOM,true);
       static constexpr const char* homeLabels[]={"Continue reading","Browse files","Options"};
       for(int row=books_.empty()?1:0;row<static_cast<int>(std::size(homeLabels));++row) {
         const int y=HOME_TOP_Y+row*HOME_ROW_STEP;
@@ -5298,8 +5297,8 @@ class CardShelf {
     if(!display_.composeColorFrame(flowFrame_.data(),flowFrame_.size()))return false;
     const int x=catalog?16:info?INFO_X:HOME_COVER_X;
     const int y=catalog?80:info?INFO_Y:HOME_COVER_Y;
-    const int width=catalog?books::OpdsCover::width:info?INFO_W:books::ShelfCover::width;
-    const int height=catalog?books::OpdsCover::height:info?INFO_H:books::ShelfCover::height;
+    const int width=catalog?books::OpdsCover::width:info?INFO_W:HOME_COVER_W;
+    const int height=catalog?books::OpdsCover::height:info?INFO_H:HOME_COVER_H;
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }

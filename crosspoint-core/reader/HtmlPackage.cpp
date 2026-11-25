@@ -321,7 +321,7 @@ struct Html {
   std::map<std::string,std::string> imagePaths;
   std::vector<Image> images;
   size_t total=0,imageBytes=0,idCount=0,linkCount=0;
-  std::string title,language,css,bodyStyle,bodyClass,bodyDirection;
+  std::string title,author,language,css,bodyStyle,bodyClass,bodyDirection;
   bool overflow=false,head=false;
   std::vector<std::string> hidden;
   size_t pendingHeading=0;
@@ -556,7 +556,7 @@ struct Html {
       manifest+="<item id=\""+image.name+"\" href=\""+image.name+
           "\" media-type=\""+(image.png?"image/png":"image/jpeg")+"\"/>";
     }
-    txtpkg::finishEpub(zip,title,"books-html",language.empty()?"und":language,manifest,spine,nav);
+    txtpkg::finishEpub(zip,title,"books-html",language.empty()?"und":language,manifest,spine,nav,author);
     return zip.finish();
   }
 };
@@ -569,13 +569,16 @@ uint64_t hash(std::string_view bytes) {
 }  // namespace
 
 std::string packageImportedBook(const std::string& source,std::string_view title,
-    std::string_view raw,bool isHtml,const std::string& cacheDir,std::string& error) {
+    std::string_view raw,bool isHtml,const std::string& cacheDir,std::string& error,
+    std::string_view author,std::string_view language) {
   if(raw.size()>sourceLimit) {error="Imported ebook exceeds 1 MiB";return {};}
   std::string payload;
   if(isHtml) {
     Html html(-1); // no external file or network access
     if(!html.parse(cleanDocument(raw))) {error="MOBI HTML exceeded conversion limits";return {};}
-    if(html.title.empty())html.title=cleanDocument(title);
+    if(!title.empty())html.title=cleanDocument(title);
+    html.author=cleanDocument(author);
+    if(!language.empty())html.language=cleanDocument(language);
     payload=html.package();
   } else {
     payload=buildTxtEpub(std::string(title)+".txt",cleanDocument(raw));

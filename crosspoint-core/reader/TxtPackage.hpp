@@ -137,13 +137,14 @@ inline void startEpub(ZipWriter& zip) {
 }
 inline void finishEpub(ZipWriter& zip,std::string_view title,const std::string& id,
                        std::string_view language,const std::string& manifest,
-                       const std::string& spine,const std::string& nav) {
+                       const std::string& spine,const std::string& nav,std::string_view author={}) {
   const std::string t=xmlEscape(title);
   zip.add("OEBPS/content.opf",
       "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" "
       "version=\"2.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
       "<dc:title>"+t+"</dc:title><dc:identifier id=\"id\">"+id+"</dc:identifier>"
-      "<dc:language>"+xmlEscape(language)+"</dc:language></metadata><manifest>"
+      "<dc:language>"+xmlEscape(language)+"</dc:language>"+
+      (author.empty()?std::string{}:"<dc:creator>"+xmlEscape(author)+"</dc:creator>")+"</metadata><manifest>"
       "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>"+manifest+
       "</manifest><spine toc=\"ncx\">"+spine+"</spine></package>\n");
   zip.add("OEBPS/toc.ncx",

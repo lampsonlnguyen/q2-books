@@ -50,7 +50,7 @@ In Browse files, tap **A-Z** or hold Centre and release to open the picker. Turn
 
 ### Testing the library and reader changes
 
-- In **Browse files**, highlight a book and tap **Library** or hold Centre for just over a second and release. **Book details** shows local metadata and progress without opening the book. Turn the wheel to scroll the description and press Centre to open or resume. The shorter Centre hold still opens A–Z.
+- In **Browse files**, highlight a book and hold Centre for at least 1.1 seconds, then release to open Book Details directly. Alternatively tap **Library** and select **Book details**. **Book details** shows local metadata and progress without opening the book. Turn the wheel to scroll the description and press Centre to open or resume. The shorter Centre hold still opens A–Z.
 - Use **Library** to create and browse collections, add the selected book to collections, or toggle its favorite. **All books** clears the active group. Moved books retain membership when the card contains one matching file. The app leaves ambiguous or missing files associated with their saved paths.
 - On **Home**, tap the arrows to cycle through cached recent books. With **Continue reading** highlighted, hold Centre and release to focus the carousel, then turn the wheel and press Centre to resume.
 - **Library → Series** lists EPUB3 and Calibre series as their metadata is indexed. Select a series to browse in ascending volume order; books without a volume follow numbered books. Books outside a series are available under **All books**.

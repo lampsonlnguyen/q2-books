@@ -3133,6 +3133,7 @@ class CardShelf {
   std::vector<std::string> localInfoLines_;
   size_t localInfoScroll_=0;
   bool localInfoResume_=false;
+  bool localInfoFromTools_=false;
   size_t localInfoRoom_=5;
   static constexpr int INFO_X=20,INFO_Y=80,INFO_W=64,INFO_H=80;
   static constexpr int INFO_TEXT_X=96,INFO_TEXT_W=258,INFO_BODY_Y=167,INFO_BODY_BOTTOM=266;
@@ -3313,6 +3314,7 @@ class CardShelf {
         visible_[selected_-folderRows()]<books_.size();
   }
   bool libraryMenuOpen() const {return libraryMenu_!=LibraryMenu::None;}
+  bool localInfoOpen() const {return libraryMenu_==LibraryMenu::Info;}
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
@@ -3475,6 +3477,7 @@ class CardShelf {
     if(!browsing_ && !canRecent) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
+    if(action==A::Next || action==A::Previous || action==A::Back)jumpHold_={};
     if(action==A::Confirm || event.kind==K::KeyUp || event.kind==K::TouchDown) {
       const auto started=jumpHold_;
       const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
@@ -3482,7 +3485,9 @@ class CardShelf {
       jumpHold_={};
       if(held && canRecent) {recentFocus_=true;return true;}
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
-        openLibraryMenu(LibraryMenu::Tools);return true;
+        if(hasBookRow())showLocalInfo();
+        else openLibraryMenu(LibraryMenu::Tools);
+        return true;
       }
       if(held)return enterJump();
     }
@@ -4349,6 +4354,7 @@ class CardShelf {
   }
   void showLocalInfo() {
     if(!hasBookRow())return;
+    localInfoFromTools_=libraryMenu_==LibraryMenu::Tools;
     const auto index=selected();
     localInfo_={};
     const auto result=books::indexShelfBook(books_[index].path,&localInfo_);
@@ -4356,6 +4362,16 @@ class CardShelf {
     (void)cacheSeries(index,localInfo_);
     const auto row=std::find(visible_.begin(),visible_.end(),index);
     if(row!=visible_.end())selected_=folderRows()+static_cast<size_t>(row-visible_.begin());
+    // A metadata refresh may change search matches. Never show or open a
+    // different row if the original selection disappeared.
+    if(browsing_ && (row==visible_.end() || !hasBookRow() || selected()!=index)) {
+      openLibraryMenu(LibraryMenu::None);return;
+    }
+    if(localInfo_.title.empty() || localInfo_.author.empty()) {
+      const auto& cached=details(index);
+      if(localInfo_.title.empty())localInfo_.title=cached.title;
+      if(localInfo_.author.empty())localInfo_.author=cached.author;
+    }
     localInfoLines_.clear();
     const auto append=[&](const std::string& value) {
       // Use the same face and size for measurement and drawing. Fall back to
@@ -4492,7 +4508,8 @@ class CardShelf {
     if(libraryMenu_==LibraryMenu::Name)return collectionNameInput(action,event);
     if(action==A::Back || (touch && event.y<74)) {
       if(libraryMenu_==LibraryMenu::Collection)openLibraryMenu(LibraryMenu::Collections);
-      else if(libraryMenu_==LibraryMenu::Tools)openLibraryMenu(LibraryMenu::None);
+      else if(libraryMenu_==LibraryMenu::Tools ||
+              (libraryMenu_==LibraryMenu::Info && !localInfoFromTools_))openLibraryMenu(LibraryMenu::None);
       else openLibraryMenu(LibraryMenu::Tools);
       return false;
     }
@@ -6724,6 +6741,15 @@ int main(int argc,char** argv) {
         p.block.pageBreakBefore,p.block.pageBreakAfter,content.c_str());
     }
     return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--card-info-preview")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    if(books.empty())return 4;
+    CardShelf shelf(books);
+    if(!shelf.open())return 4;
+    shelf.enterBrowser();
+    shelf.showLocalInfo();
+    return shelf.localInfoOpen() && shelf.savePgm(argv[3])?0:5;
   }
   if(argc==4 && std::strcmp(argv[1],"--card-preview")==0) {
     const auto books=scanCardBooks(argv[2]);

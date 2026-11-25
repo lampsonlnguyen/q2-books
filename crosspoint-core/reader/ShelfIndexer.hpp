@@ -63,7 +63,8 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
   // Keep only ZIP metadata and at most one bounded image in memory.
   // ZipFile retains a const reference to bookPath for its entire lifetime.
   ZipFile zip(bookPath);
-  if(!zip.loadAllFileStatSlims())return result;
+  // Metadata lookup needs only two named entries; avoid an archive-wide index.
+  if(indexArtwork && !zip.loadAllFileStatSlims())return result;
   size_t bytes=0;
   if(!zip.getInflatedFileSize("META-INF/container.xml",&bytes) ||
      !bytes || bytes>256u*1024u)return result;

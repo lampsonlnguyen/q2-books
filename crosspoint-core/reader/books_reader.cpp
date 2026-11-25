@@ -3133,6 +3133,10 @@ class CardShelf {
   std::vector<std::string> localInfoLines_;
   size_t localInfoScroll_=0;
   bool localInfoResume_=false;
+  bool localInfoFromTools_=false;
+  size_t localInfoRoom_=5;
+  static constexpr int INFO_X=20,INFO_Y=80,INFO_W=64,INFO_H=80;
+  static constexpr int INFO_TEXT_X=96,INFO_TEXT_W=258,INFO_BODY_Y=167,INFO_BODY_BOTTOM=266;
   std::vector<size_t> recentIndices_;
   size_t recentChoice_=0;
   bool recentFocus_=false;
@@ -3310,6 +3314,7 @@ class CardShelf {
         visible_[selected_-folderRows()]<books_.size();
   }
   bool libraryMenuOpen() const {return libraryMenu_!=LibraryMenu::None;}
+  bool localInfoOpen() const {return libraryMenu_==LibraryMenu::Info;}
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
@@ -3472,6 +3477,7 @@ class CardShelf {
     if(!browsing_ && !canRecent) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
+    if(action==A::Next || action==A::Previous || action==A::Back)jumpHold_={};
     if(action==A::Confirm || event.kind==K::KeyUp || event.kind==K::TouchDown) {
       const auto started=jumpHold_;
       const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
@@ -3479,7 +3485,9 @@ class CardShelf {
       jumpHold_={};
       if(held && canRecent) {recentFocus_=true;return true;}
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
-        openLibraryMenu(LibraryMenu::Tools);return true;
+        if(hasBookRow())showLocalInfo();
+        else openLibraryMenu(LibraryMenu::Tools);
+        return true;
       }
       if(held)return enterJump();
     }
@@ -4318,8 +4326,35 @@ class CardShelf {
     if(menu!=LibraryMenu::None)notice_.clear();
     flowMoving_=false;flowTouch_=false;gridTouchX_=-1;
   }
+  std::vector<std::string> wrapInfo(const std::string& text,int width,int px) const {
+    auto& ui=books::UiText::instance();
+    if(!ui.available() || !ui.drawable(text))return wrapSmall(text,width);
+    std::vector<std::string> lines;
+    std::string line;
+    size_t at=0,space=std::string::npos;
+    while(at<text.size()) {
+      const size_t begin=at++;
+      while(at<text.size() && (static_cast<unsigned char>(text[at])&0xc0)==0x80)++at;
+      const auto cp=text.substr(begin,at-begin);
+      if(cp=="\n") {if(!line.empty())lines.push_back(line);line.clear();space=std::string::npos;continue;}
+      if(cp==" " && line.empty())continue;
+      if(!line.empty() && ui.width(line+cp,px)>width) {
+        if(space!=std::string::npos) {
+          lines.push_back(line.substr(0,space));
+          line.erase(0,space+1);
+        } else {lines.push_back(line);line.clear();}
+        space=std::string::npos;
+      }
+      if(cp==" " && line.empty())continue;
+      if(cp==" ")space=line.size();
+      line+=cp;
+    }
+    if(!line.empty())lines.push_back(line);
+    return lines;
+  }
   void showLocalInfo() {
     if(!hasBookRow())return;
+    localInfoFromTools_=libraryMenu_==LibraryMenu::Tools;
     const auto index=selected();
     localInfo_={};
     const auto result=books::indexShelfBook(books_[index].path,&localInfo_);
@@ -4327,9 +4362,21 @@ class CardShelf {
     (void)cacheSeries(index,localInfo_);
     const auto row=std::find(visible_.begin(),visible_.end(),index);
     if(row!=visible_.end())selected_=folderRows()+static_cast<size_t>(row-visible_.begin());
+    // A metadata refresh may change search matches. Never show or open a
+    // different row if the original selection disappeared.
+    if(browsing_ && (row==visible_.end() || !hasBookRow() || selected()!=index)) {
+      openLibraryMenu(LibraryMenu::None);return;
+    }
+    if(localInfo_.title.empty() || localInfo_.author.empty()) {
+      const auto& cached=details(index);
+      if(localInfo_.title.empty())localInfo_.title=cached.title;
+      if(localInfo_.author.empty())localInfo_.author=cached.author;
+    }
     localInfoLines_.clear();
     const auto append=[&](const std::string& value) {
-      auto lines=wrapSmall(value,337);
+      // Use the same face and size for measurement and drawing. Fall back to
+      // the existing script-aware renderer when the system face lacks glyphs.
+      auto lines=wrapInfo(value,326,15);
       localInfoLines_.insert(localInfoLines_.end(),lines.begin(),lines.end());
     };
     if(!localInfo_.publisher.empty())append(std::string(books::tr("Publisher"))+"  "+localInfo_.publisher);
@@ -4349,6 +4396,9 @@ class CardShelf {
       append(localInfo_.identifier);
     append(localInfo_.description.empty()?books::tr("No description"):localInfo_.description);
     localInfoScroll_=0;
+    auto& ui=books::UiText::instance();
+    const int step=std::max(19,ui.available()?ui.lineHeight(15)+2:19);
+    localInfoRoom_=static_cast<size_t>(std::max(1,(INFO_BODY_BOTTOM-INFO_BODY_Y)/step));
     books::ReadingPosition saved;
     localInfoResume_=books::loadReadingPosition(books_[index].path,saved);
     openLibraryMenu(LibraryMenu::Info);
@@ -4458,20 +4508,21 @@ class CardShelf {
     if(libraryMenu_==LibraryMenu::Name)return collectionNameInput(action,event);
     if(action==A::Back || (touch && event.y<74)) {
       if(libraryMenu_==LibraryMenu::Collection)openLibraryMenu(LibraryMenu::Collections);
-      else if(libraryMenu_==LibraryMenu::Tools)openLibraryMenu(LibraryMenu::None);
+      else if(libraryMenu_==LibraryMenu::Tools ||
+              (libraryMenu_==LibraryMenu::Info && !localInfoFromTools_))openLibraryMenu(LibraryMenu::None);
       else openLibraryMenu(LibraryMenu::Tools);
       return false;
     }
     if(libraryMenu_==LibraryMenu::Info) {
-      if(action==A::Next && localInfoScroll_+6<localInfoLines_.size())++localInfoScroll_;
+      if(action==A::Next && localInfoScroll_+localInfoRoom_<localInfoLines_.size())++localInfoScroll_;
       if(action==A::Previous && localInfoScroll_)--localInfoScroll_;
       if(action==A::Confirm || (touch && event.y>=269)) {
         openLibraryMenu(LibraryMenu::None);
         return true;
       }
-      if(touch && event.y>=154 && event.y<269) {
+      if(touch && event.y>=INFO_BODY_Y && event.y<269) {
         if(event.y<210 && localInfoScroll_)--localInfoScroll_;
-        if(event.y>=210 && localInfoScroll_+6<localInfoLines_.size())++localInfoScroll_;
+        if(event.y>=210 && localInfoScroll_+localInfoRoom_<localInfoLines_.size())++localInfoScroll_;
       }
       return false;
     }
@@ -4577,20 +4628,41 @@ class CardShelf {
     renderer_.drawLine(15,74,359,74,true);
     if(libraryMenu_==LibraryMenu::Info) {
       const size_t index=selected();
-      drawBookCover(20,83,index);
+      drawBookCover(INFO_X,INFO_Y,index);
+      renderer_.drawRect(INFO_X-1,INFO_Y-1,INFO_W+2,INFO_H+2,true);
       const auto& title=localInfo_.title.empty()?books_[index].label:localInfo_.title;
-      drawRowLabel(87,78,26,fitWidth(title,263).c_str());
-      drawRowLabel(87,104,25,fitWidth(localInfo_.author,263).c_str());
+      auto& ui=books::UiText::instance();
+      const auto headingLine=[&](const std::string& line,int y,int px) {
+        if(ui.available() && ui.drawable(line))
+          uiDraw(INFO_TEXT_X,y,fitWidth(line,INFO_TEXT_W,px),px,INFO_TEXT_X+INFO_TEXT_W);
+        else drawSmallLine(INFO_TEXT_X,y+18,line,INFO_TEXT_W,192);
+      };
+      const auto titles=wrapInfo(title,INFO_TEXT_W,19);
+      for(size_t i=0;i<std::min<size_t>(2,titles.size());++i)
+        headingLine(i==1 && titles.size()>2?titles[i]+"...":titles[i],78+int(i)*22,19);
+      headingLine(localInfo_.author,123,15);
       uint32_t ppm=0;
       if(books::loadShelfProgress(books_[index].path,ppm)) {
-        const auto progress=std::to_string(ppm/10000)+"%";
-        drawCompactLabel(87,149,progress.c_str());
+        const int percent=static_cast<int>(std::min(ppm,1000000u)/10000u);
+        const auto progress=std::to_string(percent)+"%";
+        drawCompactLabel(INFO_TEXT_X,155,progress.c_str(),150);
+        renderer_.drawRect(154,145,197,9,true);
+        if(percent>0)renderer_.fillRect(155,146,195*percent/100,7,true);
+      } else {
+        drawCompactLabel(INFO_TEXT_X,155,localInfoResume_?"Resume reading":"Open book",150);
       }
-      for(size_t row=0;row<6 && localInfoScroll_+row<localInfoLines_.size();++row) {
+      renderer_.drawLine(15,164,359,164,true);
+      const int step=std::max(19,ui.available()?ui.lineHeight(15)+2:19);
+      for(size_t row=0;row<localInfoRoom_ && localInfoScroll_+row<localInfoLines_.size();++row) {
         const auto& line=localInfoLines_[localInfoScroll_+row];
-        const int y=154+static_cast<int>(row)*18;
-        if(!uiDraw(18,y,line,15,358) && !drawSmallLine(18,y+15,line,337))
-          drawRowLabel(18,y,19,fitWidth(line,337).c_str());
+        const int y=INFO_BODY_Y+static_cast<int>(row)*step;
+        if(!uiDraw(18,y,line,15,345))drawSmallLine(18,y+15,line,326);
+      }
+      if(localInfoLines_.size()>localInfoRoom_) {
+        const int height=INFO_BODY_BOTTOM-INFO_BODY_Y;
+        const int thumb=std::max(8,int(height*localInfoRoom_/localInfoLines_.size()));
+        const int pos=INFO_BODY_Y+int((height-thumb)*localInfoScroll_/(localInfoLines_.size()-localInfoRoom_));
+        renderer_.fillRect(356,pos,3,thumb,true);
       }
       return;
     }
@@ -5097,10 +5169,10 @@ class CardShelf {
     const auto& art=cached.valid()?cached:books::shelf_art::defaultCover();
     flowFrame_.resize(HalDisplay::PIXELS);
     if(!display_.composeColorFrame(flowFrame_.data(),flowFrame_.size()))return false;
-    const int x=catalog?16:info?20:HOME_COVER_X;
-    const int y=catalog?80:info?83:HOME_COVER_Y;
-    const int width=catalog?books::OpdsCover::width:books::ShelfCover::width;
-    const int height=catalog?books::OpdsCover::height:books::ShelfCover::height;
+    const int x=catalog?16:info?INFO_X:HOME_COVER_X;
+    const int y=catalog?80:info?INFO_Y:HOME_COVER_Y;
+    const int width=catalog?books::OpdsCover::width:info?INFO_W:books::ShelfCover::width;
+    const int height=catalog?books::OpdsCover::height:info?INFO_H:books::ShelfCover::height;
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }
@@ -6669,6 +6741,15 @@ int main(int argc,char** argv) {
         p.block.pageBreakBefore,p.block.pageBreakAfter,content.c_str());
     }
     return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--card-info-preview")==0) {
+    const auto books=scanCardBooks(argv[2]);
+    if(books.empty())return 4;
+    CardShelf shelf(books);
+    if(!shelf.open())return 4;
+    shelf.enterBrowser();
+    shelf.showLocalInfo();
+    return shelf.localInfoOpen() && shelf.savePgm(argv[3])?0:5;
   }
   if(argc==4 && std::strcmp(argv[1],"--card-preview")==0) {
     const auto books=scanCardBooks(argv[2]);

@@ -171,6 +171,8 @@ jobs:
           sha="$zip.sha256"
           notes="docs/release-notes/$tag.md"
           title="Books $tag (Shanling Q2)"
+          prerelease=false
+          if [[ "$tag" == *-* ]] || grep -Fxq '<!-- prerelease -->' "$notes"; then prerelease=true; fi
           # A retry of an older version must not replace a newer latest release.
           gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
             --jq '.[] | select(.draft == false and .prerelease == false and (.assets | length) > 0) | .tag_name' > "$RUNNER_TEMP/books-published-tags"
@@ -189,12 +191,12 @@ jobs:
             count="$(gh release view "$tag" --json assets --jq '.assets | length')"
             test "$count" = 0 || { echo "::error::Release already contains assets"; exit 1; }
             gh release upload "$tag" "$zip" "$sha"
-            if [[ "$tag" == *-* ]]; then
+            if [[ "$prerelease" == true ]]; then
               gh release edit "$tag" --title "$title" --notes-file "$notes" --prerelease
             else
               gh release edit "$tag" --title "$title" --notes-file "$notes" "$latest_flag"
             fi
-          elif [[ "$tag" == *-* ]]; then
+          elif [[ "$prerelease" == true ]]; then
             gh release create "$tag" "$zip" "$sha" --verify-tag --prerelease --title "$title" --notes-file "$notes"
           else
             gh release create "$tag" "$zip" "$sha" --verify-tag "$latest_flag" --title "$title" --notes-file "$notes"

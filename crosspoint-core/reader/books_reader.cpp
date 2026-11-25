@@ -4662,9 +4662,15 @@ class CardShelf {
         }
         break;
       }
-      case LibraryMenu::Series:
-        setLibraryFilter(favoritesFilter_,collectionFilter_,seriesRows_[libraryChoice_]->first);
+      case LibraryMenu::Series: {
+        const auto key=seriesRows_[libraryChoice_]->first;
+        const bool changed=seriesFilter_!=key;
+        setLibraryFilter(favoritesFilter_,collectionFilter_,key);
+        // Entering a different series starts at its first visible volume.
+        // Other filter changes and view rebuilds retain the selected book.
+        if(changed)selectVisiblePath({});
         break;
+      }
       default:break;
     }
     return false;

@@ -77,6 +77,12 @@ target_include_directories(books_reading_layout_tests PRIVATE reader lib/Epub)
 target_compile_options(books_reading_layout_tests PRIVATE -UNDEBUG)
 add_test(NAME books_reading_layout_preferences COMMAND books_reading_layout_tests)
 
+add_executable(books_reading_statistics_tests tests/reading_statistics_test.cpp)
+target_include_directories(books_reading_statistics_tests PRIVATE reader)
+target_compile_features(books_reading_statistics_tests PRIVATE cxx_std_20)
+target_compile_options(books_reading_statistics_tests PRIVATE -UNDEBUG)
+add_test(NAME books_reading_statistics_and_goals COMMAND books_reading_statistics_tests)
+
 add_executable(books_reader_state_tests tests/reader_state_test.cpp)
 target_include_directories(books_reader_state_tests PRIVATE reader)
 target_compile_options(books_reader_state_tests PRIVATE -UNDEBUG)
@@ -853,6 +859,8 @@ add_custom_command(OUTPUT "${LONG_EPUB_FIXTURE}"
     VERBATIM)
 add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
 add_dependencies(books-reader long_epub_fixture)
+add_test(NAME books_reader_records_real_page_turns
+    COMMAND books-reader --test-reading-statistics "${LONG_EPUB_FIXTURE}")
 add_test(NAME books_reader_txt_and_go_to_percent
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/txt_progress_test.py"

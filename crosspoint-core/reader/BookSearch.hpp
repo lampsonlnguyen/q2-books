@@ -68,9 +68,12 @@ class BookSearchChapter {
     matched_=prefix_.back();
     const auto begin=tokens_[tokens_.size()-query_.size()].begin;
     if(begin<firstOffset_)return;
+    // Limit retained preview text independently of query length. Keep
+    // the complete match offsets even when the snippet is abbreviated.
     std::string snippet;
-    if(tokens_.size()<token.end)snippet="…";
-    for(const auto& part:tokens_)utf8case::put(snippet,part.cp);
+    const size_t first=tokens_.size()>80?tokens_.size()-80:0;
+    if(first || tokens_.front().begin>0)snippet="…";
+    for(size_t i=first;i<tokens_.size();++i)utf8case::put(snippet,tokens_[i].cp);
     results_.push_back({spine_,begin,token.end,std::move(snippet)});
   }
 
@@ -126,7 +129,13 @@ class BookSearchChapter {
     for(;ptr<end;) {
       const uint32_t cp=utf8NextCodepoint(&ptr);
       const uint32_t position=self.offset_++;
-      if(self.hidden_ || cp==0xad || self.results_.size()>=self.limit_)continue;
+      if(self.hidden_ || self.results_.size()>=self.limit_)continue;
+      if(cp==0xad) {
+        // Keep source offsets across discretionary hyphens without adding
+        // them to the normalized match text.
+        if(!self.cluster_.empty())self.clusterEnd_=position+1;
+        continue;
+      }
       if(!utf8IsCombiningMark(cp) || self.cluster_.size()>=48)self.flush();
       if(self.cluster_.empty())self.clusterBegin_=position;
       utf8case::put(self.cluster_,cp);

@@ -49,7 +49,7 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 ### In-book search follow-up
 
-- [ ] Add TXT search using the existing reader pipeline; validate Unicode queries, chapter boundaries, skipped corrupt chapters, bounded batches and saved anchors.
+- [ ] Validate EPUB/TXT search on Q2: multilingual queries, chapter boundaries, skipped corrupt chapters, bounded batches, saved anchors, latency and peak RAM. Host TXT/Unicode/multi-batch regression coverage added; execution pending.
 
 ### Regression and physical-device validation
 

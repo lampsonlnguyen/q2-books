@@ -58,6 +58,28 @@ int main() {
   assert(books::saveShelfProgress(a,500000));
   assert(books::shelfReadingStatus(a,{})==Status::Reading);
   assert(books::classifyReadingStatus(true,1000001,false,false)==Status::Unread);
+  using Filter=books::ReadingStatusFilter;
+  using Override=books::ReadingStatusOverride;
+  assert(books::loadReadingStatusFilter()==Filter::All);
+  for(const auto filter:{Filter::Unread,Filter::Reading,Filter::Completed,Filter::All}) {
+    assert(books::saveReadingStatusFilter(filter));
+    assert(books::loadReadingStatusFilter()==filter);
+  }
+  assert(books::matchesReadingStatus(Filter::All,Status::Unread));
+  assert(books::matchesReadingStatus(Filter::Reading,Status::Reading));
+  assert(!books::matchesReadingStatus(Filter::Completed,Status::Reading));
+  assert(books::saveReadingStatusOverride(a,Override::Unread));
+  assert(books::shelfReadingStatus(a,{a})==Status::Unread);
+  books::ReadingPosition preserved;
+  assert(books::loadReadingPosition(a,preserved));
+  uint32_t progress=0;
+  assert(books::loadShelfProgress(a,progress) && progress==500000);
+  assert(books::saveReadingStatusOverride(a,Override::Completed));
+  assert(books::shelfReadingStatus(a,{})==Status::Completed);
+  assert(books::saveReadingStatusOverride(a,Override::Automatic));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveReadingStatusOverride(a,Override::Completed));
+
   assert(books::loadRecentBooks().empty());
   assert(books::recordRecentBook(a));
   assert(books::recordRecentBook(b));
@@ -92,6 +114,7 @@ int main() {
   assert(std::fclose(f)==0);
   assert(!books::loadShelfDetails(a,details));
   assert(!books::loadShelfCover(a,loadedCover));
+  assert(books::loadReadingStatusOverride(a)==Override::Automatic);
   assert(books::shelfReadingStatus(a,{})==Status::Unread);
   // Ignore malformed history rather than trusting arbitrary SD bytes.
   f=std::fopen(books::recentBooksFile().c_str(),"wb");

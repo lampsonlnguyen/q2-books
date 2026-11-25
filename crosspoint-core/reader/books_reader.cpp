@@ -26,6 +26,7 @@
 #include "FontPacks.hpp"
 #include "ScriptFonts.hpp"
 #include "ReadingPosition.hpp"
+#include "ReadingStatistics.hpp"
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
 #include "T9Keypad.hpp"
@@ -83,6 +84,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifndef BOOKS_Q2_RUNTIME
+#include <filesystem>
+#endif
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -674,6 +679,11 @@ class Reader {
   int currentSpine_ = -1;
   size_t currentPage_ = 0;
   bool resumeEnabled_ = false;
+  std::unique_ptr<books::ReadingStatistics> readingStats_;
+  books::ReadingSession readingSession_;
+  std::string statsBookId_,statsBookTitle_;
+  int64_t statsPanelCheck_=-1;
+  bool statsPanelOn_=true;
   mutable bool positionDirty_=false;
   mutable std::chrono::steady_clock::time_point lastPositionAttempt_{};
   int lineHeight() const { return std::max(22,typography_.size*2); }
@@ -1012,6 +1022,7 @@ class Reader {
     // A layout cut short by the exit is not a page to keep: drop that build
     // instead of suspending it, which would cache its pages.
     if(upstreamSection_ && bookslayout::layoutAborted())upstreamSection_->abandonBuild();
+    if(readingStats_)(void)readingStats_->save(true);
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
@@ -2535,7 +2546,63 @@ class Reader {
     return currentSpine_+1>=metadata().getSpineCount() && !isBuilding() &&
            currentPage_+1>=pageCount();
   }
-  bool move(int direction) {
+  void startReadingStatistics() {
+    readingStats_=std::make_unique<books::ReadingStatistics>();
+    const auto progress=books::positionFile(bookPath_);
+    statsBookId_=progress.substr(progress.size()-16);
+    statsBookTitle_=shelfDetails().title;
+    if(statsBookTitle_.empty()) {
+      statsBookTitle_=bookPath_.substr(bookPath_.find_last_of('/')+1);
+      const size_t extension=statsBookTitle_.find_last_of('.');
+      if(extension!=std::string::npos)statsBookTitle_.resize(extension);
+    }
+    statsBookTitle_=clippedLabel(statsBookTitle_,58);
+    std::replace_if(statsBookTitle_.begin(),statsBookTitle_.end(),
+        [](char c){return c=='\r' || c=='\n' || c=='\t';},' ');
+    readingStats_->startSession();
+  }
+
+  void sampleReadingStatistics(bool pageShowing,books::ReadingSample now=books::readingSample()) {
+    if(!readingStats_)return;
+    if(statsPanelCheck_!=now.steady) {
+      statsPanelCheck_=now.steady;
+      char state[128]{};
+      statsPanelOn_=!books::readSmallFile(books::sysPath("/mnt/data/q2-state"),state,sizeof state) ||
+          (std::strstr(state,"screen:off")==nullptr && std::strstr(state,"power:suspending")==nullptr);
+    }
+    readingSession_.observe(*readingStats_,statsBookId_,statsBookTitle_,now,
+        pageShowing && statsPanelOn_ && lastRenderOk_,currentSpine_,currentPage_);
+    (void)readingStats_->save(false);
+  }
+
+  void readingInteraction() {readingSession_.interact();}
+
+  void creditForwardPage(bool endOfChapter,bool last) {
+    constexpr uint32_t chapterEnd=std::numeric_limits<uint32_t>::max();
+    const uint32_t page=static_cast<uint32_t>(currentPage_);
+    const auto start=upstreamSection_?upstreamSection_->getVisibleTextOffsetForPage(page):std::nullopt;
+    const auto end=endOfChapter?std::optional<uint32_t>(chapterEnd):
+        upstreamSection_?upstreamSection_->getVisibleTextOffsetForPage(page+1):std::nullopt;
+    const bool text=start && end && *start<*end && !(endOfChapter && *start==0 && page>0);
+    // Keep fallback page numbers distinct from the chapter's text ranges.
+    // A changed fallback pagination cannot be compared to previous reads.
+    const uint64_t layout=static_cast<uint64_t>(upstreamSection_?upstreamFontId_:fontIdForTypography(typography_))*
+        100000000ULL+static_cast<uint64_t>(preferences_.linePercent)*100000+
+        static_cast<uint64_t>(preferences_.margin)*1000+
+        static_cast<uint64_t>(preferences_.alignment)*100+
+        8*preferences_.focusReading+4*preferences_.hyphenation+2*preferences_.embeddedStyle+
+        (upstreamSection_?1:0)+1;
+    const bool imagePage=upstreamSection_ && !text;
+    readingStats_->finishPage(readingSession_.day(),statsBookId_,statsBookTitle_,
+        currentSpine_*2+imagePage,text?0:layout,text?*start:page,text?*end:page+1,last);
+  }
+
+  void finishReadingStatistics() {
+    if(readingStats_ && readingSession_.readPage() && atBookEnd())
+      creditForwardPage(true,true);
+  }
+
+  bool move(int direction,bool trackReading=false) {
     if(direction>0 && currentPage_+1>=pageCount() && isBuilding()) {
       // Lay out until the next page exists, for up to 2 s: a press that came
       // before the prefetch was dropped, so fast turns lost pages. Never
@@ -2546,8 +2613,13 @@ class Reader {
             std::chrono::steady_clock::now()<until);
       if(isBuilding() && currentPage_+1>=pageCount())return false;
     }
-    if (direction>0 && currentPage_+1<pageCount()) { ++currentPage_; persistPosition(); return true; }
-    if (direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
+    const bool credit=direction>0 && trackReading && readingStats_ && readingSession_.readPage();
+    if(direction>0 && currentPage_+1<pageCount()) {
+      if(credit)creditForwardPage(false,false);
+      ++currentPage_;persistPosition();return true;
+    }
+    if(direction<0 && currentPage_>0) { --currentPage_; persistPosition(); return true; }
+    if(credit && !interrupted)creditForwardPage(true,atBookEnd());
     const bool changed=loadSpine(currentSpine_+direction,direction);
     if(changed)persistPosition();
     return changed;
@@ -3255,6 +3327,12 @@ class CardShelf {
   int homeSelection_ = 0;
   bool optionsOpen_=false;
   int optionSelection_=0;
+  enum class ActivityScreen {None, Statistics, ByBook, Goals};
+  ActivityScreen activityScreen_=ActivityScreen::None;
+  std::unique_ptr<books::ReadingStatistics> activityStats_;
+  std::vector<const books::BookReadingTotals*> activityBooks_;
+  books::ReadingGoals readingGoals_;
+  size_t activityRow_=0;
   bool fontManager_=false;
   bool fontRemoveArmed_=false;
   size_t fontSelection_=0;
@@ -3266,7 +3344,7 @@ class CardShelf {
   static constexpr int HOME_TOP_Y=171, HOME_ROW_H=29, HOME_ROW_STEP=32;
   static constexpr int HOME_COVER_X=18,HOME_COVER_Y=80,HOME_COVER_W=60,HOME_COVER_H=78;
   static constexpr int HOME_NAV_X=290,HOME_NAV_MID=323,HOME_CARD_RIGHT=359;
-  static constexpr int OPTION_COUNT=4;
+  static constexpr int OPTION_COUNT=6;
   static constexpr int JUMP_X=12,JUMP_Y=78,JUMP_W=117,JUMP_H=46;
   static constexpr size_t JUMP_COLS=3,JUMP_ROWS=4,JUMP_PAGE=JUMP_COLS*JUMP_ROWS;
   static constexpr char addOpdsServerLabel[]="Add a OPDS server";
@@ -3373,7 +3451,7 @@ class CardShelf {
   bool scanningSeries() const {return seriesScan_<books_.size() && (libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty());}
   bool seriesIndexed(size_t index) const {return seriesChecked_[index];}
   bool libraryInputBusy() const {
-    return libraryMenu_!=LibraryMenu::None && libraryMenu_!=LibraryMenu::Series;
+    return activityOpen() || (libraryMenu_!=LibraryMenu::None && libraryMenu_!=LibraryMenu::Series);
   }
   bool cacheSeries(size_t index,const books::ShelfBookInfo& info) {
     if(index>=books_.size() || seriesChecked_[index])return false;
@@ -3528,6 +3606,70 @@ class CardShelf {
   bool sortChosen() const {return optionsOpen_ && optionSelection_==0;}
   bool viewChosen() const {return optionsOpen_ && optionSelection_==1;}
   bool fontsChosen() const {return optionsOpen_ && optionSelection_==2;}
+  bool activityChosen() const {return optionsOpen_ && optionSelection_>=4;}
+  bool activityOpen() const {return activityScreen_!=ActivityScreen::None;}
+  void enterActivity() {
+    activityStats_=std::make_unique<books::ReadingStatistics>();
+    readingGoals_=books::ReadingGoals::load();
+    activityScreen_=optionSelection_==4?ActivityScreen::Statistics:ActivityScreen::Goals;
+    activityRow_=activityScreen_==ActivityScreen::Statistics?3:0;
+    notice_.clear();
+  }
+  void activityInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using Action=books::LogicalAction;
+    const bool touch=event.kind==books::PhysicalKind::TouchUp;
+    if(action==Action::Back || (touch && event.y<TOP_Y)) {
+      notice_.clear();
+      if(activityScreen_==ActivityScreen::ByBook) {
+        activityScreen_=ActivityScreen::Statistics;
+        activityBooks_.clear();activityRow_=3;
+      } else {
+        activityBooks_.clear();activityStats_.reset();activityScreen_=ActivityScreen::None;
+      }
+      present();
+      return;
+    }
+    const bool turn=action==Action::Next || action==Action::Previous;
+    if(activityScreen_==ActivityScreen::ByBook) {
+      if(touch && event.y>=269 && activityBooks_.size()>VISIBLE_ROWS) {
+        const auto next=(activityRow_/VISIBLE_ROWS+1)*VISIBLE_ROWS;
+        activityRow_=next<activityBooks_.size()?next:0;
+        present();return;
+      }
+      if(!turn || activityBooks_.empty())return;
+      if(action==Action::Next && activityRow_+1<activityBooks_.size())++activityRow_;
+      if(action==Action::Previous && activityRow_>0)--activityRow_;
+      present();
+      return;
+    }
+    const int row=touch && event.x>=12 && event.x<362 &&
+        event.y>=TOP_Y && event.y<TOP_Y+VISIBLE_ROWS*ROW_H?(event.y-TOP_Y)/ROW_H:-1;
+    if(activityScreen_==ActivityScreen::Statistics) {
+      if(action!=Action::Confirm && row!=3)return;
+      for(const auto& entry:activityStats_->books())activityBooks_.push_back(&entry.second);
+      std::stable_sort(activityBooks_.begin(),activityBooks_.end(),
+          [](const auto* a,const auto* b) {
+            return a->totals.seconds!=b->totals.seconds?a->totals.seconds>b->totals.seconds:
+                a->title<b->title;
+          });
+      activityScreen_=ActivityScreen::ByBook;
+      activityRow_=0;present();return;
+    }
+    if(turn) {
+      activityRow_=action==Action::Next?1:0;
+      present();return;
+    }
+    if(row>=2 || (row<0 && action!=Action::Confirm))return;
+    if(row>=0)activityRow_=static_cast<size_t>(row);
+    constexpr std::array<unsigned,10> targets{0,5,10,15,20,30,45,60,90,120};
+    auto next=readingGoals_;
+    auto& target=activityRow_==0?next.minutes:next.pages;
+    const auto at=std::upper_bound(targets.begin(),targets.end(),target);
+    target=at==targets.end()?targets.front():*at;
+    if(next.save()) {readingGoals_=next;notice_.clear();}
+    else notice_=books::tr("Could not save goal");
+    present();
+  }
   bool fontManager() const {return fontManager_;}
   void enterFontManager() {
     fontManager_=true;fontRemoveArmed_=false;fontSelection_=0;notice_.clear();
@@ -4154,8 +4296,14 @@ class CardShelf {
       return applySearchChoice();
     }
     if(optionsOpen_) {
-      if(x<12 || x>=362 || y<TOP_Y || y>=TOP_Y+OPTION_COUNT*ROW_H)return false;
-      optionSelection_=(y-TOP_Y)/ROW_H;
+      if(y>=269) {
+        optionSelection_=optionSelection_<VISIBLE_ROWS?VISIBLE_ROWS:0;
+        present();return false;
+      }
+      if(x<12 || x>=362 || y<TOP_Y || y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+      const int row=optionSelection_/VISIBLE_ROWS*VISIBLE_ROWS+(y-TOP_Y)/ROW_H;
+      if(row>=OPTION_COUNT)return false;
+      optionSelection_=row;
       return true;
     }
     if(!browsing_) {
@@ -4829,11 +4977,57 @@ class CardShelf {
     if(page>=VISIBLE_ROWS)drawRowLabel(49,269,38,"<");
     if(page+VISIBLE_ROWS<rows)drawRowLabel(306,269,38,">");
   }
+  static std::string activityCount(uint64_t count,const char* unit) {
+    return std::to_string(count)+" "+books::tr(unit);
+  }
+  static std::string activitySummary(const books::ReadingTotals& totals) {
+    return activityCount(totals.seconds/60,"min")+" "+activityCount(totals.seconds%60,"sec")+
+        "  |  "+activityCount(totals.pages,"pages")+"  |  "+activityCount(totals.completed,"finished");
+  }
+  void paintActivity() {
+    if(activityScreen_==ActivityScreen::ByBook) {
+      if(activityBooks_.empty())drawRowLabel(22,TOP_Y,ROW_H,"No reading activity");
+      const auto start=activityRow_/VISIBLE_ROWS*VISIBLE_ROWS;
+      for(size_t i=start;i<activityBooks_.size() && i<start+VISIBLE_ROWS;++i)
+        drawListRow(TOP_Y+static_cast<int>(i-start)*ROW_H,activityBooks_[i]->title,
+                   activitySummary(activityBooks_[i]->totals),i==activityRow_);
+      return;
+    }
+    const auto date=books::readingDay(std::time(nullptr));
+    const auto today=activityStats_->totals(date);
+    if(activityScreen_==ActivityScreen::Statistics) {
+      const auto week=activityStats_->totals(date,7);
+      drawListRow(TOP_Y,books::tr("Today"),activitySummary(today),false);
+      drawListRow(TOP_Y+ROW_H,books::tr("Last 7 days"),activitySummary(week),false);
+      const uint64_t averagePages=(week.pages*10+3)/7;
+      const std::string pages=std::to_string(averagePages/10)+"."+
+          activityCount(averagePages%10,"pages");
+      drawListRow(TOP_Y+2*ROW_H,books::tr("Daily average (7 days)"),
+          activityCount(week.seconds/7/60,"min")+" "+activityCount(week.seconds/7%60,"sec")+
+          "  |  "+pages,false);
+      drawListRow(TOP_Y+3*ROW_H,books::tr("By book"),{},true);
+      return;
+    }
+    const auto goalProgress=[](uint64_t done,unsigned target,const char* unit) {
+      if(!target)return std::string(books::tr("Off"));
+      return std::to_string(done)+" / "+activityCount(target,unit);
+    };
+    const auto [streak,longest]=activityStats_->streaks(date);
+    drawListRow(TOP_Y,books::tr("Daily minute goal"),
+        goalProgress(today.seconds/60,readingGoals_.minutes,"min"),activityRow_==0);
+    drawListRow(TOP_Y+ROW_H,books::tr("Daily page goal"),
+        goalProgress(today.pages,readingGoals_.pages,"pages"),activityRow_==1);
+    drawListRow(TOP_Y+2*ROW_H,books::tr("Current streak"),activityCount(streak,"days"),false);
+    drawListRow(TOP_Y+3*ROW_H,books::tr("Longest streak"),activityCount(longest,"days"),false);
+  }
   void paint() {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
     // Invert the header raster so its text stays white on the dark title bar.
-    const char* title=jumpOpen_?"A-Z":fontManager_?"Font Store":optionsOpen_?"Options":onlineMode_?"Online":"Books";
+    const char* title=activityScreen_==ActivityScreen::Statistics?"Reading statistics":
+        activityScreen_==ActivityScreen::ByBook?"Reading by book":
+        activityScreen_==ActivityScreen::Goals?"Streaks and goals":
+        jumpOpen_?"A-Z":fontManager_?"Font Store":optionsOpen_?"Options":onlineMode_?"Online":"Books";
     if(books::uiTheme().active()) {
       // Q2 Pod's bar: 26 px, the title centred in the bar's face size.
       int width=0;
@@ -4881,13 +5075,17 @@ class CardShelf {
       paintLibraryMenu();
     } else if(jumpOpen_) {
       paintJump();
+    } else if(activityOpen()) {
+      paintActivity();
     } else if(optionsOpen_) {
       const std::array<std::string,OPTION_COUNT> labels{
-        books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store"),books::tr("Online")};
+        books::tr("Sort"),books::tr("Browse Style"),books::tr("Font Store"),books::tr("Online"),
+        books::tr("Reading statistics"),books::tr("Streaks and goals")};
       const std::array<std::string,OPTION_COUNT> details{
-        books::tr(books::shelfSortLabel(sortMode_)),books::tr(viewLabel()),{},{}};
-      for(int row=0;row<OPTION_COUNT;++row)
-        drawListRow(TOP_Y+row*ROW_H,labels[row],details[row],row==optionSelection_);
+        books::tr(books::shelfSortLabel(sortMode_)),books::tr(viewLabel()),{},{},{},{}};
+      const int start=optionSelection_/VISIBLE_ROWS*VISIBLE_ROWS;
+      for(int row=start;row<OPTION_COUNT && row<start+VISIBLE_ROWS;++row)
+        drawListRow(TOP_Y+(row-start)*ROW_H,labels[row],details[row],row==optionSelection_);
     } else if(serverScreen()) {
       paintServers();
     } else if(onlineMode_ && !searchEditing_ && detailsOpen_) {
@@ -5107,7 +5305,14 @@ class CardShelf {
     }
     // The footer strip holds a notice, or the details screen's action (a
     // tap there downloads); no control hints: the Q2's keys are known.
+    const bool activityPages=activityScreen_==ActivityScreen::ByBook &&
+        activityBooks_.size()>VISIBLE_ROWS;
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
+      :activityPages?std::to_string(activityRow_/VISIBLE_ROWS+1)+"/"+
+          std::to_string((activityBooks_.size()+VISIBLE_ROWS-1)/VISIBLE_ROWS)
+      :optionsOpen_ && !activityOpen() && !fontManager_?
+          std::to_string(optionSelection_/VISIBLE_ROWS+1)+"/"+
+          std::to_string((OPTION_COUNT+VISIBLE_ROWS-1)/VISIBLE_ROWS)
       :detailsOpen()?(detailsOnCard_?"Show on card":"Download")
       :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book")
       :browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
@@ -5437,7 +5642,7 @@ ReaderClock::time_point autoTurnTick(Reader& reader,bool allowed,ReaderClock::ti
   const auto now=ReaderClock::now();
   if(next==none){next=now+std::chrono::seconds(seconds);return next;}
   if(now<next)return next;
-  if(reader.move(1)) {
+  if(reader.move(1,true)) {
     reader.present();
     next=ReaderClock::now()+std::chrono::seconds(seconds);
   } else if(reader.atBookEnd()) {
@@ -5523,8 +5728,17 @@ int runCardApp(const std::string& bookDir) {
   // its own step, before reading the next datagram.
   books::LogicalAction pendingAction=books::LogicalAction::None;
   int pendingRepeat=0;
+  const auto pageShowing=[&] {
+    return reader && !reader->searchOpen() && !reader->searchPreview() &&
+        !typeMenu && !navigationMenu && !linkMenu && !selectionChoosing &&
+        !selectionExtending && !selectionActions && !dictionaryOverlay &&
+        !footnoteOverlay && !percentDialog && !syncDialog && !aboutShown && !dictionaryList;
+  };
   while(!interrupted) {
-    if(reader)reader->flushPosition(false);
+    if(reader) {
+      reader->sampleReadingStatistics(pageShowing());
+      reader->flushPosition(false);
+    }
     books::PhysicalEvent event{};
     if(pendingRepeat==0 && !input.receive(event)) {
       const auto now=std::chrono::steady_clock::now();
@@ -5561,14 +5775,9 @@ int runCardApp(const std::string& bookDir) {
         (void)reader->buildNextPages(2);
         nextBuildTick=ReaderClock::now()+std::chrono::milliseconds(150);
       }
-      const bool canAutoTurn=reader && !reader->searchOpen() && !reader->searchPreview() && !typeMenu && !navigationMenu && !linkMenu &&
-          !selectionChoosing && !selectionActions && !dictionaryOverlay &&
-          !footnoteOverlay && !percentDialog;
-      // A new minute or battery level: show the footer again, but only
-      // while a page shows with nothing over it.
-      const bool pageShowing=canAutoTurn && !syncDialog && !aboutShown && !dictionaryList &&
-          !selectionExtending;
-      if(pageShowing && now>=nextStatusCheck) {
+      const bool canAutoTurn=pageShowing();
+      // Refresh the footer only when a page is visible without an overlay.
+      if(canAutoTurn && now>=nextStatusCheck) {
         nextStatusCheck=now+std::chrono::seconds(1);
         if(reader->statusChanged())reader->present();
       }
@@ -5606,6 +5815,8 @@ int runCardApp(const std::string& bookDir) {
                   std::chrono::milliseconds(300);
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
     if(reader) {
+      if(pageShowing() && (action!=books::LogicalAction::None ||
+          event.kind==books::PhysicalKind::TouchDown))reader->readingInteraction();
       if(reader->searchOpen()) {
         const auto result=reader->bookSearchInput(action,event);
         if(result==Reader::SearchInput::Book) {typeMenu=false;reader->present();}
@@ -5955,6 +6166,7 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(action==books::LogicalAction::Back) {
+        reader->finishReadingStatistics();
         (void)reader->cacheShelfCover();
         reader.reset(); // close book/cache BEFORE reopening the card shelf
         books::sortShelfBooks(books,sortMode,recent);
@@ -5971,7 +6183,7 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       bool changed=false;
-      if(action==books::LogicalAction::Next) changed=reader->move(1);
+      if(action==books::LogicalAction::Next) changed=reader->move(1,true);
       if(action==books::LogicalAction::Previous)changed=reader->move(-1);
       if(event.kind==books::PhysicalKind::TouchUp) {
         const auto href=reader->touchedLink(event.x,event.y);
@@ -5982,10 +6194,13 @@ int runCardApp(const std::string& bookDir) {
             continue;
           }
           changed=reader->followLink(href);
-        } else changed=reader->move(event.x>=187?1:-1);
+        } else changed=reader->move(event.x>=187?1:-1,true);
       }
       if(changed)reader->present();
       continue;
+    }
+    if(shelf->activityOpen()) {
+      shelf->activityInput(action,event);continue;
     }
     if(shelf->fontManager()) {
       shelf->fontManagerInput(action,event);continue;
@@ -6147,6 +6362,7 @@ int runCardApp(const std::string& bookDir) {
     if(shelf->optionsChosen()) {shelf->enterOptions();shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
+    if(shelf->activityChosen()) {shelf->enterActivity();shelf->present();continue;}
     if(shelf->searching()) {shelf->present();continue;}
     if(shelf->onlineChosen()) {
       (void)shelf->enterOnline();
@@ -6214,6 +6430,7 @@ int runCardApp(const std::string& bookDir) {
       reader->present();
       readingUserGuide=userGuide;
       if(!userGuide) {
+        reader->startReadingStatistics();
         // Continue Reading tracks the real books on the card.
         (void)books::saveShelfDetails(chosen,reader->shelfDetails());
         if(books::recordRecentBook(chosen))
@@ -6271,6 +6488,40 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==3 && std::strcmp(argv[1],"--test-reading-statistics")==0) {
+    char dir[]="/tmp/books-reader-statistics-XXXXXX";
+    if(!mkdtemp(dir))return 1;
+    struct Cleanup {
+      const char* dir;
+      ~Cleanup() {std::error_code error;std::filesystem::remove_all(dir,error);}
+    } cleanup{dir};
+    if(setenv("BOOKS_STATE_DIR",dir,1)!=0)return 1;
+    const auto sample=books::readingSample();
+    const auto step=[&](Reader& reader,int offset,bool visible) {
+      reader.sampleReadingStatistics(visible,
+          {sample.steady+offset,sample.boot+offset,sample.wall+offset});
+    };
+    {
+      Reader reader(argv[2]);
+      if(!reader.open(true))return 2;
+      reader.startReadingStatistics();
+      reader.present();
+      step(reader,0,true);
+      step(reader,2,true);
+      if(!reader.move(1,true) || !reader.move(-1,true))return 3;
+      step(reader,2,false);
+      step(reader,5,false);
+      step(reader,5,true);
+      step(reader,7,true);
+      if(!reader.move(1,true))return 4;  // same content; one page credit
+      reader.present();
+      step(reader,7,true);
+      step(reader,9,true);
+      if(!reader.move(1,true))return 5;
+    }
+    const auto totals=books::ReadingStatistics().totals(books::readingDay(sample.wall+9),2);
+    return totals.pages==2 && totals.seconds==6 && totals.completed==0?0:6;
+  }
   if(argc==4 && std::strcmp(argv[1],"--test-library-roadmap")==0) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
@@ -6412,7 +6663,7 @@ int main(int argc,char** argv) {
     CardShelf shelf(empty);
     if(!shelf.open() || !shelf.browseChosen() || shelf.change(-1) ||
        !shelf.change(1) || !shelf.optionsChosen())return 1;
-    if(!shelf.tap(28,220) || !shelf.optionsChosen())return 2;
+    if(!shelf.tap(28,245) || !shelf.optionsChosen())return 2;
     shelf.enterOptions();
     if(!shelf.optionsOpen() || !shelf.sortChosen() || shelf.browseChosen() ||
        shelf.change(-1))return 3;
@@ -6421,13 +6672,29 @@ int main(int argc,char** argv) {
     shelf.enterFontManager();
     shelf.fontManagerInput(books::LogicalAction::Back,{});
     if(shelf.fontManager() || !shelf.optionsOpen() || !shelf.fontsChosen())return 5;
-    if(!shelf.change(1) || !shelf.onlineChosen() || shelf.change(1) ||
+    if(!shelf.change(1) || !shelf.onlineChosen() ||
        !shelf.enterOnline() || !shelf.serverScreen() || shelf.optionsOpen())return 6;
     if(shelf.serverInput(books::LogicalAction::Back,0,0,false)!=CardShelf::ServerAction::Redraw ||
        !shelf.optionsOpen() || !shelf.onlineChosen() || shelf.onlineMode())return 7;
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    if(!shelf.change(1) || !shelf.activityChosen())return 8;
+    shelf.enterActivity();
+    if(!shelf.activityOpen())return 9;
+    shelf.activityInput(A::Confirm,{});
+    shelf.activityInput(A::Back,{});
+    if(!shelf.activityOpen())return 10;
+    shelf.activityInput(A::Back,{});
+    if(shelf.activityOpen() || !shelf.optionsOpen())return 11;
+    if(!shelf.tap(28,140) || !shelf.activityChosen() || shelf.change(1))return 12;
+    shelf.enterActivity();
+    shelf.activityInput(A::TouchRelease,{K::TouchUp,0,120,55});
+    if(shelf.activityOpen() || !shelf.optionsOpen())return 13;
+    (void)shelf.tap(150,285);
+    if(!shelf.sortChosen())return 14;
     shelf.closeOptions();
     if(shelf.optionsOpen() || !shelf.optionsChosen() || shelf.change(1) ||
-       shelf.tap(28,250))return 8;
+       !shelf.tap(28,220) || !shelf.browseChosen())return 15;
     return 0;
   }
   if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {
@@ -7061,6 +7328,7 @@ int main(int argc,char** argv) {
     return 5;
   }
   reader.present();
+  reader.startReadingStatistics();
   bool typeMenu=false;
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
@@ -7078,7 +7346,12 @@ int main(int argc,char** argv) {
   // its own step, before reading the next datagram.
   books::LogicalAction pendingAction=books::LogicalAction::None;
   int pendingRepeat=0;
+  const auto pageShowing=[&] {
+    return !reader.searchOpen() && !reader.searchPreview() && !typeMenu &&
+        !percentDialog && !aboutShown;
+  };
   while(!interrupted) {
+    reader.sampleReadingStatistics(pageShowing());
     reader.flushPosition(false);
     books::PhysicalEvent event{};
     if (pendingRepeat==0 && !input.receive(event)) {
@@ -7088,8 +7361,7 @@ int main(int argc,char** argv) {
         if(reader.statusChanged())reader.present();
       }
       const auto beforeTurn=nextAutoTurn;
-      const auto turnDue=autoTurnTick(reader,!reader.searchOpen() && !reader.searchPreview() &&
-          !typeMenu && !percentDialog,nextAutoTurn);
+      const auto turnDue=autoTurnTick(reader,pageShowing(),nextAutoTurn);
       if(beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
          beforeTurn<=ReaderClock::now())continue;
       if(waitForReaderInput(input,std::min(reader.nextPositionFlush(),turnDue))<0) {
@@ -7112,6 +7384,8 @@ int main(int argc,char** argv) {
     }
     bool changed=false;
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
+    if(pageShowing() && (action!=books::LogicalAction::None ||
+        event.kind==books::PhysicalKind::TouchDown))reader.readingInteraction();
     if(reader.searchOpen()) {
       const auto result=reader.bookSearchInput(action,event);
       if(result==Reader::SearchInput::Book) {typeMenu=false;reader.present();}
@@ -7196,11 +7470,13 @@ int main(int argc,char** argv) {
       reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
       continue;
     }
-    if(action==books::LogicalAction::Back)break;
-    if(action==books::LogicalAction::Next)changed=reader.move(1);
+    if(action==books::LogicalAction::Back) {
+      reader.finishReadingStatistics();break;
+    }
+    if(action==books::LogicalAction::Next)changed=reader.move(1,true);
     if(action==books::LogicalAction::Previous)changed=reader.move(-1);
     if(event.kind==books::PhysicalKind::TouchUp) {
-      changed=reader.move(event.x>=187?1:-1);
+      changed=reader.move(event.x>=187?1:-1,true);
     }
     if(changed)reader.present();
   }

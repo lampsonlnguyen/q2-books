@@ -29,23 +29,10 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 **Acceptance:** Read local static HTML offline without scripts, unrestricted file access or automatic remote requests.
 
-### v1.17.0 — Reading statistics
+### Reading activity hardware validation
 
-- [ ] 1.17-M1 — Define active reading time, pages read, completed books and daily averages; exclude idle, menus, suspend and background activity.
-- [ ] 1.17-M2 — Design compact versioned local statistics storage with rate-limited atomic saves and crash recovery; do not transmit reading activity.
-- [ ] 1.17-M3 — Add themed statistics screen with daily/weekly totals and per-book summaries; avoid double-counting backward turns, repagination and repeated resume events.
-- [ ] 1.17-M4 — Test session boundaries, clock changes, offline operation, rereads, unexpected exits and long-session write/CPU cost.
-
-**Acceptance:** Statistics survive restart and reflect defined active-reading behavior without affecting progress or battery materially.
-
-### v1.18.0 — Reading streaks and goals
-
-- [ ] 1.18-M1 — Build on v1.17.0 statistics; define qualifying reading days, current/longest streak, daily minute/page targets and local date boundaries.
-- [ ] 1.18-M2 — Add configurable daily goals, progress indicators and streak summary using native theme and wheel/touch controls.
-- [ ] 1.18-M3 — Persist goal preferences; handle missed days, timezone/clock changes, month/year boundaries and goal changes predictably.
-- [ ] 1.18-M4 — Test deterministic streak calculations, offline usage, restart, missing history and localization; keep reminders optional or omit them if firmware does not support them safely.
-
-**Acceptance:** Goals and streaks derive from accurate local statistics, never invent reading days, and require no background service.
+- [ ] Measure SD writes, idle CPU, and battery during a long reading session on Q2.
+- [ ] Verify screen-off and suspend exclusion with the firmware's power state, and check both activity menus with wheel and touch in light and dark themes.
 
 ### In-book search follow-up
 

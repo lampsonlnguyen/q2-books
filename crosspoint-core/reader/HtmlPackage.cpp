@@ -604,7 +604,7 @@ uint64_t hash(std::string_view bytes) {
 std::string packageImportedBook(const std::string& source,std::string_view title,
     std::string_view raw,bool isHtml,const std::string& cacheDir,std::string& error,
     std::string_view author,std::string_view language,
-    const ImportedImageReader& imageReader,bool legacyMobi,const std::string& target) {
+    const ImportedImageReader& imageReader,bool legacyMobi) {
   if(raw.size()>4u*1024*1024) {error="Imported ebook exceeds 4 MiB";return {};}
   std::string payload;
   if(isHtml) {
@@ -620,9 +620,9 @@ std::string packageImportedBook(const std::string& source,std::string_view title
     payload=buildTxtEpub(std::string(title)+".txt",cleanDocument(raw));
   }
   if(payload.empty()) {error="MOBI/PRC package conversion failed";return {};}
-  const auto path=target.empty()?cacheDir+"/mobi-v1-"+std::to_string(hash(source))+"-"+std::to_string(hash(payload))+".epub":target;
+  const auto path=cacheDir+"/mobi-v1-"+std::to_string(hash(source))+"-"+std::to_string(hash(payload))+".epub";
   struct stat cached{};
-  if(target.empty() && ::lstat(path.c_str(),&cached)==0 && S_ISREG(cached.st_mode) &&
+  if(::lstat(path.c_str(),&cached)==0 && S_ISREG(cached.st_mode) &&
      static_cast<uint64_t>(cached.st_size)==payload.size())return path;
   ::mkdir(cacheDir.c_str(),0755);
   std::string temp=path+".partXXXXXX";

@@ -638,6 +638,10 @@ add_test(NAME books_markdown_library_and_reader
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_markdown_reader.py"
     "$<TARGET_FILE:books-reader>")
 
+add_test(NAME books_mobi_prc_library_and_reader
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_mobi_reader.py"
+    "$<TARGET_FILE:books-reader>")
+
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
 add_test(NAME books_reader_unopened_shelf_index

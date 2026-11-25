@@ -31,6 +31,7 @@
 #include "TxtPackage.hpp"
 #include "HtmlPackage.hpp"
 #include "MarkdownPackage.hpp"
+#include "MobiPackage.hpp"
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
@@ -759,13 +760,15 @@ class Reader {
   static std::string resolvePackage(const std::string& book) {
     const bool html=books::isHtmlFilename(book);
     const bool markdown=books::isMarkdownFilename(book);
-    if(!html && !markdown && !books::isTxtFilename(book))return book;
+    const bool mobi=books::isMobiFilename(book);
+    if(!html && !markdown && !mobi && !books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
     std::string package=html?books::packageHtmlBook(book,stateCacheDir(),error):
                              markdown?books::packageMarkdownBook(book,stateCacheDir(),error):
+                             mobi?books::packageMobiBook(book,stateCacheDir(),error):
                              books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":"TXT",error.c_str());
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":mobi?"MOBI/PRC":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -778,7 +781,7 @@ class Reader {
     for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
-    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_))
+    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_) || books::isMobiFilename(bookPath_))
       for(unsigned char byte:packagePath_) {hash^=byte;hash*=1099511628211ull;}
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
@@ -5553,6 +5556,28 @@ class CardShelf {
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }
+  // Show a stable cover/title while a cold source import is being prepared.
+  // Do not create a second Reader or write reading progress for a preview.
+  void presentOpening(size_t index) {
+    if(index>=books_.size())return;
+    const auto& info=details(index);
+    const auto title=fitWidth(info.title.empty()?books_[index].label:info.title,335);
+    renderer_.clearScreen(0xff);
+    const auto label=books::tr("Opening book...");
+    drawRowLabel((375-renderer_.getTextWidth(1,label))/2,0,39,label);
+    books::paintBar(display_,0,0,375,39);
+    constexpr int w=126,h=174,x=(375-w)/2,y=51;
+    drawBookCover(x,y,index,w,h);
+    drawRowLabel((375-renderer_.getTextWidth(1,title.c_str()))/2,236,37,title.c_str());
+    drawRowLabel(22,274,34,"Preparing book...");
+    flowFrame_.resize(HalDisplay::PIXELS);
+    if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
+      const auto& art=displayedColorCover_.valid()?displayedColorCover_:books::shelf_art::defaultCover();
+      books::grid::drawThumbnail(flowFrame_.data(),art,x,y,w,h);
+      if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+    }
+    display_.displayBuffer();
+  }
   void present() {
     paint();
     if(!flowActive() && !gridActive()) {
@@ -6439,8 +6464,11 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":"Opening book...");
-      shelf->present();
+      if(!books::isEpubFilename(chosen))shelf->presentOpening(selection);
+      else {
+        shelf->setNotice("Opening book...");
+        shelf->present();
+      }
     }
     auto next=std::make_unique<Reader>(chosen);
     const bool opened=next->open(true);
@@ -6448,7 +6476,7 @@ int runCardApp(const std::string& bookDir) {
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home
       shelf->setNotice(userGuide?"Cannot read userguide":
-          books::isHtmlFilename(chosen)?"Cannot read this HTML file":"Cannot read this book");
+          books::isHtmlFilename(chosen)?"Cannot read this HTML file":books::isMobiFilename(chosen)?"Unsupported or invalid MOBI/PRC":"Cannot read this book");
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
@@ -7252,7 +7280,7 @@ int main(int argc,char** argv) {
     path=argv[1];
   } else { usage();return 2; }
   if (!books::isBookFilename(path)) {
-    std::fputs("Books: open an .epub, .txt, .md, .html or .htm book\n",stderr);
+    std::fputs("Books: open an .epub, .txt, .md, .html, .htm, .mobi or .prc book\n",stderr);
     return 2;
   }
   if(!dry && onCard)(void)books::migrateLegacyState();

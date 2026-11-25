@@ -26,6 +26,8 @@ Acceptance: customization stays within safe geometry and memory limits without a
 - [ ] 2.1-M5 — Handle encrypted/DRM-protected, malformed, truncated and unsupported files gracefully, with bounded decompression and readable errors. No DRM removal is planned.
 - [ ] 2.1-M6 — Add host and MIPS/QEMU tests with representative public-domain or synthetic DRM-free files; verify rendering, navigation, resume, latency, peak RAM and battery on physical Q2 hardware.
 
+Development progress: initial M1–M4 code and M5 cache/decoder optimizations and synthetic regression fixtures are on the feature branch; build and physical-device validation are pending. Native NCX indexes and additional legacy formatting variants remain to be evaluated.
+
 Acceptance: supported DRM-free MOBI/PRC books open reliably with the existing reading controls, without regressing EPUB/TXT/Markdown/HTML or exceeding practical Q2 resource limits. Exact legacy MOBI, KF8/hybrid and PalmDOC compatibility is subject to parser evaluation and testing.
 
 ### v2.2.0 — Reader and language enhancements

@@ -3,12 +3,17 @@ Books Q2 Pod CARD APP (illustrated EPUB, Q2 ABI diagnostics)
 INSTALLATION: Unzip books-card-app.zip to the root of the Q2 SD card.
 The exact file paths must be:
  /mnt/mmc/.books/q2app
+ /mnt/mmc/.books/q2app.fullscreen (older firmware manifest)
+ /mnt/mmc/.books/run (native menu launcher)
  /mnt/mmc/.books/q2-books    (POSIX shell launcher)
  /mnt/mmc/.books/books-engine (MIPS reader ELF)
  /mnt/mmc/Books/YourBook.epub
 
-On supported Q2 Pod firmware, choose Library > Books.
-If your Q2 Pod version does not support manifest row=library, look under Games.
+Choose Library > Books. Q2 Pod renders this menu using its own theme and
+status bar. The menu starts the existing full-screen Books Home, library,
+settings or last book. Books draws the status bar inside its reader.
+If the menu asks you to update Q2 Pod, copy q2app.fullscreen over q2app to
+launch Books Home directly. Very old firmware may list this under Games.
 This is a standalone card-app launcher. DO NOT flash any firmware.
 Q2 Pod does not need the optional Books hook for this card app.
 
@@ -27,7 +32,7 @@ pre-release check and static MIPS QEMU tests. Generic MIPS QEMU does not prove
 physical device compatibility. Do NOT flash firmware or replace system libraries.
 
 STARTUP DIAGNOSTICS:
-Q2 Pod's game card executes .books/q2-books, a #!/bin/sh wrapper. The
+Q2 Pod executes .books/q2-books to open a full-screen view. The
 wrapper logs to .books/startup.log before attempting to exec books-engine.
 This log records kernel details, binary presence, free memory and reader stderr.
 If the engine ELF fails to start, the shell's error is captured here.

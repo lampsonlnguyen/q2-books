@@ -563,7 +563,13 @@ add_test(NAME crosspoint_vietnamese_book_page_preview
 # Native Q2 EPUB vertical slice: original CrossPoint ZIP/OPF/spine, ParsedText,
 # TextBlock and full linked GfxRenderer. The POSIX XHTML text-block collector
 # remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
+add_executable(books_native_menu_tests tests/native_menu_test.cpp reader/NativeMenu.cpp)
+target_include_directories(books_native_menu_tests PRIVATE reader)
+target_compile_options(books_native_menu_tests PRIVATE -UNDEBUG)
+add_test(NAME books_native_menu_protocol COMMAND books_native_menu_tests)
+
 add_executable(books-reader
+    reader/NativeMenu.cpp
     reader/HtmlPackage.cpp
     reader/books_reader.cpp
     lib/KOReaderSync/ChapterXPathResolver.cpp

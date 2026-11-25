@@ -6,6 +6,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from test_markdown_reader import png
 
@@ -94,10 +95,21 @@ def test(executable):
         assert "metadata=1 cover=1 updated=1" in indexed, indexed
         assert "title=Đà Lạt Novel author=Nguyễn Văn A" in indexed, indexed
         assert "Books color cover: ready" in indexed, indexed
-        assert not list((state / "cache").glob("mobi-v1-*.epub"))
+        assert not list((state / "cache").glob("mobi-v2-*.epub"))
         assert "updated=0" in run("--index-book", mobi)
         listing = run("--list-books", shelf)
         assert all(str(p) in listing for p in (mobi, prc, cp, lz, extra))
+        cold_start = time.monotonic()
+        run("--validate", mobi)
+        cold = time.monotonic() - cold_start
+        package, = (state / "cache").glob("mobi-v2-*.epub")
+        original = package.stat()
+        warm_start = time.monotonic()
+        run("--validate", mobi)
+        warm = time.monotonic() - warm_start
+        assert package.stat().st_mtime_ns == original.st_mtime_ns
+        assert package.stat().st_ino == original.st_ino
+        print(f"MOBI validate cold={cold:.3f}s warm={warm:.3f}s")
         assert "matches=1" in run("--test-book-search", mobi, "Đà Lạt")
         assert "matches=1" in run("--test-book-search", mobi, "Unique final sentence")
         assert "matches=1" in run("--test-book-search", cp, "café")
@@ -108,7 +120,7 @@ def test(executable):
         assert "Books rendered images: 1" in run("--render-images", mobi, root / "art.pgm")
         run("--test-reading-resume", mobi)
         run("--test-clippings", mobi)
-        packages = list((state / "cache").glob("mobi-v1-*.epub"))
+        packages = list((state / "cache").glob("mobi-v2-*.epub"))
         assert len(packages) == 5, packages
         for path in packages:
             with zipfile.ZipFile(path) as z:
@@ -121,6 +133,16 @@ def test(executable):
                     assert any('href="h' in c and "#a" in c and "Jump to ending" in c for c in chapters)
                     assert any("Missing art" in c for c in chapters)
         assert any("OEBPS/image0.png" in zipfile.ZipFile(p).namelist() for p in packages)
+
+        # Truncated cache must be rebuilt atomically.
+        package.write_bytes(b"PK\x03\x04")
+        run("--validate", mobi)
+        with zipfile.ZipFile(package) as archive:
+            assert archive.testzip() is None
+        # A modified source must select a new cache identity, not stale text.
+        mobi.write_bytes(make_book(b"<p>Replacement source text.</p>"))
+        assert "matches=1" in run("--test-book-search", mobi, "Replacement source text")
+        assert len(list((state / "cache").glob("mobi-v2-*.epub"))) == 6
 
         bad = shelf / "invalid.mobi"
         for data, diagnostic in [

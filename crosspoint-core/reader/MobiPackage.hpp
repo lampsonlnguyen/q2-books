@@ -13,7 +13,7 @@
 
 namespace books {
 namespace mobipkg {
-constexpr size_t maxText=1024*1024, maxRecord=128*1024, maxRecords=8192;
+constexpr size_t maxText=4u*1024*1024, maxRecord=128*1024, maxRecords=8192;
 inline uint16_t be16(std::string_view s,size_t i) {
   return (uint16_t(static_cast<unsigned char>(s[i]))<<8)|static_cast<unsigned char>(s[i+1]);
 }
@@ -71,6 +71,7 @@ inline std::string windows1252(std::string_view text) {
     0xfffd,0x2018,0x2019,0x201c,0x201d,0x2022,0x2013,0x2014,
     0x02dc,0x2122,0x0161,0x203a,0x0153,0xfffd,0x017e,0x0178};
   std::string out;
+  out.reserve(text.size());
   for(unsigned char c:text) {
     unsigned cp=c>=128 && c<160?table[c-128]:c;
     if(cp<128)out.push_back(char(cp));
@@ -101,6 +102,13 @@ inline bool imageRecord(std::string_view s) {
 // are accepted only at markup boundaries or in text (not inside attributes).
 // Scan quoted tags, comments and raw-text elements without interpreting scripts.
 inline std::string rewriteFilePositions(std::string_view input) {
+  // Most files have no legacy byte links. A case-insensitive linear probe
+  // avoids building a tag index or copying text for the common case.
+  constexpr std::string_view key="filepos";
+  const auto found=std::search(input.begin(),input.end(),key.begin(),key.end(),[](char a,char b){
+    return (a>='A' && a<='Z'?a+32:a)==b;
+  });
+  if(found==input.end())return std::string(input);
   struct Tag {size_t start,end;std::string name;size_t filepos=size_t(-1);};
   std::vector<Tag> tags;
   std::set<size_t> targets;
@@ -130,11 +138,11 @@ inline std::string rewriteFilePositions(std::string_view input) {
     std::string name;
     while(at<end&&namechar(input[at]))name+=lower(input[at++]);
     if(!closing&&(name=="script"||name=="style"||name=="title"||name=="textarea")) {
-      std::string tail(input.substr(end+1));
-      std::transform(tail.begin(),tail.end(),tail.begin(),lower);
-      const auto close=tail.find("</"+name);
-      if(close!=tail.npos) {
-        const auto last=input.find('>',end+1+close);
+      const auto needle="</"+name;
+      const auto close=std::search(input.begin()+end+1,input.end(),needle.begin(),needle.end(),
+          [&](char a,char b){return lower(a)==b;});
+      if(close!=input.end()) {
+        const auto last=input.find('>',static_cast<size_t>(close-input.begin()));
         if(last!=input.npos){tags.push_back({p,last+1,"!"});i=last+1;continue;}
       }
     }
@@ -178,9 +186,12 @@ inline std::string rewriteFilePositions(std::string_view input) {
     } else {
       // Never split a UTF-8 continuation byte or an HTML entity.
       while(pos>0&&(static_cast<unsigned char>(input[pos])&0xc0)==0x80)--pos;
-      const auto amp=input.rfind('&',pos);
+      const size_t lookback=pos>32?pos-32:0;
+      const auto relative=input.substr(lookback,pos-lookback+1).rfind('&');
+      const auto amp=relative==input.npos?input.npos:lookback+relative;
       if(amp!=input.npos&&pos-amp<=32) {
-        const auto semi=input.find(';',amp);
+        const auto relativeSemi=input.substr(amp,33).find(';');
+        const auto semi=relativeSemi==input.npos?input.npos:amp+relativeSemi;
         if(semi!=input.npos&&semi>=pos&&semi-amp<=32&&
            input.substr(amp,semi-amp).find_first_of("< \t\r\n")==input.npos)pos=amp;
       }
@@ -199,6 +210,7 @@ inline std::string rewriteFilePositions(std::string_view input) {
     insertions[at]+=" href=\"#mobi-pos-"+std::to_string(tag.filepos)+"\"";
   }
   std::string out;
+  out.reserve(input.size());
   size_t at=0;
   for(const auto& [pos,extra]:insertions) {
     out.append(input.substr(at,pos-at));out+=extra;at=pos;
@@ -250,7 +262,7 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
   if(be16(record,12)!=0)return fail("DRM-protected MOBI/PRC is unsupported");
   if(!metadataOnly && compression!=1 && compression!=2)return fail("Unsupported MOBI/PRC compression");
   if(!expected || (!metadataOnly && expected>maxText) || !records || records>=count)
-    return fail("MOBI/PRC text exceeds the 1 MiB limit or has invalid records");
+    return fail("MOBI/PRC text exceeds the 4 MiB limit or has invalid records");
   unsigned encoding=1252,flags=0;
   size_t firstImage=count,coverOffset=size_t(-1),thumbOffset=size_t(-1);
   book={};
@@ -345,6 +357,7 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
   }
   book.text.reserve(expected);
   std::string decoded;
+  decoded.reserve(4096);
   for(size_t i=1;i<=records;++i) {
     const size_t n=offsets[i+1]-offsets[i];
     if(n>maxRecord || !read(offsets[i],n,record))return fail("Invalid ebook text record");
@@ -367,9 +380,10 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
     book.text=rewriteFilePositions(book.text);
     if(book.text.empty())return fail("MOBI link conversion exceeded limits");
   }
-  if(encoding==1252 && (book.html || !txtpkg::validUtf8(book.text)))
+  if(encoding==1252 && (book.html || !txtpkg::validUtf8(book.text)) &&
+     std::any_of(book.text.begin(),book.text.end(),[](unsigned char c){return c>=128;}))
     book.text=windows1252(book.text);
-  if(book.text.size()>maxText)return fail("Decoded ebook exceeds the 1 MiB limit");
+  if(book.text.size()>maxText)return fail("Decoded ebook exceeds the 4 MiB limit");
   return true;
 }
 } // namespace mobipkg

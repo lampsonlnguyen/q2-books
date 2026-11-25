@@ -29,5 +29,20 @@ int main() {
   assert(!Hyphenator::breakOffsets(word, false, inlineEnglish).empty());
   assert(Hyphenator::breakOffsets(word, false, nullptr).empty());
   assert(Hyphenator::documentRules() == Hyphenator::rulesFor("fr-FR"));
+  assert(Hyphenator::rulesFor("en-") == nullptr);
+  assert(Hyphenator::rulesFor("en--US") == nullptr);
+  assert(Hyphenator::rulesFor("EN_us") == Hyphenator::rulesFor("en"));
+  assert(Hyphenator::rulesFor("mul") == nullptr);
+  for (const auto& br : Hyphenator::breakOffsets("representation", true, nullptr))
+    assert(!br.requiresInsertedHyphen);
+  for (const auto& br : Hyphenator::breakOffsets("日本語文字列", true, nullptr))
+    assert(!br.requiresInsertedHyphen);
+  const auto* ukrainian = Hyphenator::rulesFor("uk-UA");
+  assert(ukrainian);
+  const auto upper = Hyphenator::breakOffsets("УКРАЇНСЬКИЙ", false, ukrainian);
+  const auto lower = Hyphenator::breakOffsets("український", false, ukrainian);
+  assert(upper.size() == lower.size());
+  for (size_t i = 0; i < upper.size(); ++i)
+    assert(upper[i].byteOffset == lower[i].byteOffset);
   return 0;
 }

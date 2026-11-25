@@ -142,7 +142,7 @@ inline bool readBook(const std::string& path,Book& book,std::string& error) {
   if(book.title.empty()) {
     const auto slash=path.find_last_of('/');
     book.title=path.substr(slash==path.npos?0:slash+1);
-    book.title.resize(book.title.find_last_of('.'));
+    if(const auto dot=book.title.find_last_of('.');dot!=book.title.npos)book.title.resize(dot);
   } else if(encoding==1252)book.title=windows1252(book.title);
   book.text.reserve(expected);
   std::string decoded;

@@ -1147,7 +1147,7 @@ class Reader {
       currentPage_=std::min(saved.page,pageCount()-1);
   }
   void persistPosition(bool force=false) const {
-    if(!resumeEnabled_ || currentSpine_<0)return;
+    if(!resumeEnabled_ || currentSpine_<0 || searchOrigin_)return;
     positionDirty_=true;
     const auto now=std::chrono::steady_clock::now();
     if(!force && lastPositionAttempt_.time_since_epoch().count()!=0 &&
@@ -1640,9 +1640,9 @@ class Reader {
   bool startBookSearch(std::string query) {
     auto normalized=books::bookSearchQuery(query);
     if(normalized.empty() || !upstreamEpub_)return false;
-    auto archive=std::make_unique<ZipFile>(packagePath_);
-    if(!archive->loadAllFileStatSlims())return false;
-    searchArchive_=std::move(archive);
+    // TXT books already use a cached EPUB package; search that same
+    // spine so offsets match the reader. No duplicate archive-wide index.
+    searchArchive_=std::make_unique<ZipFile>(packagePath_);
     searchPaint_={};
     searchFailedSpines_=0;
     bookQuery_=std::move(query);
@@ -1690,7 +1690,7 @@ class Reader {
     }
     searchLimit_=searchMatches_.size()>=limit;
     searchRunning_=searchSpine_<count && !searchLimit_;
-    if(!searchRunning_ && !searchLimit_)searchArchive_.reset();
+    if(!searchRunning_)searchArchive_.reset();
     const auto now=ReaderClock::now();
     if(!searchRunning_ || now-searchPaint_>=std::chrono::milliseconds(150)) {
       searchPaint_=now;
@@ -1700,29 +1700,36 @@ class Reader {
   bool restoreSearchOrigin() {
     if(!searchOrigin_)return false;
     const auto origin=*searchOrigin_;
-    searchOrigin_.reset();
-    searchHighlight_.reset();
     if(currentSpine_!=origin.spine && (!loadSpine(origin.spine,1) || currentSpine_!=origin.spine))return false;
     placeSavedPosition(origin);
+    searchOrigin_.reset();
+    searchHighlight_.reset();
     return true;
   }
   bool goToSearchMatch(size_t index) {
     if(index>=searchMatches_.size())return false;
     const auto& match=searchMatches_[index];
     const auto before=currentPosition();
-    flushPosition();
+    const bool firstPreview=!searchOrigin_;
+    if(firstPreview) {
+      flushPosition();
+      searchOrigin_=before;
+    }
     if((currentSpine_!=match.spine && !loadSpine(match.spine,1)) ||
        currentSpine_!=match.spine || !upstreamSection_) {
       if(currentSpine_!=before.spine)(void)loadSpine(before.spine,1);
       if(currentSpine_==before.spine)placeSavedPosition(before);
+      if(firstPreview)searchOrigin_.reset();
       return false;
     }
     books::ReadingPosition target{match.spine,0};
     target.engine='o';
     target.textOffset=match.begin;
     placeSavedPosition(target);
-    if(!upstreamSection_)return false;
-    if(!searchOrigin_)searchOrigin_=before;
+    if(!upstreamSection_ || interrupted) {
+      if(firstPreview)searchOrigin_.reset();
+      return false;
+    }
     searchHighlight_=match;
     searchSelection_=index;
     return true;
@@ -1730,9 +1737,7 @@ class Reader {
   bool loadMoreSearchMatches() {
     if(!searchLimit_)return false;
     if(!searchArchive_) {
-      auto archive=std::make_unique<ZipFile>(packagePath_);
-      if(!archive->loadAllFileStatSlims())return false;
-      searchArchive_=std::move(archive);
+      searchArchive_=std::make_unique<ZipFile>(packagePath_);
     }
     searchMatches_.clear();
     searchSelection_=0;
@@ -1763,6 +1768,7 @@ class Reader {
       if(touch && event.y>=269) {
         if(event.x>=184 && loadMoreSearchMatches())return SearchInput::Stay;
         searchRunning_=false;searchArchive_.reset();
+        searchLimit_=false;searchMatches_.clear();
         enterBookSearch(true);
         return SearchInput::Stay;
       }
@@ -1777,6 +1783,7 @@ class Reader {
       }
       if(activate && searchSelection_>searchMatches_.size() && loadMoreSearchMatches())return SearchInput::Stay;
       if(activate && !searchRunning_ && searchSelection_==searchMatches_.size()) {
+        searchArchive_.reset();searchLimit_=false;searchMatches_.clear();
         enterBookSearch(true);
         return SearchInput::Stay;
       }

@@ -72,6 +72,22 @@ def check():
         assert "matches=1" in command("--test-book-search", epub, "字形 العربية")
         assert "matches=0" in command("--test-book-search", epub, "hidden match")
 
+        # TXT is wrapped into the same cached EPUB spine; test actual search,
+        # Unicode normalization and the CLI's jump/restore anchor assertions.
+        txt = root / "search.txt"
+        txt.write_text("Opening paragraph.\n\n" + "Đà Lạt 字形 العربية\n" * 3 +
+                       "needle " * 270, encoding="utf-8")
+        assert "matches=3" in command("--test-book-search", txt, "ĐÀ LẠT")
+        assert "matches=3" in command("--test-book-search", txt, "字形 العربية")
+        assert "matches=270" in command("--test-book-search", txt, "needle")
+        assert "matches=0" in command("--test-book-search", txt, "not in book")
+        multi = root / "multi.txt"
+        multi.write_text("Paragraph filler.\n\n" * 3000 + "unique ending", encoding="utf-8")
+        assert "matches=1" in command("--test-book-search", multi, "unique ending")
+        latin = root / "legacy.txt"
+        latin.write_bytes("Café crème.\n".encode("latin-1"))
+        assert "matches=1" in command("--test-book-search", latin, "CAFÉ")
+
         legacy = root / "first.epub"
         book(legacy, '<meta name="calibre:series" content="Lạt &amp; Friends"/>'
              '<meta name="calibre:series_index" content="1"/>')

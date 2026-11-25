@@ -31,7 +31,7 @@ The SD shelf supports Cover Flow/Grid/List, folder and title sorting, alphabetic
 
 Series uses Calibre and EPUB3 collection metadata; normalized names group volumes, numeric order includes fractions and unnumbered books follow numbered books. Existing versioned metadata cache is invalidated on source identity changes. Compact series references occupy eight bytes each excluding container/name overhead. Indexing is incremental on idle ticks; series scans skip already indexed entries and do not decode covers. Normal library operations should not load book chapters solely to browse metadata.
 
-Reading includes resume, bookmarks, highlights, clippings, dictionary lookup, links, footnotes, page/percentage/chapter navigation and typography. EPUB in-book search streams chapter XML in 4 KiB chunks and stores up to 256 matches per batch. Results can jump to text offsets, highlight and restore the original position. TXT in-book search is not implemented; T9 entry is ASCII, selected text permits non-Latin queries. Oversized or corrupt chapters can be skipped.
+Reading includes resume, bookmarks, highlights, clippings, dictionary lookup, links, footnotes, page/percentage/chapter navigation and typography. EPUB in-book search streams chapter XML in 4 KiB chunks and stores up to 256 matches per batch. Results can jump to text offsets, highlight and restore the original position. TXT search uses the same cached EPUB package and source-coordinate mapping. T9 entry is ASCII; selected text permits non-Latin queries. Search previews do not persist reading progress until explicitly accepted. Oversized or corrupt chapters can be skipped.
 
 ## Storage, lifecycle and networking
 
@@ -56,7 +56,7 @@ Host GCC/Clang CTest, Q2 MIPS32r2 O32 FP64 hard-float NaN-2008/ABS-2008 build, E
 
 ## Known limitations
 
-No direct Markdown/HTML/MOBI/PRC support in this source; TXT search absent; publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
+No direct Markdown/HTML/MOBI/PRC support in this source; publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
 
 ## Attribution
 

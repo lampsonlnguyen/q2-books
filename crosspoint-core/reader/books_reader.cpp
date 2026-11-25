@@ -3274,15 +3274,12 @@ class CardShelf {
     artworkChecked_.resize(books_.size());
     collections_=books::loadCollections();
     (void)books::restoreMovedCollectionBooks(collections_,books_);
-    for(const auto& path:books::loadRecentBooks()) {
-      const auto found=std::find_if(books_.begin(),books_.end(),[&](const auto& book){return book.path==path;});
-      if(found!=books_.end())recentIndices_.push_back(static_cast<size_t>(found-books_.begin()));
-    }
+    statusHistory_=books::loadRecentBooks();
+    recentIndices_=books::recentShelfIndices(books_,statusHistory_);
     if(books_.empty())homeSelection_=1;
     libraryView_=loadLibraryView();
     statusFilter_=books::loadReadingStatusFilter();
     statusCache_.assign(books_.size(),-1);
-    statusHistory_=books::loadRecentBooks();
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
     alphabetGroups_.reserve(books_.size());
@@ -4230,7 +4227,8 @@ class CardShelf {
   void markArtworkChecked(size_t index) {artworkChecked_[index]=true;}
   std::optional<size_t> featuredArtwork() const {
     if(browsing_ || optionsOpen_ || onlineMode_ || fontManager_ || books_.empty() ||
-       artworkChecked_[current_] || displayedColorCover_.valid())return std::nullopt;
+       artworkChecked_[current_] ||
+       (displayedCoverIndex_==current_ && displayedColorCover_.valid()))return std::nullopt;
     return current_;
   }
   void onIndexedBook(size_t index) {

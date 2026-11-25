@@ -87,6 +87,14 @@ int main() {
   auto recent=books::loadRecentBooks();
   assert(recent.size()==2 && recent[0]==a && recent[1]==b);
   std::vector<TestBook> books={{b,"zebra",30},{a,"Alpha",20}};
+  assert(books::recentShelfIndices(books,recent)==(std::vector<size_t>{1,0}));
+  assert(books::recentShelfIndices(books,{a+".missing",b,b,a})==(std::vector<size_t>{0,1}));
+  assert(books::recentShelfIndices(books,{}).empty());
+  assert(books::recentShelfIndices(std::vector<TestBook>{},recent).empty());
+  std::vector<std::string> capped(books::kMaxRecentBooks,a+".missing");
+  capped.push_back(a);
+  assert(books::recentShelfIndices(books,capped).empty());
+  assert(books::loadRecentBooks()==recent);
   books::sortShelfBooks(books,books::ShelfSortMode::Title,recent);
   assert(books[0].path==a);
   books::sortShelfBooks(books,books::ShelfSortMode::RecentlyAdded,recent);

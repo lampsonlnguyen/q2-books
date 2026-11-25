@@ -3319,7 +3319,7 @@ class CardShelf {
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
-    bool filtered() const {return favorites || !collection.empty() || !series.empty();}
+    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty();}
   };
   BrowseContext browseContext() const {
     return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_};
@@ -3327,7 +3327,7 @@ class CardShelf {
   void restoreBrowseContext(const BrowseContext& context) {
     if(!context.filtered())return;
     favoritesFilter_=context.favorites;
-    collectionFilter_=context.collection;
+    collectionFilter_=collections_.groups.count(context.collection)?context.collection:std::string();
     seriesFilter_=context.series;
     searchQuery_=context.query;
     if(!seriesFilter_.empty()) {
@@ -3339,11 +3339,8 @@ class CardShelf {
       }
     }
     refreshVisible();
-    for(size_t i=1;i<visible_.size();++i) {
-      if(books_[visible_[i]].path!=context.path)continue;
-      selected_=i;
-      break;
-    }
+    selectVisiblePath(context.path);
+    browsed_=true; // do not refocus the guide on the next Browse action
     flowPosition_=static_cast<float>(selected_);
   }
 
@@ -3999,7 +3996,32 @@ class CardShelf {
     selected_=0;
     return true;
   }
+  // Preserve book identity across list rebuilds, not its numeric row.
+  void selectVisiblePath(const std::string& path) {
+    if(!path.empty()) {
+      for(size_t i=0;i<visible_.size();++i) {
+        const auto index=visible_[i];
+        if(index<books_.size() && books_[index].path==path) {
+          selected_=folderRows()+i;
+          flowPosition_=static_cast<float>(selected_);
+          return;
+        }
+      }
+    }
+    selected_=folderRows()+(visible_.size()>1?1u:0u);
+    flowPosition_=static_cast<float>(selected_);
+  }
   void refreshVisible() {
+    // Capture the old selection using the actual previous folder count;
+    // the filter flags may already have changed before rebuilding.
+    const size_t oldFolders=folders_.size();
+    std::string previousPath;
+    const bool wasGuide=selected_>=oldFolders && selected_-oldFolders<visible_.size() &&
+        visible_[selected_-oldFolders]==books_.size();
+    if(selected_>=oldFolders && selected_-oldFolders<visible_.size()) {
+      const auto index=visible_[selected_-oldFolders];
+      if(index<books_.size())previousPath=books_[index].path;
+    }
     flowMoving_=false;flowTouch_=false;
     visible_.clear();
     visible_.push_back(books_.size());  // Virtual guide, even when the shelf is empty.
@@ -4033,7 +4055,8 @@ class CardShelf {
       const auto group=series_.find(seriesFilter_);
       if(group!=series_.end())for(const auto& volume:group->second.volumes)addBook(volume.index);
     }
-    if(selected_>=visible_.size())selected_=0;
+    if(wasGuide) {selected_=0;flowPosition_=0;}
+    else selectVisiblePath(previousPath);
   }
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
@@ -4408,7 +4431,7 @@ class CardShelf {
     std::vector<std::string> rows;
     switch(libraryMenu_) {
       case LibraryMenu::Tools:
-        rows={books::tr("Favorites"),books::tr("Collections"),books::tr("Series"),
+        rows={std::string(favoritesFilter_?"[x] ":"[ ] ")+books::tr("Favorites"),books::tr("Collections"),books::tr("Series"),
               books::tr("All books")};
         if(hasBookRow()) {
           rows.push_back(books::tr("Book details"));
@@ -4514,14 +4537,13 @@ class CardShelf {
     return false;
   }
   void setLibraryFilter(bool favorites,std::string collection={},std::string series={}) {
+    const std::string previous=hasBookRow()?bookPath():std::string();
     favoritesFilter_=favorites;
     collectionFilter_=std::move(collection);
     seriesFilter_=std::move(series);
-    selected_=0;
     openLibraryMenu(LibraryMenu::None);
     refreshVisible();
-    if(visible_.size()>1)selected_=folderRows()+1;
-    flowPosition_=static_cast<float>(selected_);
+    selectVisiblePath(previous);
   }
   bool libraryInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
@@ -4584,7 +4606,7 @@ class CardShelf {
           break;
         }
         switch(libraryChoice_) {
-          case 0:setLibraryFilter(true,{},seriesFilter_);break;
+          case 0:setLibraryFilter(!favoritesFilter_,collectionFilter_,seriesFilter_);break;
           case 1:openLibraryMenu(LibraryMenu::Collections);break;
           case 2:openLibraryMenu(LibraryMenu::Series);break;
           case 3:setLibraryFilter(false);break;
@@ -4612,7 +4634,7 @@ class CardShelf {
         }
         break;
       case LibraryMenu::Collection:
-        if(libraryChoice_==0)setLibraryFilter(false,collectionName_,seriesFilter_);
+        if(libraryChoice_==0)setLibraryFilter(favoritesFilter_,collectionName_,seriesFilter_);
         if(libraryChoice_==1)startCollectionName(true);
         if(libraryChoice_==2) {
           if(!libraryDeleteArmed_) {libraryDeleteArmed_=true;break;}
@@ -4938,9 +4960,11 @@ class CardShelf {
         drawCompactLabel(16,61,crumb.c_str(),145,146);
       } else {
         const auto group=series_.find(seriesFilter_);
-        if(group!=series_.end())drawCompactLabel(16,61,group->second.label.c_str(),145,146);
-        else if(!collectionFilter_.empty())drawCompactLabel(16,61,collectionFilter_.c_str(),145,146);
-        else if(favoritesFilter_)drawCompactLabel(16,61,"Favorites",145,146);
+        std::string filterLabel;
+        if(!collectionFilter_.empty())filterLabel=collectionFilter_;
+        else if(group!=series_.end())filterLabel=group->second.label;
+        if(favoritesFilter_)filterLabel=filterLabel.empty()?books::tr("Favorites"):"* "+filterLabel;
+        if(!filterLabel.empty())drawCompactLabel(16,61,filterLabel.c_str(),145,146);
         else drawCompactLabel(16,61,count,145,146);
       }
       drawCompactLabel(155,61,"Search",145,227);
@@ -5003,7 +5027,11 @@ class CardShelf {
     // tap there downloads); no control hints: the Q2's keys are known.
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
       :detailsOpen()?(detailsOnCard_?"Show on card":"Download")
-      :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book"):std::string();
+      :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book")
+      :browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
+       libraryMenu_==LibraryMenu::None && visible_.size()==1 &&
+       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty())?
+       books::tr("No books yet"):std::string();
     if(!footer.empty()) {
       // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).
       const int lineH=renderer_.getLineHeight(1);

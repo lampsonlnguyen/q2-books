@@ -69,7 +69,7 @@ In Browse files, tap **A-Z** or hold Centre and release to open the picker. Turn
 
 ### v1.7.0 — Collections and favorites
 
-From Library > Collection membership, toggle any existing collection or choose New collection to create one and add the selected book in the same operation. Back cancels naming without saving. Deletion requires confirmation and removes only the collection, not its books. If removing a favorite or membership hides the selected book, the app returns to the shelf instead of applying subsequent actions to another book.
+From Library > Collection membership, toggle any existing collection or choose New collection to create one and add the selected book in the same operation. Back cancels naming without saving. Favorites is a toggle that can narrow the active collection or series; All books clears group filters. Search and sorting retain the active group, and changing a library view keeps the selected book. Empty filtered shelves retain the virtual User Guide with a no-books notice. Deletion requires confirmation and removes only the collection, not its books. If removing a favorite or membership hides the selected book, the app returns to the shelf instead of applying subsequent actions to another book.
 
 - [ ] 1.7-M1 — Design versioned, bounded, atomic SD-backed storage for collection names, membership and favorites; use stable book identity.
 - [ ] 1.7-M2 — Implement create, rename and delete collection, add/remove membership and favorite toggle using accessible wheel/touch menus.

@@ -1,6 +1,6 @@
 # Outstanding work
 
-Only unfinished work is listed. Version labels identify feature groups, not guaranteed release numbers. Existing features are documented in [technical reference](TECHNICAL.md). The separate v1.13 font optimization is deferred; retain the existing embedded-font implementation. No new font-engine rewrite is planned.
+Only unfinished work is listed. Version labels identify feature groups, not guaranteed release numbers. Existing features are documented in [technical reference](TECHNICAL.md). Embedded font resource use still needs physical-Q2 validation.
 
 ### v1.11.0 — Cover Flow customization
 
@@ -11,14 +11,9 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 **Acceptance:** Customization stays within safe geometry and memory limits and does not alter reader typography or system theme.
 
-### v1.14.0 — Markdown support
+### Markdown hardware validation
 
-- [ ] 1.14-M1 — Recognize .md files in the local library and define safe conversion to the existing XHTML/layout pipeline (no separate reader).
-- [ ] 1.14-M2 — Support headings, paragraphs, lists, emphasis, links, code blocks, blockquotes and supported local images; document unsupported extensions.
-- [ ] 1.14-M3 — Integrate chapter navigation, reading position, bookmarks, search, typography and library metadata.
-- [ ] 1.14-M4 — Bound conversion resources, handle UTF-8 and malformed input, restrict local paths and disable active/remote content by default; test long and multilingual files.
-
-**Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
+- [ ] Verify chapter links, images, pagination, resume, and peak RAM on a physical Q2.
 
 ### Local HTML hardware validation
 

@@ -2,12 +2,13 @@
 
 ## Architecture and design constraints
 
-Books is a source-level CrossPoint EPUB/TXT/HTML port, not Q2 Pod's stock flat-text EPUB reader. The independent Linux process uses the firmware only for launch, input/display handoff, system preferences and power lifecycle. Q2 has 128 MB physical RAM shared with Linux and audio; avoid treating this as the application's available heap. Prioritize EPUB fidelity, multilingual support, responsiveness, then bounded resource usage. No ESP32 firmware, Arduino runtime, browser engine or background power service is shipped.
+Books is a source-level CrossPoint EPUB/TXT/Markdown/HTML port, not Q2 Pod's stock flat-text EPUB reader. The independent Linux process uses the firmware only for launch, input/display handoff, system preferences and power lifecycle. Q2 has 128 MB physical RAM shared with Linux and audio; avoid treating this as the application's available heap. Prioritize EPUB fidelity, multilingual support, responsiveness, then bounded resource usage. No ESP32 firmware, Arduino runtime, browser engine or background power service is shipped.
 
 | Layer | Source / responsibility |
 | --- | --- |
 | Application | `crosspoint-core/reader/books_reader.cpp`: Reader, CardShelf, event loop and menus |
 | EPUB | `crosspoint-core/lib/Epub/`: OPF/container, spine, CSS, ChapterHtmlSlimParser, ParsedText, Section, Page and disk-backed metadata/page caches |
+| Markdown | `reader/MarkdownPackage.cpp`: CommonMark conversion to a cached EPUB |
 | HTML | `reader/HtmlPackage.cpp`: bounded static HTML conversion to a cached EPUB |
 | TXT | `lib/Txt/` and `reader/TxtPackage.hpp`: conversion through existing layout pipeline |
 | Archive | `lib/ZipFile/`: named resources and streamed decompression |
@@ -32,7 +33,24 @@ The SD shelf supports Cover Flow/Grid/List, folder and title sorting, alphabetic
 
 Series uses Calibre and EPUB3 collection metadata; normalized names group volumes, numeric order includes fractions and unnumbered books follow numbered books. Existing versioned metadata cache is invalidated on source identity changes. Compact series references occupy eight bytes each excluding container/name overhead. Indexing is incremental on idle ticks; series scans skip already indexed entries and do not decode covers. Normal library operations should not load book chapters solely to browse metadata.
 
-Reading includes resume, bookmarks, highlights, clippings, dictionary lookup, links, footnotes, page/percentage/chapter navigation and typography. EPUB in-book search streams chapter XML in 4 KiB chunks and stores up to 256 matches per batch. Results can jump to text offsets, highlight and restore the original position. TXT and HTML search use the same cached EPUB package and source-coordinate mapping. T9 entry is ASCII; selected text permits non-Latin queries. Search previews do not persist reading progress until explicitly accepted. Oversized or corrupt chapters can be skipped.
+Reading includes resume, bookmarks, highlights, clippings, dictionary lookup, links, footnotes, page/percentage/chapter navigation and typography. EPUB in-book search streams chapter XML in 4 KiB chunks and stores up to 256 matches per batch. Results can jump to text offsets, highlight and restore the original position. TXT, Markdown, and HTML search use the same cached EPUB package and source-coordinate mapping. T9 entry is ASCII; selected text permits non-Latin queries. Search previews do not persist reading progress until explicitly accepted. Oversized or corrupt chapters can be skipped.
+
+## Markdown
+
+Place UTF-8 `.md` files under `Books/`. Books uses the filename as the library title and keeps
+reading state with the original file. Markdown renders through the normal CrossPoint reader.
+Headings populate the table of contents. Paragraphs, lists, emphasis, inline and fenced code,
+blockquotes and same-document heading links are supported. Other link destinations retain their
+label as text. Relative PNG and JPEG images can be read beside or below the document, with
+32 images, 512 KiB per image and 2 MiB total. Missing or rejected images display their alt text.
+
+Conversion accepts up to 1 MiB of source and replaces malformed UTF-8. Large documents are
+split at block boundaries. An individual block that exceeds the 256 KiB generated chapter limit prevents the book from opening. Raw HTML is escaped as text. Remote resources,
+paths outside the document directory, and symbolic links are excluded. GFM tables, task lists,
+footnote extensions and front matter metadata are outside the current format support.
+
+The parser is [MD4C 0.5.3](https://github.com/mity/md4c/tree/release-0.5.3),
+vendored under `lib/md4c/`. Its MIT notice is in `licenses/MD4C.md` and in the release ZIP.
 
 ## Local HTML
 
@@ -75,7 +93,7 @@ Host GCC/Clang CTest, Q2 MIPS32r2 O32 FP64 hard-float NaN-2008/ABS-2008 build, E
 
 ## Known limitations
 
-No direct Markdown/MOBI/PRC support in this source; publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
+No direct MOBI/PRC support in this source; publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
 
 ## Attribution
 

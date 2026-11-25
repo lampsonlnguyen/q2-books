@@ -30,6 +30,7 @@
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
 #include "HtmlPackage.hpp"
+#include "MarkdownPackage.hpp"
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
@@ -755,12 +756,14 @@ class Reader {
   }
   static std::string resolvePackage(const std::string& book) {
     const bool html=books::isHtmlFilename(book);
-    if(!html && !books::isTxtFilename(book))return book;
+    const bool markdown=books::isMarkdownFilename(book);
+    if(!html && !markdown && !books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
     std::string package=html?books::packageHtmlBook(book,stateCacheDir(),error):
+                             markdown?books::packageMarkdownBook(book,stateCacheDir(),error):
                              books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":"TXT",error.c_str());
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -773,7 +776,7 @@ class Reader {
     for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
-    if(books::isHtmlFilename(bookPath_))
+    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_))
       for(unsigned char byte:packagePath_) {hash^=byte;hash*=1099511628211ull;}
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
@@ -817,11 +820,14 @@ class Reader {
     renderer_.removeFont(publisherFontId);
     upstreamFontId_=fallback;
     if(!upstreamEpub_ || !preferences_.embeddedStyle || !preferences_.bookFonts) {
-      publisherFont_.releaseGlyphs();
+      publisherFont_.release();
       return;
     }
     publisherFont_.scan(packagePath_);
-    if(!publisherFont_.use(static_cast<unsigned>(typography_.size)))return;
+    if(!publisherFont_.use(static_cast<unsigned>(typography_.size))) {
+      publisherFont_.release();
+      return;
+    }
     renderer_.insertFont(publisherFontId,publisherFont_.family(static_cast<uint16_t>(typography_.size)));
     renderer_.addFallbackFont(publisherFontId,fallback);
     for(size_t i=0;i<books::scriptFontSpecs.size();++i)
@@ -6419,7 +6425,7 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":"Opening EPUB...");
+      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":"Opening book...");
       shelf->present();
     }
     auto next=std::make_unique<Reader>(chosen);
@@ -6428,7 +6434,7 @@ int runCardApp(const std::string& bookDir) {
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home
       shelf->setNotice(userGuide?"Cannot read userguide":
-          books::isHtmlFilename(chosen)?"Cannot read this HTML file":"Cannot read this EPUB");
+          books::isHtmlFilename(chosen)?"Cannot read this HTML file":"Cannot read this book");
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
@@ -7227,7 +7233,7 @@ int main(int argc,char** argv) {
     path=argv[1];
   } else { usage();return 2; }
   if (!books::isBookFilename(path)) {
-    std::fputs("Books: open an .epub, .txt, .html or .htm book\n",stderr);
+    std::fputs("Books: open an .epub, .txt, .md, .html or .htm book\n",stderr);
     return 2;
   }
   if(!dry && onCard)(void)books::migrateLegacyState();

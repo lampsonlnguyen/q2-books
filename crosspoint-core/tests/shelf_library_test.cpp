@@ -6,6 +6,7 @@
 #include "ShelfFolders.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfCollections.hpp"
+#include "ShelfReadingStatus.hpp"
 #include <chrono>
 #include <sys/stat.h>
 #include <algorithm>
@@ -42,6 +43,21 @@ int main() {
     assert(std::fputs("book",f)>=0);
     assert(std::fclose(f)==0);
   }
+  using Status=books::ReadingStatus;
+  assert(books::shelfReadingStatus(a,{})==Status::Unread);
+  assert(books::shelfReadingStatus(a,{a})==Status::Reading);
+  assert(books::shelfReadingStatus(a+".missing",{a+".missing"})==Status::Unread);
+  assert(books::saveReadingPosition(a,{0,0,'?',0,1000000}));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,0));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,999999));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,1000000));
+  assert(books::shelfReadingStatus(a,{})==Status::Completed);
+  assert(books::saveShelfProgress(a,500000));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::classifyReadingStatus(true,1000001,false,false)==Status::Unread);
   assert(books::loadRecentBooks().empty());
   assert(books::recordRecentBook(a));
   assert(books::recordRecentBook(b));
@@ -76,6 +92,7 @@ int main() {
   assert(std::fclose(f)==0);
   assert(!books::loadShelfDetails(a,details));
   assert(!books::loadShelfCover(a,loadedCover));
+  assert(books::shelfReadingStatus(a,{})==Status::Unread);
   // Ignore malformed history rather than trusting arbitrary SD bytes.
   f=std::fopen(books::recentBooksFile().c_str(),"wb");
   assert(f);

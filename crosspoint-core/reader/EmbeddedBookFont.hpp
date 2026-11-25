@@ -12,6 +12,7 @@
 #include FT_SYNTHESIS_H
 #include FT_TRUETYPE_TABLES_H
 #include <array>
+#include <new>
 #include <string_view>
 
 namespace books {
@@ -126,7 +127,7 @@ class EmbeddedBookFont {
     struct Slot {
       uint32_t codepoint=UINT32_MAX;
       EpdGlyph glyph{};
-      std::array<uint8_t,1024> pixels{};
+      std::unique_ptr<uint8_t[]> pixels;
     };
 
     FT_Face ft=nullptr;
@@ -155,7 +156,7 @@ class EmbeddedBookFont {
       data.coverageHandler=[](void* ctx,uint32_t cp){return static_cast<Face*>(ctx)->covers(cp);};
       data.vectorBitmapHandler=[](void* ctx,const EpdGlyph* glyph)->const uint8_t* {
         const auto& self=*static_cast<const Face*>(ctx);
-        return glyph->dataOffset<self.cache.size()?self.cache[glyph->dataOffset].pixels.data():nullptr;
+        return glyph->dataOffset<self.cache.size()?self.cache[glyph->dataOffset].pixels.get():nullptr;
       };
       data.kernHandler=[](void* ctx,uint32_t left,uint32_t right)->int8_t {
         auto ft=static_cast<Face*>(ctx)->ft;
@@ -189,13 +190,17 @@ class EmbeddedBookFont {
          (bitmap.width && bitmap.rows && bitmap.pixel_mode!=FT_PIXEL_MODE_GRAY))return nullptr;
       const size_t picked=nextSlot++%cache.size();
       auto& slot=cache[picked];
-      slot.codepoint=cp;
+      slot.codepoint=UINT32_MAX;
       slot.glyph={static_cast<uint8_t>(bitmap.width),static_cast<uint8_t>(bitmap.rows),
           static_cast<uint16_t>(std::clamp<long>(ft->glyph->advance.x/4,0,2048)),
           static_cast<int16_t>(std::clamp(ft->glyph->bitmap_left,-128,128)),
           static_cast<int16_t>(std::clamp(ft->glyph->bitmap_top,-128,128)),
           static_cast<uint16_t>((bitmap.width*bitmap.rows+3)/4),static_cast<uint32_t>(picked)};
-      std::fill_n(slot.pixels.begin(),slot.glyph.dataLength,0);
+      // Allocate just the packed glyph bytes, not a 1 KiB slab for every
+      // slot in every style. Empty glyphs retain a one-byte backing store.
+      slot.pixels.reset(new(std::nothrow) uint8_t[std::max<size_t>(1,slot.glyph.dataLength)]{});
+      if(!slot.pixels)return nullptr;
+      slot.codepoint=cp;
       for(size_t y=0;y<bitmap.rows;++y)for(size_t x=0;x<bitmap.width;++x) {
         const size_t i=y*bitmap.width+x;
         const unsigned ink=(bitmap.buffer[y*bitmap.pitch+x]*3u+127u)/255u;
@@ -219,7 +224,7 @@ class EmbeddedBookFont {
     if(scanned_)return;
     scanned_=true;
     ZipFile zip(package);
-    if(!zip.loadAllFileStatSlims())return;
+    // Named ZIP lookups avoid retaining an archive-wide index for fonts.
     size_t size=0;
     if(!zip.getInflatedFileSize("META-INF/container.xml",&size) || !size || size>256*1024)return;
     ContainerParser container(size);
@@ -239,8 +244,11 @@ class EmbeddedBookFont {
       if(!isSafeEpubItem(sheet) || !zip.getInflatedFileSize(sheet.c_str(),&size) ||
          !size || size>128*1024)continue;
       ArchiveBytes css(zip.readFileToMemory(sheet.c_str(),&size,false),&std::free);
-      if(css)scanCss(std::string(reinterpret_cast<const char*>(css.get()),size),sheet,opf.fontFiles,
-                     documentFamily,declared);
+      if(css) {
+        std::string text(reinterpret_cast<const char*>(css.get()),size);
+        css.reset();
+        scanCss(std::move(text),sheet,opf.fontFiles,documentFamily,declared);
+      }
     }
     if(documentFamily.empty())return;
     size_t budget=2*1024*1024;
@@ -273,6 +281,24 @@ class EmbeddedBookFont {
     return true;
   }
   void releaseGlyphs() {for(auto& face:faces_)face.reset();}
+  void release() {
+    releaseGlyphs();
+    for(auto& source:sources_)source=Source{};
+    if(library_) {FT_Done_FreeType(library_);library_=nullptr;}
+    scanned_=false;
+  }
+  size_t residentSourceBytes() const {
+    size_t bytes=0;
+    for(const auto& source:sources_)if(source.bytes)bytes+=source.size;
+    return bytes;
+  }
+  size_t residentGlyphBytes() const {
+    size_t bytes=0;
+    for(const auto& face:faces_)if(face)
+      for(const auto& slot:face->cache)if(slot.pixels)
+        bytes+=std::max<size_t>(1,slot.glyph.dataLength);
+    return bytes;
+  }
   EpdFontFamily family(uint16_t points) const {
     const auto get=[&](size_t index){return faces_[index]?&faces_[index]->font:nullptr;};
     return EpdFontFamily(points,get(0),get(1),get(2),get(3));

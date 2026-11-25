@@ -74,6 +74,8 @@ public:
         };
         return 0xff000000u|mix(paper,ink,16)|mix(paper,ink,8)|mix(paper,ink,0);
     }
+    static constexpr uint32_t kDefaultLightInk=0x16263a;
+
     // frame[i] is a 32-bit ARGB framebuffer; the caller owns it.
     // bw is CrossPoint's row-major 1-bit black/white image, MSB first.
     // Bit 1 is dark ink, bit 0 light paper. Use only after the page changes.
@@ -91,9 +93,9 @@ public:
             night?lerp(37,18):lerp(253,188)
         };
         const unsigned foreground[3]={
-            night?lerp(181,255):lerp(22,76),
-            night?lerp(207,212):lerp(38,51),
-            night?lerp(230,168):lerp(58,27)
+            night?lerp(181,255):lerp(kDefaultLightInk>>16,76),
+            night?lerp(207,212):lerp((kDefaultLightInk>>8)&0xffu,51),
+            night?lerp(230,168):lerp(kDefaultLightInk&0xffu,27)
         };
         const uint32_t paper=0xff000000u|(background[0]<<16)|(background[1]<<8)|background[2];
         const uint32_t ink=0xff000000u|(foreground[0]<<16)|(foreground[1]<<8)|foreground[2];

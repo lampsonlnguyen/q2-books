@@ -1,88 +1,100 @@
 # Outstanding work
 
-Only unfinished work is listed. Version labels identify feature groups, not guaranteed release numbers. Existing features are documented in [technical reference](TECHNICAL.md). The separate v1.13 font optimization is deferred; retain the existing embedded-font implementation. No new font-engine rewrite is planned.
+The README is the canonical 2.x roadmap. The full outstanding checklist is mirrored here for reference. Existing features are documented in [technical reference](TECHNICAL.md).
 
-### v1.11.0 — Cover Flow customization
+## Development roadmap — 2.x
 
-- [ ] 1.11-M1 — Define bounded settings for cover size, spacing, reflections and animation speed; use firmware-style defaults.
-- [ ] 1.11-M2 — Add themed wheel/touch settings controls and immediate visual preview; support reset to defaults.
-- [ ] 1.11-M3 — Persist settings atomically and clamp invalid values; adapt geometry, hit testing and cache reach consistently.
-- [ ] 1.11-M4 — Test extreme settings, rounded-screen clipping, light/dark themes, rendering cost and idle behavior.
+The 1.x series establishes the core Books experience. Starting with **v2.0.0**, new releases focus on optional enhancements, additional formats, refinement and compatibility rather than rebuilding the reader. Preserve the existing reading engine, user data, UI, responsive controls and low memory/CPU usage on the Q2's 128 MB of shared RAM.
 
-**Acceptance:** Customization stays within safe geometry and memory limits and does not alter reader typography or system theme.
+The following version assignments are planning targets, not release commitments. All unchecked items are outstanding. Hardware validation remains distinct from feature completion; a mature core does not imply that every physical-device test has passed.
 
-### v1.14.0 — Markdown support
+### v2.0.0 — Cover Flow customization
 
-- [ ] 1.14-M1 — Recognize .md files in the local library and define safe conversion to the existing XHTML/layout pipeline (no separate reader).
-- [ ] 1.14-M2 — Support headings, paragraphs, lists, emphasis, links, code blocks, blockquotes and supported local images; document unsupported extensions.
-- [ ] 1.14-M3 — Integrate chapter navigation, reading position, bookmarks, search, typography and library metadata.
-- [ ] 1.14-M4 — Bound conversion resources, handle UTF-8 and malformed input, restrict local paths and disable active/remote content by default; test long and multilingual files.
+- [ ] 2.0-M1 — Define bounded settings for cover size, spacing, reflections and animation speed, using firmware-style defaults.
+- [ ] 2.0-M2 — Add themed wheel/touch settings controls, immediate visual preview and reset to defaults.
+- [ ] 2.0-M3 — Persist settings atomically; clamp invalid values and adapt geometry, hit testing and cache reach consistently.
+- [ ] 2.0-M4 — Test extreme settings, rounded-screen clipping, light/dark themes, rendering cost and idle behavior.
 
-**Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
+Acceptance: customization stays within safe geometry and memory limits without altering reader typography or system theme.
 
-### v1.15.0 — HTML support
+### v2.1.0 — DRM-free MOBI and PRC support
 
-- [ ] 1.15-M1 — Recognize .html and .htm files; adapt safe HTML parsing/repair to the existing reader pipeline.
-- [ ] 1.15-M2 — Support common static HTML text, headings, lists, links, supported CSS and local images; no browser engine or JavaScript execution.
-- [ ] 1.15-M3 — Integrate anchors, navigation, reading state, bookmarks, search and library metadata; keep local resource access confined to allowed paths.
-- [ ] 1.15-M4 — Test malformed HTML, encodings, multilingual pages, missing resources, remote URLs and large documents; document fidelity limits.
+- [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
+- [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.
+- [ ] 2.1-M3 — Stream or incrementally decode supported text and embedded resources into the existing CrossPoint-compatible reading pipeline; reuse pagination, fonts and multilingual rendering rather than creating a separate reader.
+- [ ] 2.1-M4 — Integrate chapter navigation, resume, reading progress, bookmarks, highlights and search where supported; document unsupported formatting and features.
+- [ ] 2.1-M5 — Handle encrypted/DRM-protected, malformed, truncated and unsupported files gracefully, with bounded decompression and readable errors. No DRM removal is planned.
+- [ ] 2.1-M6 — Add host and MIPS/QEMU tests with representative public-domain or synthetic DRM-free files; verify rendering, navigation, resume, latency, peak RAM and battery on physical Q2 hardware.
 
-**Acceptance:** Read local static HTML offline without scripts, unrestricted file access or automatic remote requests.
+Acceptance: supported DRM-free MOBI/PRC books open reliably with the existing reading controls, without regressing EPUB/TXT/Markdown/HTML or exceeding practical Q2 resource limits. Exact legacy MOBI, KF8/hybrid and PalmDOC compatibility is subject to parser evaluation and testing.
 
-### Reading activity hardware validation
+### v2.2.0 — Reader and language enhancements
 
-- [ ] Measure SD writes, idle CPU, and battery during a long reading session on Q2.
-- [ ] Verify screen-off and suspend exclusion with the firmware's power state, and check both activity menus with wheel and touch in light and dark themes.
+- [ ] Native-speaker review of the [menu translations](../crosspoint-core/lang/README.md).
+- [ ] Add Books-specific labels for Japanese, Korean, Thai and Chinese.
+- [ ] Benchmark direct reading TTF/OTF fonts on Q2 before expanding support beyond the current .cpfont files in Fonts/. Keep embedded-font support separate from external reading-font loading.
 
-### In-book search follow-up
+### v2.3.0 — Library and server enhancements
 
-- [ ] Validate EPUB/TXT search on Q2: multilingual queries, chapter boundaries, skipped corrupt chapters, bounded batches, saved anchors, latency and peak RAM. Host TXT/Unicode/multi-batch regression coverage added; execution pending.
+- [ ] Add Kavita highlight synchronization through its separate REST API, including authentication, chapter identifiers and highlight format compatibility (Kavita 0.8.8+). KOReader synchronization currently stores reading position only.
+- [ ] Measure and optimize 4,000-book scanning and folder browsing on a physical Q2 SD card.
 
-### Regression and physical-device validation
+### v2.4.0 — EPUB fidelity and rendering refinement
 
-- [ ] Alphabetical navigation: multilingual 4000-book shelves and rapid wheel input.
+- [ ] Compare the test corpus pixel for pixel with upstream CrossPoint using identical settings; document allowed differences, including ruby and table layout.
+- [ ] Extend the corpus from public-domain excerpts to full-length books with tables, ruby, CJK and Indic text.
+- [ ] Measure chapter-layout RAM and page-turn latency on Q2, including the existing parse changes.
+
+### v2.5.0 — Reading and UI polish
+
+- [ ] Measure page-turn time and battery impact of smooth text (currently draws each new page five times); add a Reading settings switch.
+- [ ] Investigate firmware 12/24-hour clock integration. The current clock is 24-hour only; the system preference is not currently readable by the card app.
+- [ ] Refresh the menu bar clock while a menu remains open.
+- [ ] Add time remaining in the current chapter.
+
+### v2.6.0 — Distribution, documentation and packaging
+
+- [ ] Publish a device compatibility and test report.
+- [ ] Expand the troubleshooting guide and add a user manual.
+- [ ] Complete the font and dependency license audit; bundled font licenses are collected in .books/fonts/CrossPoint-font-licenses.txt.
+- [ ] Coordinate Q2 Pod App Store integration: upstream must remove the reserved books ID (patch/netupdate.c) and enable lampsonlnguyen/q2-books in sources.list. Until then, install from the release ZIP at the SD card root.
+- [ ] Coordinate removal of the duplicate built-in Books Library entry when upstream hands over the name.
+- [ ] Remove the one-time .crosspod migration only after legacy upgrades are complete.
+
+### Continuous validation — existing features and physical-device QA
+
+These checks apply throughout 2.x and do not imply that the listed features still need to be implemented.
+
+**Document formats and reading activity**
+
+- [ ] Markdown: verify chapter links, images, pagination, resume and peak RAM on a physical Q2.
+- [ ] Local HTML: verify chapter navigation, local images, resume and peak RAM.
+- [ ] Reading activity: measure SD writes, idle CPU and battery during long reading sessions.
+- [ ] Verify screen-off and suspend exclusion against firmware power state; test both activity menus using wheel and touch in light/dark themes.
+- [ ] In-book search: validate EPUB/TXT multilingual queries, chapter boundaries, skipped corrupt chapters, bounded batches, saved anchors, latency and peak RAM; run the pending host TXT/Unicode/multi-batch regressions.
+
+**Library, font and layout regressions**
+
+- [ ] Alphabetical navigation: multilingual 4,000-book shelves and rapid wheel input.
 - [ ] Book details: missing/malformed metadata, cache invalidation and localization.
 - [ ] Collections: moves, duplicates, empty groups and interrupted/read-only writes.
 - [ ] Reading status: completion boundaries, legacy state, rereading and missing files.
-- [ ] Recent carousel: empty/single/full history, themes, languages and startup latency.
+- [ ] Recent carousel: empty/single/full history, themes, languages, startup latency, Centre activation and Return to vertical navigation.
 - [ ] Series: multilingual names, standalone titles, mixed metadata, numeric sorting and cache invalidation.
-- [ ] Existing embedded fonts: mixed scripts, fallback, pagination and memory churn; no new optimization branch required.
+- [ ] Embedded fonts: mixed scripts, fallback, pagination and memory churn.
 - [ ] Hyphenation: nested language scopes, mixed scripts, CJK/RTL, font changes and source-anchor resume.
 
-**On a physical Q2 (M1, the release gate for "stable")**
-- Fill a hardware QA matrix: firmware revision, release ZIP SHA-256, SD card type, pass/fail with photos and sanitized logs.
-- Launch from Library; wheel at 10/50/100/200 % sensitivity; fast turns, Back, Centre and touch; auto page turn with and without Smart Awake.
-- Screen off/on and Q2 Pod suspend; resume at the exact paragraph; forced exit during layout and downloads.
-- SD card full, read-only, missing, unplugged and replugged; USB storage mode while running.
-- Slow or missing Wi-Fi; an HTTPS Kavita server: browse, download, push/pull progress, refuse an invalid certificate with a readable error.
-- Idle and active RAM, CPU, SD writes, battery drain and heat over a 30-minute session.
-- Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
+**Physical Q2 stable-release qualification**
 
-**Reader and languages (from M3)**
-- Native-speaker review of the [menu translations](crosspoint-core/lang/README.md) and additional Books-specific labels for Japanese, Korean, Thai and Chinese.
-- Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
+- [ ] Record hardware QA matrix: firmware revision, release ZIP SHA-256, SD card type, pass/fail, photos and sanitized logs.
+- [ ] Launch from Library; test wheel sensitivity at 10/50/100/200%, rapid turns, Back, Centre and touch; auto page turn with and without Smart Awake.
+- [ ] Test screen off/on and firmware suspend; exact-paragraph resume; forced exit during layout and downloads.
+- [ ] Test full, read-only, missing, removed and reinserted SD cards; USB storage mode while running.
+- [ ] Test slow/missing Wi-Fi and HTTPS Kavita browsing, downloads and progress push/pull; reject invalid certificates with a readable error.
+- [ ] Measure idle/active RAM, CPU, SD writes, battery drain and heat over a 30-minute session.
+- [ ] Verify one-time migration of reading positions, bookmarks and settings from .crosspod to .books on upgrade.
 
-**Library and servers (from M4)**
-- Syncing highlights: KOReader sync stores only a position; Kavita 0.8.8+ keeps highlights in its own REST API (its own sign-in, chapter ids and format), not used yet.
-- Measure the 4000-book scan and folder browsing on a Q2's SD card.
+### Deferred / not planned
 
-**EPUB fidelity (M5)**
-- Compare the corpus with upstream CrossPoint pixel for pixel, using the same settings, and document the allowed differences (ruby and tables are not laid out as upstream will show them).
-- Extend coverage from public-domain excerpts to full-length books with tables, ruby, CJK and Indic text.
-- Measure the M5 parse change on a Q2: page-turn time and RAM while a chapter is laid out.
+CBZ, custom reader themes and text-to-speech remain deferred until their resource cost and compatibility can be evaluated. DRM-free MOBI/PRC is now on the active roadmap; DRM-protected ebooks and clickwheel sound integration are not planned.
 
-**Polish (M6)**
-- Measure page-turn time and battery with smooth text on a Q2 (each new page is drawn five times); add a Reading settings switch for it.
-- The clock is 24-hour only: Q2 Pod's 12/24-hour setting is not readable by a card app.
-- Refresh the menu bar's clock while a menu stays open; time left in the chapter.
-
-**Release and packaging (M7)**
-- Compatibility and test report from the device, a troubleshooting guide and a user manual.
-- Font and dependency license audit (the bundled font licenses are collected in `.books/fonts/CrossPoint-font-licenses.txt`; a full audit is pending).
-- Q2 Pod's App Store: upstream must take `books` off its reserved ids (`patch/netupdate.c`) and enable `lampsonlnguyen/q2-books` in `sources.list`; until then, install by extracting the release ZIP to the SD card.
-- Q2 Pod's built-in Books entry and this app both appear in the Library until Q2 Pod hands the name over.
-- Remove the one-time `.crosspod` migration in a later release, once upgrades are done.
-
-### Scope
-
-DRM-free MOBI/PRC, CBZ, custom reader themes and text-to-speech remain outside the active roadmap. Consider only after measuring cost and compatibility.

@@ -29,12 +29,15 @@
 #include "ReadingStatistics.hpp"
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
+#include "HtmlPackage.hpp"
+#include "MarkdownPackage.hpp"
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
 #include "Clippings.hpp"
 #include "UiLanguage.hpp"
 #include "Q2Theme.hpp"
+#include "Q2Display.hpp"
 #include "StatusBar.hpp"
 #include "MenuLayout.hpp"
 #include "UiText.hpp"
@@ -129,7 +132,8 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 24;
+constexpr int kPageWarmthItem = 24;
+constexpr int kTypographyItems = 25;
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -753,11 +757,15 @@ class Reader {
     return base+"/cache";
   }
   static std::string resolvePackage(const std::string& book) {
-    if(!books::isTxtFilename(book))return book;
+    const bool html=books::isHtmlFilename(book);
+    const bool markdown=books::isMarkdownFilename(book);
+    if(!html && !markdown && !books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
-    std::string package=books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"Books: TXT: %s\n",error.c_str());
+    std::string package=html?books::packageHtmlBook(book,stateCacheDir(),error):
+                             markdown?books::packageMarkdownBook(book,stateCacheDir(),error):
+                             books::packageTxtBook(book,stateCacheDir(),error);
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -770,6 +778,8 @@ class Reader {
     for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
+    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_))
+      for(unsigned char byte:packagePath_) {hash^=byte;hash*=1099511628211ull;}
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
     mix(0x434a4b01ull);
@@ -812,11 +822,14 @@ class Reader {
     renderer_.removeFont(publisherFontId);
     upstreamFontId_=fallback;
     if(!upstreamEpub_ || !preferences_.embeddedStyle || !preferences_.bookFonts) {
-      publisherFont_.releaseGlyphs();
+      publisherFont_.release();
       return;
     }
     publisherFont_.scan(packagePath_);
-    if(!publisherFont_.use(static_cast<unsigned>(typography_.size)))return;
+    if(!publisherFont_.use(static_cast<unsigned>(typography_.size))) {
+      publisherFont_.release();
+      return;
+    }
     renderer_.insertFont(publisherFontId,publisherFont_.family(static_cast<uint16_t>(typography_.size)));
     renderer_.addFallbackFont(publisherFontId,fallback);
     for(size_t i=0;i<books::scriptFontSpecs.size();++i)
@@ -1022,7 +1035,10 @@ class Reader {
     // A layout cut short by the exit is not a page to keep: drop that build
     // instead of suspending it, which would cache its pages.
     if(upstreamSection_ && bookslayout::layoutAborted())upstreamSection_->abandonBuild();
-    if(readingStats_)(void)readingStats_->save(true);
+    if(readingStats_) {
+      finishReadingStatistics();
+      (void)readingStats_->save(true);
+    }
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
@@ -1219,7 +1235,7 @@ class Reader {
   // Refresh old SD cards on return from a book, including those that only
   // have a legacy black-and-white cover.
   bool cacheShelfCover() {
-    if(books::isTxtFilename(bookPath_))return false;
+    if(!books::isEpubFilename(bookPath_))return false;
     books::FlowCover cover;
     if(books::loadFlowCover(bookPath_,cover))return true;
     books::PngPreview decoded;
@@ -2131,6 +2147,10 @@ class Reader {
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
       case 7: books::toggleNight(next,systemDark());break;
+      case kPageWarmthItem:
+        if(nightShown())return false;
+        next.pageWarmth=(next.pageWarmth+1)%books::kPageWarmthCount;
+        break;
       case 23: next.bookFonts=!next.bookFonts;break;
       case 16: next.focusReading=!next.focusReading;break;
       case 17: {
@@ -2150,11 +2170,9 @@ class Reader {
           next.autoTurnSeconds?"Over 2 min idle needs Q2 Pod Smart Awake":"";
       return true;
     }
-    if(option==7) {
-      // Inversion is a framebuffer setting; no new Section layout and no
-      // SD cache invalidation are necessary.
+    if(option==7 || option==kPageWarmthItem) {
+      // The raster stores ink coverage. Apply the new palette when presenting.
       preferences_=next;
-      clearRasterCache();
       const bool saved=books::saveReaderPreferences(preferences_);
       typographyNotice_=saved?"":"Reading settings not saved";
       return true;
@@ -2402,7 +2420,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Find in book","Book fonts"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Find in book","Book fonts","Page warmth"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -2422,7 +2440,8 @@ class Reader {
       std::to_string(dictionaryCount())+" "+books::tr("installed"),
       "To Clippings",
       searchMatches_.empty()?"Enter text":"Search matches",
-      preferences_.bookFonts?"On":"Off"
+      preferences_.bookFonts?"On":"Off",
+      nightShown()?"Light only":books::pageWarmthChoices[preferences_.pageWarmth].label
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2638,14 +2657,21 @@ class Reader {
   // never inverted, so smooth text and the theme's zones stay as drawn.
   void applyPagePalette() {
     const auto& t=books::uiTheme();
-    if(t.active()) {
-      if(nightShown()!=systemDark())display_.setPalette(t.box,t.title);
+    const bool darkTheme=systemDark();
+    const bool night=books::nightActive(preferences_,darkTheme);
+    const uint32_t tint=books::readingPaperTint(preferences_,darkTheme);
+    if(tint) {
+      const uint32_t ink=t.active()?(darkTheme?t.box:t.title):books::Q2Display::kDefaultLightInk;
+      display_.setPalette(ink,tint);
+    } else if(t.active()) {
+      if(night!=darkTheme)display_.setPalette(t.box,t.title);
       else books::applyThemePalette(display_);
-      display_.setInverted(false);
-    } else display_.setInverted(nightShown());
+    } else display_.clearPalette();
+    display_.setInverted(!t.active() && night);
   }
   // Menus and dialogs: always the system's theme colours.
   void applyMenuPalette() {
+    display_.clearPalette();
     books::applyThemePalette(display_);
     display_.setInverted(false);
   }
@@ -3490,16 +3516,20 @@ class CardShelf {
   }
   bool recentInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
-    using K=books::PhysicalKind;
     if(browsing_ || optionsOpen_ || onlineMode_)return false;
     const bool step=action==A::Previous || action==A::Next;
-    if(step && recentFocus_ && recentIndices_.size()>1) {
+    if(step && recentFocus_) {
       changeRecent(action==A::Next?1:-1);
       return true;
     }
     if(action==A::Back && recentFocus_) {recentFocus_=false;return true;}
-    // Confirm must reach jumpShortcut first so a held Centre is consumed,
-    // not interpreted as a second short press.
+    if(action==A::Confirm && homeSelection_==-1) {
+      jumpHold_={};
+      if(!recentFocus_) {recentFocus_=true;return true;}
+      recentFocus_=false;
+      homeSelection_=0;
+      return false; // open the currently selected book
+    }
     return false;
   }
   bool canJump() const {
@@ -3572,8 +3602,7 @@ class CardShelf {
   bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
-    const bool canRecent=!browsing_ && !optionsOpen_ && !onlineMode_ && homeSelection_==0 && recentIndices_.size()>1;
-    if(!browsing_ && !canRecent) {jumpHold_={};return false;}
+    if(!browsing_) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
     if(action==A::Next || action==A::Previous || action==A::Back)jumpHold_={};
@@ -3582,7 +3611,6 @@ class CardShelf {
       const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
           ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
       jumpHold_={};
-      if(held && canRecent) {recentFocus_=true;return true;}
       if(!browsing_ && action==A::Confirm)recentFocus_=false;
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
         if(hasBookRow())showLocalInfo();
@@ -4259,7 +4287,8 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
-      const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,2);
+      const int first=books_.empty()?1:(recentIndices_.size()>1?-1:0);
+      const int next=std::clamp(homeSelection_+direction,first,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
       recentFocus_=false;
@@ -4310,7 +4339,7 @@ class CardShelf {
       if(y>=HOME_CARD_TOP && y<HOME_CARD_BOTTOM && !books_.empty()) {
         if(x<18 || x>=HOME_CARD_RIGHT)return false;
         if(x>=HOME_NAV_X && recentIndices_.size()>1) {
-          homeSelection_=0;
+          homeSelection_=-1;
           recentFocus_=true;
           changeRecent(x<HOME_NAV_MID?-1:1);
           present();
@@ -5147,7 +5176,7 @@ class CardShelf {
           if(recentChoice_+1<recentIndices_.size())drawCompactLabel(337,115,">",176,HOME_CARD_RIGHT);
           const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
           drawCompactLabel(298,145,page.c_str(),138,HOME_CARD_RIGHT);
-          if(recentFocus_)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
+          if(homeSelection_==-1)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
         }
       } else {
         drawRowLabel(20,90,50,"No books yet");
@@ -5303,8 +5332,7 @@ class CardShelf {
         }
       }
     }
-    // The footer strip holds a notice, or the details screen's action (a
-    // tap there downloads); no control hints: the Q2's keys are known.
+    // The footer strip holds notices, page counts, and screen actions.
     const bool activityPages=activityScreen_==ActivityScreen::ByBook &&
         activityBooks_.size()>VISIBLE_ROWS;
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
@@ -6066,7 +6094,7 @@ int runCardApp(const std::string& bookDir) {
             reader->showDictionaryList(0);
             continue;
           }
-          if(typeSelection==23) {
+          if(typeSelection==23 || typeSelection==kPageWarmthItem) {
             (void)reader->adjustPreference(typeSelection);
             reader->showTypographyMenu(typeSelection);
             continue;
@@ -6166,7 +6194,6 @@ int runCardApp(const std::string& bookDir) {
         continue;
       }
       if(action==books::LogicalAction::Back) {
-        reader->finishReadingStatistics();
         (void)reader->cacheShelfCover();
         reader.reset(); // close book/cache BEFORE reopening the card shelf
         books::sortShelfBooks(books,sortMode,recent);
@@ -6412,7 +6439,7 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice("Opening EPUB...");
+      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":"Opening book...");
       shelf->present();
     }
     auto next=std::make_unique<Reader>(chosen);
@@ -6420,7 +6447,8 @@ int runCardApp(const std::string& bookDir) {
     if(interrupted)break;
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home
-      shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
+      shelf->setNotice(userGuide?"Cannot read userguide":
+          books::isHtmlFilename(chosen)?"Cannot read this HTML file":"Cannot read this book");
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
@@ -6529,9 +6557,14 @@ int main(int argc,char** argv) {
     if(!books::recordRecentBook(argv[2]) || !books::recordRecentBook(argv[3]))return 1;
     CardShelf shelf(shelfBooks);
     if(!shelf.open() || shelf.bookPath()!=argv[3])return 2;
-    // Home wheel navigation is independent until a carousel arrow or hold
-    // explicitly enters carousel focus.
+    // Home wheel navigation remains vertical until Centre activates the carousel.
     if(shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[3])return 2;
+    if(!shelf.change(-1) || !shelf.recentInput(A::Confirm,{}) ||
+       !shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2] ||
+       !shelf.recentInput(A::Back,{}) || shelf.recentInput(A::Previous,{K::WheelStep,0}) ||
+       !shelf.change(1) || !shelf.change(-1) || !shelf.recentInput(A::Confirm,{}) ||
+       !shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3] ||
+       shelf.recentInput(A::Confirm,{}) || !shelf.change(-1))return 2;
     if(shelf.tap(340,115) || shelf.bookPath()!=argv[2])return 2;
     if(!shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3])return 2;
     if(!shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2])return 2;
@@ -6576,6 +6609,20 @@ int main(int argc,char** argv) {
         info.identifier.c_str(),info.description.c_str(),info.series.c_str(),
         static_cast<double>(info.volume.value_or(-1.f)));
     return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-reading-resume")==0) {
+    books::ReadingPosition expected;
+    {
+      Reader reader(argv[2]);
+      if(!reader.open(true) || !reader.goToChapter(1) || !reader.rememberPage())return 1;
+      expected=reader.currentPosition();
+      if(expected.spine<=0)return 2;
+    }
+    Reader reopened(argv[2]);
+    if(!reopened.open(true))return 3;
+    const auto actual=reopened.currentPosition();
+    return expected.spine==actual.spine && expected.page==actual.page &&
+           expected.textOffset==actual.textOffset ? 0 : 4;
   }
   if(argc==4 && std::strcmp(argv[1],"--test-book-search")==0) {
     Reader reader(argv[2]);
@@ -6663,7 +6710,7 @@ int main(int argc,char** argv) {
     CardShelf shelf(empty);
     if(!shelf.open() || !shelf.browseChosen() || shelf.change(-1) ||
        !shelf.change(1) || !shelf.optionsChosen())return 1;
-    if(!shelf.tap(28,245) || !shelf.optionsChosen())return 2;
+    if(!shelf.tap(28,250) || !shelf.optionsChosen())return 2;
     shelf.enterOptions();
     if(!shelf.optionsOpen() || !shelf.sortChosen() || shelf.browseChosen() ||
        shelf.change(-1))return 3;
@@ -6694,7 +6741,7 @@ int main(int argc,char** argv) {
     if(!shelf.sortChosen())return 14;
     shelf.closeOptions();
     if(shelf.optionsOpen() || !shelf.optionsChosen() || shelf.change(1) ||
-       !shelf.tap(28,220) || !shelf.browseChosen())return 15;
+       shelf.tap(28,270) || !shelf.tap(28,220) || !shelf.browseChosen())return 15;
     return 0;
   }
   if(argc==2 && std::strcmp(argv[1],"--test-grid-shelf")==0) {
@@ -7205,7 +7252,7 @@ int main(int argc,char** argv) {
     path=argv[1];
   } else { usage();return 2; }
   if (!books::isBookFilename(path)) {
-    std::fputs("Books: open an .epub or .txt book\n",stderr);
+    std::fputs("Books: open an .epub, .txt, .md, .html or .htm book\n",stderr);
     return 2;
   }
   if(!dry && onCard)(void)books::migrateLegacyState();
@@ -7333,7 +7380,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,22,23,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,kPageWarmthItem,16,17,18,21,22,23,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
@@ -7471,7 +7518,7 @@ int main(int argc,char** argv) {
       continue;
     }
     if(action==books::LogicalAction::Back) {
-      reader.finishReadingStatistics();break;
+      break;
     }
     if(action==books::LogicalAction::Next)changed=reader.move(1,true);
     if(action==books::LogicalAction::Previous)changed=reader.move(-1);

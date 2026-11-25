@@ -76,6 +76,7 @@ Home	Home	Trang chủ
 Current book	Current book	Sách đang đọc
 No books yet	No books yet	Chưa có sách
 Continue reading	Continue reading	Đọc tiếp
+Hold Centre to browse	Hold Centre to browse	Giữ nút giữa để duyệt
 Browse files	Browse files	Duyệt sách
 Sort: 	Sort: 	Xếp: 
 Title A-Z	Title A-Z	Tên A-Z
@@ -273,3 +274,9 @@ finished	finished	sách đã đọc xong
 days	days	ngày
 No reading activity	No reading activity	Chưa có hoạt động đọc
 Could not save goal	Could not save goal	Không thể lưu mục tiêu
+Page warmth	Page warmth	Tông màu trang
+Cool	Cool	Mát
+Default	Default	Mặc định
+Warm	Warm	Ấm
+Warmer	Warmer	Ấm hơn
+Light only	Light only	Chỉ chế độ sáng

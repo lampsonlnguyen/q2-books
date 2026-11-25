@@ -5188,11 +5188,6 @@ class CardShelf {
         drawRowLabel(22,y,HOME_ROW_H,homeLabels[row]);
         if(homeSelection_==row)books::paintSelection(display_,12,y,350,HOME_ROW_H);
       }
-      if(homeSelection_==-1 && multiple && notice_.empty()) {
-        constexpr int baseline=300;
-        const int inset=books::MenuLayout::cornerX(baseline-18,22);
-        drawCompactLabel(inset,baseline,recentFocus_?"Wheel: browse  Return: back":"Centre: browse recent books",145,375-inset);
-      }
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};

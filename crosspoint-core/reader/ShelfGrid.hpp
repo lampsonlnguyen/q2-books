@@ -18,17 +18,19 @@ inline int hit(int x,int y) {
   return (y-top)/tileHeight*columns+col;
 }
 inline size_t pageStart(size_t selected) {return selected/pageSize*pageSize;}
-inline void drawCover(uint32_t* frame,const FlowCover& cover,Tile cell) {
+inline void drawThumbnail(uint32_t* frame,const FlowCover& cover,int left,int top,int width,int height) {
   if(!cover.valid())return;
-  constexpr int maxWidth=tileWidth-18;
-  int w=maxWidth,h=coverHeight;
+  int w=width,h=height;
   if(cover.width*h>cover.height*w)h=std::max(1,int(cover.height*w/cover.width));
   else w=std::max(1,int(cover.width*h/cover.height));
-  const int x=cell.x+(tileWidth-w)/2,y=cell.y+4+(coverHeight-h)/2;
+  const int x=left+(width-w)/2,y=top+(height-h)/2;
   for(int py=0;py<h;++py) {
     const auto* source=cover.pixels.data()+size_t(py*cover.height/h)*cover.width;
     auto* target=frame+(y+py)*flow::width+x;
     for(int px=0;px<w;++px)target[px]=0xff000000u|flow::rgb(source[px*cover.width/w]);
   }
+}
+inline void drawCover(uint32_t* frame,const FlowCover& cover,Tile cell) {
+  drawThumbnail(frame,cover,cell.x+9,cell.y+4,tileWidth-18,coverHeight);
 }
 } // namespace books::grid

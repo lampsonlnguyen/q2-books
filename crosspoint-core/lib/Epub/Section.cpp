@@ -89,7 +89,8 @@ namespace {
 //      data), and TextBlocks store each complex-script word's drawn form so page turns
 //      never shape.
 // v77: Implicit paragraph closes change layout in malformed XHTML chapters.
-constexpr uint8_t SECTION_FILE_VERSION = 77;
+// v78: per-word language overrides can change line breaks.
+constexpr uint8_t SECTION_FILE_VERSION = 78;
 // Written into the version field while a build is in progress; patched to
 // SECTION_FILE_VERSION only when the build is finalized. An abandoned /
 // crash-interrupted .bin therefore carries version 0, which loadSectionFile rejects

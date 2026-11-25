@@ -43,28 +43,27 @@ constexpr size_t MAX_METADATA_TEXT = 512;
 constexpr size_t MAX_COLLECTION_CANDIDATES = 8;
 
 void appendMetadataText(std::string& out, const XML_Char* text, const int len, bool& spacePending,
-                        bool* separatorPending = nullptr) {
-  if (out.size() >= MAX_METADATA_TEXT) return;  // already clamped and logged
-  for (int i = 0; i < len; i++) {
-    const char c = text[i];
+                        bool* separatorPending = nullptr, size_t maxBytes = MAX_METADATA_TEXT) {
+  for (int i = 0; i < len; ++i) {
+    const auto c = static_cast<unsigned char>(text[i]);
     if (isXmlWhitespace(c)) {
       spacePending = true;
       continue;
     }
-
-    if (out.size() >= MAX_METADATA_TEXT) {
-      LOG_DBG("COF", "Metadata text exceeds %u bytes; truncating", static_cast<unsigned>(MAX_METADATA_TEXT));
-      return;
-    }
-    if (separatorPending != nullptr && *separatorPending) {
+    // Expat delivers valid UTF-8 codepoints, but the byte limit must not split one.
+    const size_t bytes = c < 0x80 ? 1 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : 4;
+    const bool separate = separatorPending && *separatorPending;
+    const size_t spaces = separate ? 2 : spacePending && !out.empty() ? 1 : 0;
+    if (bytes > static_cast<size_t>(len - i) || out.size() + spaces + bytes > maxBytes) return;
+    if (separate) {
       out.append(", ");
       *separatorPending = false;
-      spacePending = false;
-    } else if (spacePending && !out.empty()) {
+    } else if (spaces) {
       out.push_back(' ');
     }
     spacePending = false;
-    out.push_back(c);
+    out.append(text + i, bytes);
+    i += static_cast<int>(bytes) - 1;
   }
 }
 
@@ -216,8 +215,26 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
   }
 
   if (self->state == IN_METADATA && xmlLocalNameEquals(name, "language")) {
-    self->state = IN_BOOK_LANGUAGE;
-    self->metadataSpacePending = false;
+    if (self->language.empty()) {
+      self->state = IN_BOOK_LANGUAGE;
+      self->metadataSpacePending = false;
+    }
+    return;
+  }
+
+  if (self->state == IN_METADATA && xmlLocalNameEquals(name, "publisher")) {
+    if (self->publisher.empty()) {
+      self->state = IN_BOOK_PUBLISHER;
+      self->metadataSpacePending = false;
+    }
+    return;
+  }
+
+  if (self->state == IN_METADATA && xmlLocalNameEquals(name, "description")) {
+    if (self->description.empty()) {
+      self->state = IN_BOOK_DESCRIPTION;
+      self->metadataSpacePending = false;
+    }
     return;
   }
 
@@ -358,6 +375,13 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
       }
     }
 
+    if (self->fontFiles.size() < 32 && href.size() < 1024 &&
+        (mediaType == "font/ttf" || mediaType == "font/otf" || mediaType == "application/font-sfnt" ||
+         mediaType == "application/x-font-ttf" || mediaType == "application/x-font-opentype" ||
+         mediaType == "application/vnd.ms-opentype")) {
+      self->fontFiles.push_back(href);
+    }
+
     // Collect CSS files
     if (mediaType == MEDIA_TYPE_CSS) {
       self->cssFiles.push_back(href);
@@ -488,6 +512,15 @@ void XMLCALL ContentOpfParser::characterData(void* userData, const XML_Char* s, 
     return;
   }
 
+  if (self->state == IN_BOOK_PUBLISHER) {
+    appendMetadataText(self->publisher, s, len, self->metadataSpacePending);
+    return;
+  }
+  if (self->state == IN_BOOK_DESCRIPTION) {
+    appendMetadataText(self->description, s, len, self->metadataSpacePending, nullptr, 4096);
+    return;
+  }
+
   if (self->state == IN_BOOK_IDENTIFIER) {
     appendMetadataText(self->identifierText, s, len, self->metadataSpacePending);
     return;
@@ -540,7 +573,14 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
     return;
   }
 
+  if ((self->state == IN_BOOK_PUBLISHER && xmlLocalNameEquals(name, "publisher")) ||
+      (self->state == IN_BOOK_DESCRIPTION && xmlLocalNameEquals(name, "description"))) {
+    self->state = IN_METADATA;
+    return;
+  }
+
   if (self->state == IN_BOOK_IDENTIFIER && xmlLocalNameEquals(name, "identifier")) {
+    if (self->identifier.empty()) self->identifier = self->identifierText;
     const std::string scheme = lowerAscii(self->identifierScheme);
     if (self->isbn.empty() &&
         (scheme.find("isbn") != std::string::npos || hasMetadataPrefix(self->identifierText, "isbn"))) {

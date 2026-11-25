@@ -31,6 +31,8 @@ inline bool shouldAbort() {
 inline bool layoutAborted() { return abortedFlag; }
 }  // namespace bookslayout
 
+class LanguageHyphenator;
+
 class ParsedText {
   // Word text lives in wordStore (chunked bump arena, NUL-terminated entries);
   // words holds 8-byte handles into it. This replaces the former
@@ -47,6 +49,8 @@ class ParsedText {
   WordStore wordStore;
   std::deque<WordStore::StoredWord> words;
   std::vector<EpdFontFamily::Style> wordStyles;
+  // Allocated only when a word explicitly overrides the book language.
+  std::vector<const LanguageHyphenator*> wordHyphenation_;
   // Boundary flags use all four combinations:
   //   continues=false, noSpace=false: ordinary breakable word gap
   //   continues=false, noSpace=true:  breakable zero-width, stretchable CJK/Korean gap
@@ -165,7 +169,8 @@ class ParsedText {
   ~ParsedText() = default;
 
   void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false,
-               uint32_t visibleTextOffset = 0, uint8_t linkId = 0, uint8_t sizeSlot = 0, bool noSpaceBefore = false);
+               uint32_t visibleTextOffset = 0, uint8_t linkId = 0, uint8_t sizeSlot = 0, bool noSpaceBefore = false,
+               const LanguageHyphenator* const* languageOverride = nullptr);
   uint8_t addLinkTarget(const char* href);
   bool linkTargetMatches(uint8_t linkId, const char* href) const;
   void setRubyForWordAt(size_t index, const std::string& ruby);

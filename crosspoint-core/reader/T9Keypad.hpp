@@ -75,7 +75,11 @@ class T9Keypad {
     const bool repeat = key == last_ && now - lastAt_ <= std::chrono::milliseconds(kT9RepeatMs);
     switch (key) {
       case Delete:
-        if (!text.empty()) text.pop_back();
+        if (!text.empty()) {
+          size_t start = text.size() - 1;
+          while (start && (static_cast<unsigned char>(text[start]) & 0xc0) == 0x80) --start;
+          text.erase(start);
+        }
         forget();
         return T9Result::Typed;
       case Clear:

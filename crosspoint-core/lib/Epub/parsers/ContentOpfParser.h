@@ -19,6 +19,8 @@ class ContentOpfParser final : public Print {
     IN_BOOK_TITLE,
     IN_BOOK_AUTHOR,
     IN_BOOK_LANGUAGE,
+    IN_BOOK_PUBLISHER,
+    IN_BOOK_DESCRIPTION,
     IN_BOOK_IDENTIFIER,
     IN_META_TEXT,
     IN_MANIFEST,
@@ -26,8 +28,8 @@ class ContentOpfParser final : public Print {
     IN_GUIDE,
   };
 
-  const std::string& cachePath;
-  const std::string& baseContentPath;
+  const std::string cachePath;
+  const std::string baseContentPath;
   size_t remainingSize;
   XML_Parser parser = nullptr;
   ParserState state = START;
@@ -86,6 +88,9 @@ class ContentOpfParser final : public Print {
   std::string title;
   std::string author;
   std::string language;
+  std::string publisher;
+  std::string description;
+  std::string identifier;
   std::string isbn;
   std::string asin;
   std::string series;
@@ -95,6 +100,7 @@ class ContentOpfParser final : public Print {
   std::string coverItemHref;
   std::string guideCoverPageHref;  // Guide reference with type="cover" or "cover-page" (points to XHTML wrapper)
   std::string textReferenceHref;
+  std::vector<std::string> fontFiles;  // bounded, supported sfnt manifest resources
   std::vector<std::string> cssFiles;  // CSS stylesheet paths
 
   explicit ContentOpfParser(const std::string& cachePath, const std::string& baseContentPath, const size_t xmlSize,

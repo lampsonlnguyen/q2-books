@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstddef>
 #include <ctime>
+#include <cstdint>
 #include <dirent.h>
 #include <string>
 #include <string_view>
@@ -18,6 +19,7 @@ struct ShelfEntry {
   std::string path;
   std::string label;
   std::time_t modified=0;
+  uint64_t bytes=0;
 };
 
 struct ShelfScanLimits {
@@ -85,7 +87,7 @@ inline std::vector<ShelfEntry> scanCardBooks(
       if(!S_ISREG(st.st_mode) || !isBookFilename(filename) ||
          books.size()>=limits.maxBooks)continue;
       const size_t extension=isTxtFilename(filename)?4:5;  // ".txt" or ".epub"
-      books.push_back({path,filename.substr(0,filename.size()-extension),st.st_mtime});
+      books.push_back({path,filename.substr(0,filename.size()-extension),st.st_mtime,static_cast<uint64_t>(st.st_size)});
     }
     closedir(dir);
     std::sort(nested.begin(),nested.end(),

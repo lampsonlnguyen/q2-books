@@ -1,4 +1,5 @@
 #include "ChapterHtmlSlimParser.h"
+#include "hyphenation/Hyphenator.h"
 
 #include <ComplexShaper.h>
 #include <FsHelpers.h>
@@ -753,7 +754,8 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
           ? currentTextBlock->sizeSlotFor(std::clamp(inlineScale, 0.5f, 3.0f))
           : 0;
   currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues, partWordVisibleOffset, linkId,
-                            sizeSlot, effectivePreserveWhitespace);
+                            sizeSlot, effectivePreserveWhitespace,
+                            languageScopes_.empty() ? nullptr : &languageScopes_.back().rules);
   if (insideTableCell && !tableRowStacked) {
     tableRowTextBytes += wordBytes;
     size_t rowWords = currentTextBlock->size();
@@ -1382,6 +1384,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   std::string styleAttr;
   std::string dirAttr;
   const char* idAttr = "";
+  const char* language = nullptr;
   bool hasHiddenAttr = false;
   if (atts != nullptr) {
     for (int i = 0; atts[i]; i += 2) {
@@ -1414,10 +1417,21 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         }
       } else if (strcmp(atts[i], "dir") == 0) {
         dirAttr = atts[i + 1];
+      } else if (strcmp(atts[i], "xml:lang") == 0 ||
+                 (!language && strcmp(atts[i], "lang") == 0)) {
+        language = atts[i + 1];
       } else if (strcmp(atts[i], "hidden") == 0) {
         hasHiddenAttr = true;
       }
     }
+  }
+
+  if (language && self->hyphenationEnabled && self->languageScopes_.size() < 32) {
+    if (self->partWordBufferIndex > 0) {
+      self->flushPartWordBuffer();
+      self->nextWordContinues = true;
+    }
+    self->languageScopes_.push_back({self->depth, Hyphenator::rulesFor(language)});
   }
 
   auto centeredBlockStyle = BlockStyle();
@@ -2616,6 +2630,13 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
   if (self->stopRequested) return;
   if (self->nonVisibleTextDepth > 0) {
     self->nonVisibleTextDepth--;
+  }
+  if (!self->languageScopes_.empty() && self->languageScopes_.back().depth == self->depth - 1) {
+    if (self->partWordBufferIndex > 0) {
+      self->flushPartWordBuffer();
+      self->nextWordContinues = true;
+    }
+    self->languageScopes_.pop_back();
   }
 
   // Ruby text: </rt> distributes ruby to base words, </ruby> resets ruby state

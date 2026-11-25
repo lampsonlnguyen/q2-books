@@ -42,6 +42,8 @@ Acceptance: customization stays within safe geometry and memory limits without a
 
 ### v2.1.0 — DRM-free MOBI and PRC support
 
+Initial implementation (pending build and device validation): legacy MOBI and PalmDOC PRC, uncompressed/PalmDOC compression, UTF-8/Windows-1252, and basic text/HTML import through the existing reader. Decoded text is limited to 1 MiB; embedded images, full metadata, file-position links, KF8 and Huffman/CDIC remain outstanding. DRM-protected files are rejected.
+
 - [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
 - [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.
 - [ ] 2.1-M3 — Stream or incrementally decode supported text and embedded resources into the existing CrossPoint-compatible reading pipeline; reuse pagination, fonts and multilingual rendering rather than creating a separate reader.

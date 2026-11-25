@@ -5185,6 +5185,11 @@ class CardShelf {
         drawRowLabel(22,y,HOME_ROW_H,homeLabels[row]);
         if(homeSelection_==row)books::paintSelection(display_,12,y,350,HOME_ROW_H);
       }
+      if(homeSelection_==0 && multiple && notice_.empty()) {
+        constexpr int baseline=300;
+        const int inset=books::MenuLayout::cornerX(baseline-18,22);
+        drawCompactLabel(inset,baseline,"Hold Centre to browse",145,375-inset);
+      }
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.
       static const char* const fieldNames[4]={"Server name","Catalog URL","User name","Password"};
@@ -5329,8 +5334,7 @@ class CardShelf {
         }
       }
     }
-    // The footer strip holds a notice, or the details screen's action (a
-    // tap there downloads); no control hints: the Q2's keys are known.
+    // The footer strip holds notices, page counts, and screen actions.
     const bool activityPages=activityScreen_==ActivityScreen::ByBook &&
         activityBooks_.size()>VISIBLE_ROWS;
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)

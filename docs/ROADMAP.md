@@ -20,14 +20,9 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 **Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
 
-### v1.15.0 — HTML support
+### Local HTML hardware validation
 
-- [ ] 1.15-M1 — Recognize .html and .htm files; adapt safe HTML parsing/repair to the existing reader pipeline.
-- [ ] 1.15-M2 — Support common static HTML text, headings, lists, links, supported CSS and local images; no browser engine or JavaScript execution.
-- [ ] 1.15-M3 — Integrate anchors, navigation, reading state, bookmarks, search and library metadata; keep local resource access confined to allowed paths.
-- [ ] 1.15-M4 — Test malformed HTML, encodings, multilingual pages, missing resources, remote URLs and large documents; document fidelity limits.
-
-**Acceptance:** Read local static HTML offline without scripts, unrestricted file access or automatic remote requests.
+- [ ] Verify chapter navigation, local image rendering, resume, and peak RAM on a physical Q2.
 
 ### Reading activity hardware validation
 

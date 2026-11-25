@@ -559,6 +559,7 @@ add_test(NAME crosspoint_vietnamese_book_page_preview
 # TextBlock and full linked GfxRenderer. The POSIX XHTML text-block collector
 # remains temporary until ChapterHtmlSlimParser/CSS/images are fully ported.
 add_executable(books-reader
+    reader/HtmlPackage.cpp
     reader/books_reader.cpp
     lib/KOReaderSync/ChapterXPathResolver.cpp
     lib/KOReaderSync/ProgressMapper.cpp
@@ -861,6 +862,10 @@ add_custom_target(long_epub_fixture ALL DEPENDS "${LONG_EPUB_FIXTURE}")
 add_dependencies(books-reader long_epub_fixture)
 add_test(NAME books_reader_records_real_page_turns
     COMMAND books-reader --test-reading-statistics "${LONG_EPUB_FIXTURE}")
+add_test(NAME books_html_library_and_reader
+    COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_html_reader.py"
+      "$<TARGET_FILE:books-reader>")
 add_test(NAME books_reader_txt_and_go_to_percent
     COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/tests/txt_progress_test.py"

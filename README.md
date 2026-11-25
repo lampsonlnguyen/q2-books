@@ -23,7 +23,7 @@ Source features may be ahead of the last successfully published binary. CI and p
 
 ## Controls
 
-Wheel moves through menus and pages; Centre opens/confirms; Back returns or exits. On Home, hold Centre on Continue Reading to focus the recent carousel, then turn the wheel and press Centre to resume. Browse files supports A–Z jump and Library tools; a longer Centre hold opens Book Details. Reading settings provide typography, search and other reader options. While reading in light mode, select **Page warmth** to cycle through Cool, Default, Warm and Warmer. Books saves the choice for your next reading session.
+Wheel moves through menus and pages; Centre opens/confirms; Back returns or exits. On Home, turn the wheel up from Continue Reading to highlight the recent carousel, press Centre to activate it, turn the wheel to browse books, and press Centre to resume or Return to restore vertical navigation. Browse files supports A–Z jump and Library tools; a longer Centre hold opens Book Details. Reading settings provide typography, search and other reader options. While reading in light mode, select **Page warmth** to cycle through Cool, Default, Warm and Warmer. Books saves the choice for your next reading session.
 
 ## Development
 

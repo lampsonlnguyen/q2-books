@@ -3129,6 +3129,7 @@ class CardShelf {
   size_t seriesScan_=0;
   std::string collectionInput_;
   bool collectionRename_=false;
+  std::string collectionCreateForBook_;
   books::ShelfBookInfo localInfo_;
   std::vector<std::string> localInfoLines_;
   size_t localInfoScroll_=0;
@@ -4428,6 +4429,8 @@ class CardShelf {
       case LibraryMenu::Membership:
         for(const auto& group:collections_.groups)
           rows.push_back(std::string(group.second.count(bookPath())?"[x] ":"[ ] ")+group.first);
+        if(collections_.groups.size()<books::Collections::maxCollections)
+          rows.push_back(books::tr("New collection"));
         break;
       default:break;
     }
@@ -4436,8 +4439,10 @@ class CardShelf {
   bool storeCollections(books::Collections next) {
     if(hasBookRow()) {
       const auto& path=bookPath();
-      if(books::collectionsContain(next,path) && !next.identities.count(path))
-        next.identities[path]=books::collectionIdentity(path);
+      if(books::collectionsContain(next,path) && !next.identities.count(path)) {
+        const auto identity=books::collectionIdentity(path);
+        if(books::Collections::validIdentity(identity))next.identities[path]=identity;
+      }
     }
     for(auto it=next.identities.begin();it!=next.identities.end();) {
       if(!books::collectionsContain(next,it->first))it=next.identities.erase(it);
@@ -4447,7 +4452,8 @@ class CardShelf {
     collections_=std::move(next);
     return true;
   }
-  void startCollectionName(bool rename) {
+  void startCollectionName(bool rename,bool forBook=false) {
+    collectionCreateForBook_=forBook && hasBookRow()?bookPath():std::string();
     collectionRename_=rename;
     collectionInput_=rename?collectionName_:std::string();
     searchKey_=books::T9Keypad::Abc;
@@ -4459,7 +4465,10 @@ class CardShelf {
     using K=books::PhysicalKind;
     const bool touch=event.kind==K::TouchUp;
     if(action==A::Back || (touch && event.y<74)) {
-      openLibraryMenu(collectionRename_?LibraryMenu::Collection:LibraryMenu::Collections);
+      const bool forBook=!collectionCreateForBook_.empty();
+      collectionCreateForBook_.clear();
+      openLibraryMenu(collectionRename_?LibraryMenu::Collection:
+          forBook?LibraryMenu::Membership:LibraryMenu::Collections);
       return false;
     }
     bool activate=action==A::Confirm;
@@ -4467,7 +4476,10 @@ class CardShelf {
     if(action==A::Previous)searchKey_=(searchKey_+SEARCH_KEY_COUNT-1)%SEARCH_KEY_COUNT;
     if(touch && event.x>=KB_X && event.y>=KB_Y) {
       const auto col=(event.x-KB_X)/(KB_W+KB_GAP),row=(event.y-KB_Y)/(KB_H+KB_GAP);
-      if(row<4 && col<4) {searchKey_=static_cast<size_t>(4*row+col);activate=true;}
+      if(row<4 && col<4 && (event.x-KB_X)%(KB_W+KB_GAP)<KB_W &&
+         (event.y-KB_Y)%(KB_H+KB_GAP)<KB_H) {
+        searchKey_=static_cast<size_t>(4*row+col);activate=true;
+      }
     }
     if(!activate)return false;
     if(keypad_.press(static_cast<int>(searchKey_),collectionInput_,books::Collections::maxNameBytes)!=
@@ -4482,13 +4494,23 @@ class CardShelf {
     auto next=collections_;
     if(collectionRename_) {
       auto existing=next.groups.extract(collectionName_);
+      if(existing.empty()) {notice_="Collection name unavailable";return false;}
       existing.key()=collectionInput_;
       next.groups.insert(std::move(existing));
-    } else next.groups[collectionInput_];
+    } else {
+      auto& group=next.groups[collectionInput_];
+      if(!collectionCreateForBook_.empty())group.insert(collectionCreateForBook_);
+    }
     if(!storeCollections(std::move(next)))return false;
     if(collectionFilter_==collectionName_ && collectionRename_)collectionFilter_=collectionInput_;
     collectionName_=collectionInput_;
-    openLibraryMenu(LibraryMenu::Collection);
+    const bool forBook=!collectionCreateForBook_.empty();
+    collectionCreateForBook_.clear();
+    if(forBook) {
+      openLibraryMenu(LibraryMenu::Membership);
+      const auto group=collections_.groups.find(collectionName_);
+      libraryChoice_=static_cast<size_t>(std::distance(collections_.groups.begin(),group));
+    } else openLibraryMenu(LibraryMenu::Collection);
     return false;
   }
   void setLibraryFilter(bool favorites,std::string collection={},std::string series={}) {
@@ -4507,7 +4529,12 @@ class CardShelf {
     const bool touch=event.kind==K::TouchUp;
     if(libraryMenu_==LibraryMenu::Name)return collectionNameInput(action,event);
     if(action==A::Back || (touch && event.y<74)) {
-      if(libraryMenu_==LibraryMenu::Collection)openLibraryMenu(LibraryMenu::Collections);
+      if(libraryMenu_==LibraryMenu::Collection) {
+        openLibraryMenu(LibraryMenu::Collections);
+        const auto group=collections_.groups.find(collectionName_);
+        if(group!=collections_.groups.end())
+          libraryChoice_=1+static_cast<size_t>(std::distance(collections_.groups.begin(),group));
+      }
       else if(libraryMenu_==LibraryMenu::Tools ||
               (libraryMenu_==LibraryMenu::Info && !localInfoFromTools_))openLibraryMenu(LibraryMenu::None);
       else openLibraryMenu(LibraryMenu::Tools);
@@ -4566,7 +4593,10 @@ class CardShelf {
             auto next=collections_;
             const auto path=bookPath();
             if(!next.favorites.erase(path))next.favorites.insert(path);
-            if(storeCollections(std::move(next)))refreshVisible();
+            if(storeCollections(std::move(next))) {
+              refreshVisible();
+              if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::None);
+            }
             break;
           }
           case 6:openLibraryMenu(LibraryMenu::Membership);break;
@@ -4595,6 +4625,10 @@ class CardShelf {
         }
         break;
       case LibraryMenu::Membership: {
+        if(!hasBookRow()) {openLibraryMenu(LibraryMenu::None);break;}
+        if(libraryChoice_==collections_.groups.size()) {
+          startCollectionName(false,true);break;
+        }
         auto next=collections_;
         auto group=next.groups.begin();
         std::advance(group,libraryChoice_);
@@ -4602,7 +4636,7 @@ class CardShelf {
         if(!group->second.erase(path))group->second.insert(path);
         if(storeCollections(std::move(next))) {
           refreshVisible();
-          if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::Tools);
+          if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::None);
         }
         break;
       }

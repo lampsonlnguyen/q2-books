@@ -6,6 +6,9 @@
 #include "HtmlPackage.hpp"
 #include <array>
 #include <memory>
+#include <map>
+#include <set>
+#include <charconv>
 #include <fcntl.h>
 
 namespace books {
@@ -79,6 +82,8 @@ inline std::string windows1252(std::string_view text) {
 struct Book {
   std::string text,title,author,publisher,description,isbn,asin,language,cover;
   bool html=false,hasCover=false;
+  std::vector<size_t> imageOffsets;
+  size_t firstImage=0;
 };
 inline std::string metadataText(std::string_view raw,unsigned encoding,size_t limit=1000) {
   if(raw.size()>limit)return {};
@@ -91,6 +96,116 @@ inline std::string metadataText(std::string_view raw,unsigned encoding,size_t li
 }
 inline bool imageRecord(std::string_view s) {
   return s.starts_with("\x89PNG\r\n\x1a\n") || s.starts_with("\xff\xd8\xff");
+}
+// Translate legacy filepos links into synthetic fragment anchors. Targets
+// are accepted only at markup boundaries or in text (not inside attributes).
+// Scan quoted tags, comments and raw-text elements without interpreting scripts.
+inline std::string rewriteFilePositions(std::string_view input) {
+  struct Tag {size_t start,end;std::string name;size_t filepos=size_t(-1);};
+  std::vector<Tag> tags;
+  std::set<size_t> targets;
+  const auto ws=[](char c){return c==' ' || c=='\t' || c=='\r' || c=='\n';};
+  const auto lower=[](char c){return c>='A' && c<='Z'?char(c+32):c;};
+  const auto namechar=[](char c){return (c>='A'&&c<='Z')||(c>='a'&&c<='z')||
+       (c>='0'&&c<='9')||c==':'||c=='-'||c=='_';};
+  for(size_t i=0;i<input.size();) {
+    const auto p=input.find('<',i);
+    if(p==input.npos)break;
+    if(input.substr(p).starts_with("<!--")) {
+      const auto end=input.find("-->",p+4);
+      if(end==input.npos)break;
+      tags.push_back({p,end+3,"!"});i=end+3;continue;
+    }
+    size_t end=p+1;char quote=0;
+    for(;end<input.size();++end) {
+      const char c=input[end];
+      if(quote){if(c==quote)quote=0;}
+      else if(c=='"'||c=='\'')quote=c;
+      else if(c=='>')break;
+    }
+    if(end==input.size())break;
+    size_t at=p+1;while(at<end&&ws(input[at]))++at;
+    const bool closing=at<end&&input[at]=='/';
+    if(closing)++at;
+    std::string name;
+    while(at<end&&namechar(input[at]))name+=lower(input[at++]);
+    if(!closing&&(name=="script"||name=="style"||name=="title"||name=="textarea")) {
+      std::string tail(input.substr(end+1));
+      std::transform(tail.begin(),tail.end(),tail.begin(),lower);
+      const auto close=tail.find("</"+name);
+      if(close!=tail.npos) {
+        const auto last=input.find('>',end+1+close);
+        if(last!=input.npos){tags.push_back({p,last+1,"!"});i=last+1;continue;}
+      }
+    }
+    Tag tag{p,end+1,name};
+    if(!closing&&name=="a") {
+      while(at<end) {
+        while(at<end&&ws(input[at]))++at;
+        const auto begin=at;
+        while(at<end&&namechar(input[at]))++at;
+        if(begin==at){++at;continue;}
+        std::string key(input.substr(begin,at-begin));
+        std::transform(key.begin(),key.end(),key.begin(),lower);
+        while(at<end&&ws(input[at]))++at;
+        if(at==end||input[at]!='=')continue;
+        ++at;while(at<end&&ws(input[at]))++at;
+        const char q=at<end&&(input[at]=='"'||input[at]=='\'')?input[at++]:0;
+        const auto value=at;
+        while(at<end&&(q?input[at]!=q:!ws(input[at])))++at;
+        if(key=="filepos"&&at>value&&at-value<=10) {
+          size_t pos=0;
+          const auto parsed=std::from_chars(input.data()+value,input.data()+at,pos);
+          if(parsed.ec==std::errc{}&&parsed.ptr==input.data()+at&&pos<input.size()&&targets.size()<4096) {
+            tag.filepos=pos;targets.insert(pos);
+          }
+        }
+        if(q&&at<end)++at;
+      }
+    }
+    tags.push_back(std::move(tag));i=end+1;
+    if(tags.size()>65536)return std::string(input);
+  }
+  if(targets.empty())return std::string(input);
+  std::map<size_t,std::vector<size_t>> anchors;
+  size_t ti=0;
+  for(const auto target:targets) {
+    while(ti<tags.size()&&tags[ti].end<=target)++ti;
+    size_t pos=target;
+    if(ti<tags.size()&&tags[ti].start<=pos) {
+      if(tags[ti].name=="!")continue;
+      pos=tags[ti].start;
+    } else {
+      // Never split a UTF-8 continuation byte or an HTML entity.
+      while(pos>0&&(static_cast<unsigned char>(input[pos])&0xc0)==0x80)--pos;
+      const auto amp=input.rfind('&',pos);
+      if(amp!=input.npos&&pos-amp<=32) {
+        const auto semi=input.find(';',amp);
+        if(semi!=input.npos&&semi>=pos&&semi-amp<=32&&
+           input.substr(amp,semi-amp).find_first_of("< \t\r\n")==input.npos)pos=amp;
+      }
+    }
+    anchors[pos].push_back(target);
+  }
+  std::map<size_t,std::string> insertions;
+  for(const auto& [pos,ids]:anchors)
+    for(const auto id:ids)insertions[pos]+="<a id=\"mobi-pos-"+std::to_string(id)+"\"></a>";
+  for(const auto& tag:tags)if(tag.filepos!=size_t(-1)) {
+    // Add a synthetic href before existing attributes so the import parser
+    // uses it in preference to a legacy fallback href.
+    const auto start=tag.start+1;
+    size_t at=start;while(at<tag.end&&ws(input[at]))++at;
+    while(at<tag.end&&namechar(input[at]))++at;
+    insertions[at]+=" href=\"#mobi-pos-"+std::to_string(tag.filepos)+"\"";
+  }
+  std::string out;
+  size_t at=0;
+  for(const auto& [pos,extra]:insertions) {
+    out.append(input.substr(at,pos-at));out+=extra;at=pos;
+    if(out.size()>maxText)return {};
+  }
+  out.append(input.substr(at));
+  return out;
 }
 inline bool readBook(const std::string& path,Book& book,std::string& error,bool metadataOnly=false,bool artwork=true) {
   const auto fail=[&](const char* message){error=message;return false;};
@@ -223,6 +338,11 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
     }
   }
   if(metadataOnly)return true;
+  if(firstImage<count && firstImage>records) {
+    book.firstImage=firstImage;
+    book.imageOffsets=std::move(offsets);
+    offsets=book.imageOffsets;
+  }
   book.text.reserve(expected);
   std::string decoded;
   for(size_t i=1;i<=records;++i) {
@@ -241,6 +361,12 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
     book.text.append(data.substr(0,remaining));
   }
   if(book.text.size()!=expected)return fail("Truncated ebook text");
+  if(book.html) {
+    // Legacy filepos refers to byte offsets in the original decompressed stream,
+    // before Windows-1252 conversion. Resolve before changing encoding.
+    book.text=rewriteFilePositions(book.text);
+    if(book.text.empty())return fail("MOBI link conversion exceeded limits");
+  }
   if(encoding==1252 && (book.html || !txtpkg::validUtf8(book.text)))
     book.text=windows1252(book.text);
   if(book.text.size()>maxText)return fail("Decoded ebook exceeds the 1 MiB limit");
@@ -250,7 +376,22 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
 
 inline std::string packageMobiBook(const std::string& path,const std::string& cacheDir,std::string& error) {
   mobipkg::Book book;
-  if(!mobipkg::readBook(path,book,error))return {};
-  return packageImportedBook(path,book.title,book.text,book.html,cacheDir,error,book.author,book.language);
+  if(!mobipkg::readBook(path,book,error,false,false))return {};
+  const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+  FILE* raw=fd<0?nullptr : ::fdopen(fd,"rb");
+  if(fd>=0 && !raw)::close(fd);
+  std::unique_ptr<FILE,decltype(&std::fclose)> file(raw,&std::fclose);
+  const ImportedImageReader images=[&](size_t recindex,std::string& bytes) {
+    if(!file || !recindex || book.imageOffsets.empty() ||
+       recindex>book.imageOffsets.size()-1-book.firstImage)return false;
+    const size_t index=book.firstImage+recindex-1;
+    const size_t offset=book.imageOffsets[index],n=book.imageOffsets[index+1]-offset;
+    if(n<8 || n>512*1024)return false;
+    bytes.resize(n);
+    return std::fseek(file.get(),static_cast<long>(offset),SEEK_SET)==0 &&
+        std::fread(bytes.data(),1,n,file.get())==n && mobipkg::imageRecord(bytes);
+  };
+  return packageImportedBook(path,book.title,book.text,book.html,cacheDir,error,
+                             book.author,book.language,images,book.html);
 }
 } // namespace books

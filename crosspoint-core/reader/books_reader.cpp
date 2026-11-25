@@ -5188,7 +5188,7 @@ class CardShelf {
       if(homeSelection_==0 && multiple && notice_.empty()) {
         constexpr int baseline=300;
         const int inset=books::MenuLayout::cornerX(baseline-18,22);
-        drawCompactLabel(inset,baseline,"Hold Centre to browse",145,375-inset);
+        drawCompactLabel(inset,baseline,"Hold centre to browse recent books.",145,375-inset);
       }
     } else if(searchEditing_) {
       // The Q2's T9 keyboard: field, the open key's letters, 4x4 keypad.

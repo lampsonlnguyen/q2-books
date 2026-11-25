@@ -61,3 +61,32 @@ No direct Markdown/HTML/MOBI/PRC support in this source; publisher CSS/font supp
 ## Attribution
 
 CrossPoint Reader (MIT, with separately licensed dependencies/fonts), Q2 Pod firmware integration, and existing third-party notices in `crosspoint-core/licenses/`. Preserve original notices and audit dependencies/font licenses before distribution.
+
+
+## Reading statistics, streaks and goals
+
+From **Home → Options**, scroll to the second page or tap its page indicator.
+**Reading statistics** shows today, the last seven local calendar days, the
+seven-day daily average, and per-book lifetime totals. **Streaks and goals**
+shows today's minute and page targets and both streaks. Select a goal with
+Centre or tap its row to cycle through the available targets, including Off.
+
+- Active time counts only while the book page is shown and user input occurred
+  within the last two minutes. Books pauses counting for overlays, screen off
+  and suspend, and discards intervals interrupted by a clock jump. Screen and
+  power state come from Q2 Pod's `/mnt/data/q2-state` on firmware that exposes
+  it. On older firmware the inactivity and elapsed-time checks still apply.
+- A page earns credit after at least two active seconds when turned forward.
+  The last page also earns credit when leaving the book with Back and marks the
+  book finished once. Previously credited text ranges do not count again after
+  a backward turn, restart, or repagination. For pages without usable source
+  offsets, Books credits page numbers in the first layout used for that
+  chapter. Past reading positions and manual status edits do not add history.
+- A local day qualifies after one active minute or one credited page. If
+  today has yet to qualify, the current streak reports the run ending
+  yesterday. History keeps the device's local date at the time of reading. Changing goals changes today's progress display without rewriting
+  past activity or streaks.
+- Versioned files `reading-statistics` and `reading-goals` stay in `.books`.
+  An atomic replacement keeps the previous checkpoint if a write is
+  interrupted. Statistics checkpoint once per minute while dirty and on clean
+  exit. The reader never sends statistics or goal data over the network.

@@ -14,6 +14,7 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 - Cover Flow, Grid and List library views; alphabetical jump, search, metadata, favorites, collections, reading status and numeric series grouping.
 - Home recent-books carousel with color covers, progress and resume; wheel and touchscreen navigation.
 - Bookmarks, highlights, dictionary lookup, footnote/link navigation, reading progress and typography controls; installed reading font sizes 8–14 pt.
+- Local reading statistics, per-book totals, daily minute and page goals, and reading streaks.
 - EPUB in-book search with bounded results, highlighted matches and return to the original position.
 - Supported publisher TTF/OTF fonts with fallback and user override; language-aware hyphenation using bundled patterns.
 - OPDS catalog browsing and downloads over HTTPS, KOReader position synchronization, optional SD-backed font packs and system theme/language integration.

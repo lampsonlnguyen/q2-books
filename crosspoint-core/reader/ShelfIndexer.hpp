@@ -4,8 +4,7 @@
 // a CrossPoint Section, paginating a chapter, or changing the reader engine.
 #include "ShelfBookInfo.hpp"
 #include "ShelfCover.hpp"
-#include "FlowCover.hpp"
-#include "JpegPreview.hpp"
+#include "CoverImage.hpp"
 #include <ContainerParser.h>
 #include <ContentOpfParser.h>
 #include <ZipFile.h>
@@ -27,6 +26,15 @@ inline bool isSafeEpubItem(const std::string& item) {
   return !item.empty() && item.size()<1024 && item.front()!='/' &&
          item.find("..")==std::string::npos &&
          item.find('\\')==std::string::npos;
+}
+inline bool readEpubCover(ZipFile& zip,const std::string& cover,PngPreview& decoded) {
+  size_t size=0;
+  constexpr size_t maxCoverBytes=4u*1024u*1024u;
+  if(!isSafeEpubItem(cover) || !zip.getInflatedFileSize(cover.c_str(),&size) ||
+     size<8 || size>maxCoverBytes)return false;
+  std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
+      zip.readFileToMemory(cover.c_str(),&size,false),&std::free);
+  return bytes && size<=maxCoverBytes && decodeCoverImage(bytes.get(),size,decoded);
 }
 inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo* requested=nullptr,
                                       bool indexArtwork=true) {
@@ -89,25 +97,13 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
   // Do not synthesize a cover from the first XHTML page.
   const std::string& cover=parser.coverItemHref;
   if(!indexArtwork || (coverReady && flowReady) || !isSafeEpubItem(cover))return result;
-  bytes=0;
-  if(!zip.getInflatedFileSize(cover.c_str(),&bytes) ||
-     bytes<8 || bytes>2u*1024u*1024u)return result;
-  std::unique_ptr<uint8_t,decltype(&std::free)> image(
-      zip.readFileToMemory(cover.c_str(),&bytes,false),&std::free);
-  if(!image || bytes<8 || bytes>2u*1024u*1024u)return result;
   PngPreview decoded;
-  bool decodedOk=decodePngPreview(image.get(),bytes,decoded,!flowReady);
-  if(!decodedOk && image.get()[0]==0xff && image.get()[1]==0xd8) {
-    if(!flowReady && decodeJpegRgbPreview(image.get(),bytes,decoded)) {
-      if(!coverReady) {
-        decoded.gray.resize(size_t(decoded.width)*decoded.height);
-        for(size_t i=0;i<decoded.gray.size();++i)
-          decoded.gray[i]=uint8_t((77u*decoded.rgb[3*i]+150u*decoded.rgb[3*i+1]+29u*decoded.rgb[3*i+2]+128u)>>8);
-      }
-      decodedOk=true;
-    } else decodedOk=decodeJpegPreview(image.get(),bytes,decoded);
+  if(!readEpubCover(zip,cover,decoded))return result;
+  if(!coverReady && decoded.gray.empty()) {
+    decoded.gray.resize(size_t(decoded.width)*decoded.height);
+    for(size_t i=0;i<decoded.gray.size();++i)
+      decoded.gray[i]=uint8_t((77u*decoded.rgb[3*i]+150u*decoded.rgb[3*i+1]+29u*decoded.rgb[3*i+2]+128u)>>8);
   }
-  if(!decodedOk)return result;
   ShelfCover thumb{};
   if(!coverReady && makeShelfCover(decoded,thumb)) {
     result.cover=saveShelfCover(bookPath,thumb);
@@ -115,7 +111,7 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
   }
   if(!flowReady && !decoded.rgb.empty()) {
     FlowCover flow;
-    if(makeFlowCover(decoded.rgb.data(),decoded.rgb.size(),decoded.width,decoded.height,flow)) {
+    if(makeColorCover(decoded,flow)) {
       result.flowCover=saveFlowCover(bookPath,flow);
       result.updated=result.updated || result.flowCover;
     }

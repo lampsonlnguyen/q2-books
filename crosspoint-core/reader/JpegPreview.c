@@ -17,7 +17,7 @@ static void booksJpegError(j_common_ptr cinfo) {
 }
 // Returns a malloc-owned grayscale or RGB buffer (must be freed by caller).
 static int decodeJpeg(const unsigned char* bytes,size_t length,
-                       unsigned char** pixels,unsigned* width,unsigned* height,int color) {
+                       unsigned char** pixels,unsigned* width,unsigned* height,int color,int thumbnail) {
   if(!bytes||!pixels||!width||!height||length<16||length>4194304)return 0;
   *pixels=NULL;*width=0;*height=0;
   struct jpeg_decompress_struct cinfo;
@@ -36,9 +36,17 @@ static int decodeJpeg(const unsigned char* bytes,size_t length,
   if(jpeg_read_header(&cinfo,TRUE)!=JPEG_HEADER_OK) {
     jpeg_destroy_decompress(&cinfo);return 0;
   }
+  const unsigned sourceLimit=thumbnail?16777216u:1048576u;
   if(!cinfo.image_width||!cinfo.image_height||
-     cinfo.image_width>1048576u/cinfo.image_height) {
+     cinfo.image_width>sourceLimit/cinfo.image_height) {
     jpeg_destroy_decompress(&cinfo);return 0;
+  }
+  if(thumbnail) {
+    cinfo.scale_num=1;
+    cinfo.scale_denom=1;
+    while(cinfo.scale_denom<8 &&
+          (cinfo.image_width>384u*cinfo.scale_denom || cinfo.image_height>512u*cinfo.scale_denom))
+      cinfo.scale_denom*=2;
   }
   cinfo.out_color_space=color?JCS_RGB:JCS_GRAYSCALE;
   const unsigned channels=color?3u:1u;
@@ -72,9 +80,14 @@ static int decodeJpeg(const unsigned char* bytes,size_t length,
 
 int booksDecodeJpeg(const unsigned char* bytes,size_t length,
                     unsigned char** pixels,unsigned* width,unsigned* height) {
-  return decodeJpeg(bytes,length,pixels,width,height,0);
+  return decodeJpeg(bytes,length,pixels,width,height,0,0);
 }
 int booksDecodeJpegRgb(const unsigned char* bytes,size_t length,
                        unsigned char** pixels,unsigned* width,unsigned* height) {
-  return decodeJpeg(bytes,length,pixels,width,height,1);
+  return decodeJpeg(bytes,length,pixels,width,height,1,0);
+}
+
+int booksDecodeJpegCover(const unsigned char* bytes,size_t length,
+                         unsigned char** pixels,unsigned* width,unsigned* height) {
+  return decodeJpeg(bytes,length,pixels,width,height,1,1);
 }

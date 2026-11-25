@@ -19,15 +19,26 @@ inline int hit(int x,int y) {
 }
 inline size_t pageStart(size_t selected) {return selected/pageSize*pageSize;}
 inline void drawThumbnail(uint32_t* frame,const FlowCover& cover,int left,int top,int width,int height) {
-  if(!cover.valid())return;
+  if(!frame || width<=0 || height<=0 || !cover.valid())return;
   int w=width,h=height;
   if(cover.width*h>cover.height*w)h=std::max(1,int(cover.height*w/cover.width));
   else w=std::max(1,int(cover.width*h/cover.height));
   const int x=left+(width-w)/2,y=top+(height-h)/2;
+  const auto coordinate=[](int pixel,int length,int source) {
+    return std::clamp((2*pixel+1)*source*128/length-128,0,(source-1)*256);
+  };
   for(int py=0;py<h;++py) {
-    const auto* source=cover.pixels.data()+size_t(py*cover.height/h)*cover.width;
+    const int sy=coordinate(py,h,cover.height);
+    const auto* upper=cover.pixels.data()+size_t(sy/256)*cover.width;
+    const auto* lower=sy/256+1<int(cover.height)?upper+cover.width:upper;
     auto* target=frame+(y+py)*flow::width+x;
-    for(int px=0;px<w;++px)target[px]=0xff000000u|flow::rgb(source[px*cover.width/w]);
+    for(int px=0;px<w;++px) {
+      const int sx=coordinate(px,w,cover.width);
+      const int left=sx/256,right=std::min(left+1,int(cover.width)-1);
+      const uint32_t a=flow::mix(flow::rgb(upper[left]),flow::rgb(upper[right]),sx%256);
+      const uint32_t b=flow::mix(flow::rgb(lower[left]),flow::rgb(lower[right]),sx%256);
+      target[px]=flow::mix(a,b,sy%256);
+    }
   }
 }
 inline void drawCover(uint32_t* frame,const FlowCover& cover,Tile cell) {

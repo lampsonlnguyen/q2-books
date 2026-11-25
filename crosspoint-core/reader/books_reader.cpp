@@ -6638,6 +6638,8 @@ int main(int argc,char** argv) {
         static_cast<double>(info.volume.value_or(-1.f)));
     return 0;
   }
+#endif
+  // Keep import search and resume regressions available to the Q2 MIPS/QEMU suite.
   if(argc==3 && std::strcmp(argv[1],"--test-reading-resume")==0) {
     books::ReadingPosition expected;
     {
@@ -6668,6 +6670,7 @@ int main(int argc,char** argv) {
     std::printf("matches=%zu\n",count);
     return 0;
   }
+#ifndef BOOKS_Q2_RUNTIME
   if(argc==4 && std::strcmp(argv[1],"--test-book-font")==0) {
     Reader reader(argv[2]);
     if(!reader.open() || !reader.savePgm(argv[3]))return 1;

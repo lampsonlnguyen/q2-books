@@ -42,8 +42,9 @@ inline bool isHtmlFilename(std::string_view name) {
   return hasBookSuffix(name,".html") || hasBookSuffix(name,".htm");
 }
 inline bool isMarkdownFilename(std::string_view name) {return hasBookSuffix(name,".md");}
+inline bool isMobiFilename(std::string_view name) {return hasBookSuffix(name,".mobi") || hasBookSuffix(name,".prc");}
 inline bool isBookFilename(std::string_view name) {
-  return isEpubFilename(name) || isTxtFilename(name) || isHtmlFilename(name) || isMarkdownFilename(name);
+  return isEpubFilename(name) || isTxtFilename(name) || isHtmlFilename(name) || isMarkdownFilename(name) || isMobiFilename(name);
 }
 inline std::vector<ShelfEntry> scanCardBooks(
     const std::string& root,const ShelfScanLimits limits={}) {

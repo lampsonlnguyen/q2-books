@@ -388,7 +388,35 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
 }
 } // namespace mobipkg
 
+// Cache identity is versioned and includes the source path, size and timestamps.
+// A bounded ZIP signature check rejects interrupted or obviously damaged output.
+inline std::string mobiCachePath(const std::string& path,const std::string& cacheDir) {
+  struct stat st{};
+  if(::lstat(path.c_str(),&st)!=0 || !S_ISREG(st.st_mode) || st.st_size<78)return {};
+  uint64_t hash=14695981039346656037ull;
+  const auto mix=[&](uint64_t v){for(unsigned i=0;i<8;++i){hash^=(v>>(8*i))&255u;hash*=1099511628211ull;}};
+  for(unsigned char c:path){hash^=c;hash*=1099511628211ull;}
+  mix(st.st_size);mix(st.st_mtime);mix(st.st_mtim.tv_nsec);mix(st.st_ctime);mix(st.st_ctim.tv_nsec);
+  char name[64];std::snprintf(name,sizeof name,"/mobi-v2-%016llx.epub",static_cast<unsigned long long>(hash));
+  return cacheDir+name;
+}
+inline bool validMobiCache(const std::string& path) {
+  const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+  if(fd<0)return false;
+  struct stat st{};
+  unsigned char start[4]{},end[22]{};
+  const bool ok=::fstat(fd,&st)==0 && S_ISREG(st.st_mode) && st.st_size>=26 &&
+    st.st_size<=32ll*1024*1024 &&
+    ::read(fd,start,4)==4 && start[0]==0x50 && start[1]==0x4b && start[2]==3 && start[3]==4 &&
+    ::lseek(fd,-22,SEEK_END)>=0 && ::read(fd,end,22)==22 &&
+    end[0]==0x50 && end[1]==0x4b && end[2]==5 && end[3]==6 && end[20]==0 && end[21]==0;
+  ::close(fd);
+  return ok;
+}
 inline std::string packageMobiBook(const std::string& path,const std::string& cacheDir,std::string& error) {
+  const auto target=mobiCachePath(path,cacheDir);
+  if(target.empty()){error="Invalid MOBI/PRC source";return {};}
+  if(validMobiCache(target))return target;
   mobipkg::Book book;
   if(!mobipkg::readBook(path,book,error,false,false))return {};
   const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
@@ -405,7 +433,11 @@ inline std::string packageMobiBook(const std::string& path,const std::string& ca
     return std::fseek(file.get(),static_cast<long>(offset),SEEK_SET)==0 &&
         std::fread(bytes.data(),1,n,file.get())==n && mobipkg::imageRecord(bytes);
   };
-  return packageImportedBook(path,book.title,book.text,book.html,cacheDir,error,
-                             book.author,book.language,images,book.html);
+  const auto converted=packageImportedBook(path,book.title,book.text,book.html,cacheDir,error,
+                             book.author,book.language,images,book.html,target);
+  if(!converted.empty() && mobiCachePath(path,cacheDir)!=target) {
+    ::unlink(target.c_str());error="MOBI/PRC changed during conversion";return {};
+  }
+  return converted;
 }
 } // namespace books

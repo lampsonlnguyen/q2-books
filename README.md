@@ -42,7 +42,7 @@ Acceptance: customization stays within safe geometry and memory limits without a
 
 ### v2.1.0 — DRM-free MOBI and PRC support
 
-Initial implementation (pending build and device validation): legacy MOBI and PalmDOC PRC, uncompressed/PalmDOC compression, UTF-8/Windows-1252, and basic text/HTML import through the existing reader. Decoded text is limited to 1 MiB; embedded images, full metadata, file-position links, KF8 and Huffman/CDIC remain outstanding. DRM-protected files are rejected.
+Initial implementation (pending build and device validation): legacy MOBI and PalmDOC PRC, uncompressed/PalmDOC compression, UTF-8/Windows-1252, and basic text/HTML import through the existing reader. Decoded text is limited to 1 MiB; EXTH metadata, cover extraction, embedded PNG/JPEG images, page breaks and file-position links are implemented; KF8 and Huffman/CDIC remain outstanding. DRM-protected files are rejected.
 
 - [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
 - [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.
@@ -50,6 +50,8 @@ Initial implementation (pending build and device validation): legacy MOBI and Pa
 - [ ] 2.1-M4 — Integrate chapter navigation, resume, reading progress, bookmarks, highlights and search where supported; document unsupported formatting and features.
 - [ ] 2.1-M5 — Handle encrypted/DRM-protected, malformed, truncated and unsupported files gracefully, with bounded decompression and readable errors. No DRM removal is planned.
 - [ ] 2.1-M6 — Add host and MIPS/QEMU tests with representative public-domain or synthetic DRM-free files; verify rendering, navigation, resume, latency, peak RAM and battery on physical Q2 hardware.
+
+Development progress: initial M1–M4 code and synthetic regression fixtures are on the feature branch; build and physical-device validation are pending. Native NCX indexes and additional legacy formatting variants remain to be evaluated.
 
 Acceptance: supported DRM-free MOBI/PRC books open reliably with the existing reading controls, without regressing EPUB/TXT/Markdown/HTML or exceeding practical Q2 resource limits. Exact legacy MOBI, KF8/hybrid and PalmDOC compatibility is subject to parser evaluation and testing.
 

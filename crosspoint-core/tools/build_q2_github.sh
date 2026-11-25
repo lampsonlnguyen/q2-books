@@ -279,6 +279,8 @@ cp "$elf" "$card/.books/books-engine"
 cp crosspoint-core/platform/q2/books-launcher.sh "$card/.books/q2-books"
 printf 'name=Books\ngame=1\nrow=library\n' > "$card/.books/q2app"
 cp docs/q2-books-card-app.md "$card/.books/README.txt"
+printf '\nMD4C license\n' >> "$card/.books/README.txt"
+cat crosspoint-core/licenses/MD4C.md >> "$card/.books/README.txt"
 # Optional user-editable offline word definitions (UTF-8 TSV). Do not
 # overwrite an existing personal dictionary when copying over an SD card.
 cp crosspoint-core/assets/dictionary-starter.tsv "$card/.books/dictionary-starter.tsv"

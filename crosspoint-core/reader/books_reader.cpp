@@ -28,6 +28,7 @@
 #include "ReadingPosition.hpp"
 #include "ReaderPreferences.hpp"
 #include "TxtPackage.hpp"
+#include "MarkdownPackage.hpp"
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
@@ -600,8 +601,7 @@ class Reader {
   std::vector<DictionaryPage> dictionaryPages_;
   int dictionaryPage_=0;
   std::string bookPath_;
-  // The ZIP the engine opens: the book itself, or for a .txt its cached EPUB
-  // package (TxtPackage.hpp). bookPath_ stays the book's identity.
+  // TXT and Markdown are converted to EPUB. bookPath_ keeps the source identity.
   std::string packagePath_;
   ZipFile archive_;
   std::unique_ptr<TempCache> temporary_;
@@ -743,11 +743,13 @@ class Reader {
     return base+"/cache";
   }
   static std::string resolvePackage(const std::string& book) {
-    if(!books::isTxtFilename(book))return book;
+    const bool markdown=books::isMarkdownFilename(book);
+    if(!markdown && !books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
-    std::string package=books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"Books: TXT: %s\n",error.c_str());
+    std::string package=markdown ? books::packageMarkdownBook(book,stateCacheDir(),error) :
+                                 books::packageTxtBook(book,stateCacheDir(),error);
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",markdown?"Markdown":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -763,6 +765,8 @@ class Reader {
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
     mix(0x434a4b01ull);
+    if(books::isMarkdownFilename(bookPath_))
+      for(unsigned char byte:packagePath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(scriptFonts_.coverageMask()));
     // RD-05: a user font slot's file can change between sessions; pages laid
     // out with another file under the same slot must not be reused.
@@ -1208,7 +1212,7 @@ class Reader {
   // Refresh old SD cards on return from a book, including those that only
   // have a legacy black-and-white cover.
   bool cacheShelfCover() {
-    if(books::isTxtFilename(bookPath_))return false;
+    if(books::isTxtFilename(bookPath_) || books::isMarkdownFilename(bookPath_))return false;
     books::FlowCover cover;
     if(books::loadFlowCover(bookPath_,cover))return true;
     books::PngPreview decoded;
@@ -6196,7 +6200,7 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice("Opening EPUB...");
+      shelf->setNotice(books::isMarkdownFilename(chosen)?"Opening Markdown...":"Opening EPUB...");
       shelf->present();
     }
     auto next=std::make_unique<Reader>(chosen);
@@ -6204,7 +6208,8 @@ int runCardApp(const std::string& bookDir) {
     if(interrupted)break;
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home
-      shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
+      shelf->setNotice(userGuide?"Cannot read userguide":
+          books::isMarkdownFilename(chosen)?"Cannot read this Markdown":"Cannot read this EPUB");
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
@@ -6325,6 +6330,20 @@ int main(int argc,char** argv) {
         info.identifier.c_str(),info.description.c_str(),info.series.c_str(),
         static_cast<double>(info.volume.value_or(-1.f)));
     return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-reading-resume")==0) {
+    books::ReadingPosition expected;
+    {
+      Reader reader(argv[2]);
+      if(!reader.open(true) || !reader.goToChapter(1) || !reader.rememberPage())return 1;
+      expected=reader.currentPosition();
+      if(expected.spine<=0)return 2;
+    }
+    Reader reopened(argv[2]);
+    if(!reopened.open(true))return 3;
+    const auto actual=reopened.currentPosition();
+    return expected.spine==actual.spine && expected.page==actual.page &&
+           expected.textOffset==actual.textOffset ? 0 : 4;
   }
   if(argc==4 && std::strcmp(argv[1],"--test-book-search")==0) {
     Reader reader(argv[2]);
@@ -6938,7 +6957,7 @@ int main(int argc,char** argv) {
     path=argv[1];
   } else { usage();return 2; }
   if (!books::isBookFilename(path)) {
-    std::fputs("Books: open an .epub or .txt book\n",stderr);
+    std::fputs("Books: open an .epub, .txt or .md book\n",stderr);
     return 2;
   }
   if(!dry && onCard)(void)books::migrateLegacyState();
@@ -6950,7 +6969,7 @@ int main(int argc,char** argv) {
   const bool opened=reader.open(!dry);
   if(interrupted)return 0;
   if(!opened) {
-    std::fputs("Books: EPUB not supported by current reader slice\n",stderr);
+    std::fputs("Books: could not open this book\n",stderr);
     return 3;
   }
   if(dry) {

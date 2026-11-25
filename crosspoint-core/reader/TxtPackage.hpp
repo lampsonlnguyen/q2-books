@@ -127,6 +127,28 @@ struct ZipWriter {
     return std::move(data);
   }
 };
+inline void startEpub(ZipWriter& zip) {
+  zip.add("mimetype","application/epub+zip");
+  zip.add("META-INF/container.xml",
+      "<?xml version=\"1.0\"?>\n<container version=\"1.0\" "
+      "xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles>"
+      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
+      "</rootfiles></container>\n");
+}
+inline void finishEpub(ZipWriter& zip,std::string_view title,std::string_view identifier,
+                       const std::string& manifest,const std::string& spine,const std::string& nav) {
+  const std::string t=xmlEscape(title);
+  zip.add("OEBPS/content.opf",
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" "
+      "version=\"2.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+      "<dc:title>"+t+"</dc:title><dc:identifier id=\"id\">"+std::string(identifier)+"</dc:identifier>"
+      "<dc:language>und</dc:language></metadata><manifest>"
+      "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>"+manifest+
+      "</manifest><spine toc=\"ncx\">"+spine+"</spine></package>\n");
+  zip.add("OEBPS/toc.ncx",
+      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" "
+      "version=\"2005-1\"><head/><docTitle><text>"+t+"</text></docTitle><navMap>"+nav+"</navMap></ncx>\n");
+}
 }  // namespace txtpkg
 
 // Build the EPUB for |text| (the .txt content). |name| is the file name, used
@@ -141,12 +163,7 @@ inline std::string buildTxtEpub(std::string_view name,std::string_view text) {
   if(!validUtf8(title))title=latin1ToUtf8(title);
   const auto parts=splitParts(text);
   ZipWriter zip;
-  zip.add("mimetype","application/epub+zip");
-  zip.add("META-INF/container.xml",
-      "<?xml version=\"1.0\"?>\n<container version=\"1.0\" "
-      "xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles>"
-      "<rootfile full-path=\"OEBPS/content.opf\" media-type=\"application/oebps-package+xml\"/>"
-      "</rootfiles></container>\n");
+  startEpub(zip);
   std::string manifest,spine,nav;
   for(size_t i=0;i<parts.size();++i) {
     char id[16];std::snprintf(id,sizeof(id),"t%04zu",i);
@@ -159,17 +176,7 @@ inline std::string buildTxtEpub(std::string_view name,std::string_view text) {
     nav+="<navPoint id=\"n"+std::string(id)+"\" playOrder=\""+std::to_string(i+1)+
          "\"><navLabel><text>Part "+std::to_string(i+1)+"</text></navLabel><content src=\""+file+"\"/></navPoint>";
   }
-  const std::string t=xmlEscape(title);
-  zip.add("OEBPS/content.opf",
-      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<package xmlns=\"http://www.idpf.org/2007/opf\" "
-      "version=\"2.0\" unique-identifier=\"id\"><metadata xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
-      "<dc:title>"+t+"</dc:title><dc:identifier id=\"id\">books-txt</dc:identifier>"
-      "<dc:language>und</dc:language></metadata><manifest>"
-      "<item id=\"ncx\" href=\"toc.ncx\" media-type=\"application/x-dtbncx+xml\"/>"+manifest+
-      "</manifest><spine toc=\"ncx\">"+spine+"</spine></package>\n");
-  zip.add("OEBPS/toc.ncx",
-      "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<ncx xmlns=\"http://www.daisy.org/z3986/2005/ncx/\" "
-      "version=\"2005-1\"><head/><docTitle><text>"+t+"</text></docTitle><navMap>"+nav+"</navMap></ncx>\n");
+  finishEpub(zip,title,"books-txt",manifest,spine,nav);
   return zip.finish();
 }
 

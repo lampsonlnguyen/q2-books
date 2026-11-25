@@ -11,15 +11,6 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 
 **Acceptance:** Customization stays within safe geometry and memory limits and does not alter reader typography or system theme.
 
-### v1.14.0 — Markdown support
-
-- [ ] 1.14-M1 — Recognize .md files in the local library and define safe conversion to the existing XHTML/layout pipeline (no separate reader).
-- [ ] 1.14-M2 — Support headings, paragraphs, lists, emphasis, links, code blocks, blockquotes and supported local images; document unsupported extensions.
-- [ ] 1.14-M3 — Integrate chapter navigation, reading position, bookmarks, search, typography and library metadata.
-- [ ] 1.14-M4 — Bound conversion resources, handle UTF-8 and malformed input, restrict local paths and disable active/remote content by default; test long and multilingual files.
-
-**Acceptance:** Open Markdown directly from Books, with reliable rendering and resume, using the existing CrossPoint engine.
-
 ### v1.15.0 — HTML support
 
 - [ ] 1.15-M1 — Recognize .html and .htm files; adapt safe HTML parsing/repair to the existing reader pipeline.
@@ -72,6 +63,7 @@ Only unfinished work is listed. Version labels identify feature groups, not guar
 - Upgrade from CrossPod: check the one-time copy of positions, bookmarks and settings from `.crosspod` into `.books`.
 
 **Reader and languages (from M3)**
+- Validate Markdown chapter links, image rendering, pagination, resume and peak RAM on a physical Q2.
 - Native-speaker review of the [menu translations](crosspoint-core/lang/README.md) and additional Books-specific labels for Japanese, Korean, Thai and Chinese.
 - Reading TTF/OTF fonts directly: only after a memory benchmark on the Q2 (today `.cpfont` files in `Fonts/`).
 

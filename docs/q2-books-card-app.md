@@ -18,9 +18,8 @@ Back from reading returns to the Books shelf; Back on the shelf exits.
 Books reads Q2 Pod's Controls > Wheel Sensitivity setting at launch.
 If the value is missing or invalid, turn distance defaults to 50%.
 
-Only EPUB files are currently handled. It lists the SD root Books folder and
-one subfolder level. TXT books, JPEG, and complex EPUB layouts are not yet supported.
-Current illustrated EPUB preview supports bounded non-interlaced RGB/RGBA PNGs.
+Books lists EPUB, TXT, and Markdown (.md) files under the SD card Books folder.
+Markdown uses the same reader controls as EPUB and supports local PNG/JPEG images.
 
 Q2 device execution is NOT verified. The new build targets the Shanling Q2's
 MIPS32r2 O32 FP64 hard-float, NaN-2008 and ABS-2008 ABI, with a strict ELF

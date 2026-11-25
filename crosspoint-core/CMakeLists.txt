@@ -82,6 +82,11 @@ target_include_directories(books_reader_state_tests PRIVATE reader)
 target_compile_options(books_reader_state_tests PRIVATE -UNDEBUG)
 add_test(NAME books_reader_state_and_bookmarks COMMAND books_reader_state_tests)
 
+add_library(books_markdown STATIC
+    reader/MarkdownPackage.cpp lib/md4c/md4c.c lib/md4c/entity.c)
+target_include_directories(books_markdown PRIVATE reader lib/md4c)
+target_link_libraries(books_markdown PRIVATE crosspoint_txt)
+
 add_executable(books_txt_package_tests tests/txt_package_test.cpp)
 target_include_directories(books_txt_package_tests PRIVATE reader)
 target_link_libraries(books_txt_package_tests PRIVATE crosspoint_txt crosspoint_zip)
@@ -588,7 +593,7 @@ target_link_libraries(books-reader PRIVATE
     crosspoint_book_cache crosspoint_hyphenation crosspoint_linebreak
     crosspoint_q2_hal_display books_q2_input
     crosspoint_font_metrics crosspoint_bidi
-    crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
+    crosspoint_layout_foundation crosspoint_utf8 crosspoint_txt books_markdown EXPAT::EXPAT ZLIB::ZLIB JPEG::JPEG curl)
 add_dependencies(books-reader epub_fixture vietnamese_epub_fixture)
 # Smooth menu text in Q2 Pod's TrueType faces (reader/UiText.hpp). Optional:
 # without FreeType the menus keep the built-in bitmap font.
@@ -621,6 +626,10 @@ endif()
 add_test(NAME books_metadata_search_and_publisher_fonts
   COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_roadmap_reader.py"
     "$<TARGET_FILE:books-reader>" ${BOOKS_PUBLISHER_TEST_ARGS})
+
+add_test(NAME books_markdown_library_and_reader
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_markdown_reader.py"
+    "$<TARGET_FILE:books-reader>")
 
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.

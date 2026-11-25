@@ -29,29 +29,19 @@ struct ShelfScanLimits {
   size_t maxFolders=1024;
   size_t maxDepth=5;  // Books/<dir1>/.../<dir5>/
 };
-inline bool isEpubFilename(std::string_view name) {
-  if(name.size()<6)return false;
-  name.remove_prefix(name.size()-5);
-  constexpr std::string_view suffix=".epub";
-  for(size_t i=0;i<suffix.size();++i) {
-    const unsigned char ch=static_cast<unsigned char>(name[i]);
-    if(static_cast<char>(std::tolower(ch))!=suffix[i])return false;
+inline bool hasBookExtension(std::string_view name, std::string_view suffix) {
+  if (name.size() <= suffix.size()) return false;
+  name.remove_prefix(name.size() - suffix.size());
+  for (size_t i = 0; i < suffix.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(name[i])) != suffix[i]) return false;
   }
   return true;
 }
-// RD-04: plain-text books (see TxtPackage.hpp) sit on the shelf beside EPUBs.
-inline bool isTxtFilename(std::string_view name) {
-  if(name.size()<5)return false;
-  name.remove_prefix(name.size()-4);
-  constexpr std::string_view suffix=".txt";
-  for(size_t i=0;i<suffix.size();++i) {
-    const unsigned char ch=static_cast<unsigned char>(name[i]);
-    if(static_cast<char>(std::tolower(ch))!=suffix[i])return false;
-  }
-  return true;
-}
+inline bool isEpubFilename(std::string_view name) { return hasBookExtension(name, ".epub"); }
+inline bool isTxtFilename(std::string_view name) { return hasBookExtension(name, ".txt"); }
+inline bool isMarkdownFilename(std::string_view name) { return hasBookExtension(name, ".md"); }
 inline bool isBookFilename(std::string_view name) {
-  return isEpubFilename(name) || isTxtFilename(name);
+  return isEpubFilename(name) || isTxtFilename(name) || isMarkdownFilename(name);
 }
 inline std::vector<ShelfEntry> scanCardBooks(
     const std::string& root,const ShelfScanLimits limits={}) {
@@ -86,7 +76,7 @@ inline std::vector<ShelfEntry> scanCardBooks(
       }
       if(!S_ISREG(st.st_mode) || !isBookFilename(filename) ||
          books.size()>=limits.maxBooks)continue;
-      const size_t extension=isTxtFilename(filename)?4:5;  // ".txt" or ".epub"
+      const size_t extension=filename.size()-filename.find_last_of('.');
       books.push_back({path,filename.substr(0,filename.size()-extension),st.st_mtime,static_cast<uint64_t>(st.st_size)});
     }
     closedir(dir);

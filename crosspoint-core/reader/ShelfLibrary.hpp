@@ -8,6 +8,8 @@
 #include <ctime>
 #include <cstdint>
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
@@ -43,6 +45,19 @@ inline bool isHtmlFilename(std::string_view name) {
 }
 inline bool isMarkdownFilename(std::string_view name) {return hasBookSuffix(name,".md");}
 inline bool isMobiFilename(std::string_view name) {return hasBookSuffix(name,".mobi") || hasBookSuffix(name,".prc");}
+// PRC is also used for Palm applications: inspect only the fixed database header.
+inline bool isPalmEbookFile(const std::string& path) {
+  const int fd=::open(path.c_str(),O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+  if(fd<0)return false;
+  char h[78];
+  struct stat st{};
+  const bool ok=::fstat(fd,&st)==0 && S_ISREG(st.st_mode) &&
+    ::read(fd,h,sizeof h)==static_cast<ssize_t>(sizeof h);
+  ::close(fd);
+  if(!ok || (static_cast<unsigned char>(h[33])&1))return false;
+  const std::string_view kind(h+60,8);
+  return kind=="BOOKMOBI" || kind=="TEXtREAd";
+}
 inline bool isBookFilename(std::string_view name) {
   return isEpubFilename(name) || isTxtFilename(name) || isHtmlFilename(name) || isMarkdownFilename(name) || isMobiFilename(name);
 }
@@ -79,6 +94,7 @@ inline std::vector<ShelfEntry> scanCardBooks(
       }
       if(!S_ISREG(st.st_mode) || !isBookFilename(filename) ||
          books.size()>=limits.maxBooks)continue;
+      if(isMobiFilename(filename) && !isPalmEbookFile(path))continue;
       const size_t extension=filename.size()-filename.rfind('.');
       books.push_back({path,filename.substr(0,filename.size()-extension),st.st_mtime,static_cast<uint64_t>(st.st_size)});
     }

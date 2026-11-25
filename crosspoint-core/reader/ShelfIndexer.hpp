@@ -2,7 +2,7 @@
 #pragma once
 // Scan one never-opened EPUB's OPF and cover on demand, without allocating
 // a CrossPoint Section, paginating a chapter, or changing the reader engine.
-#include "ShelfDetails.hpp"
+#include "ShelfBookInfo.hpp"
 #include "ShelfCover.hpp"
 #include "FlowCover.hpp"
 #include "JpegPreview.hpp"
@@ -28,7 +28,8 @@ inline bool isSafeEpubItem(const std::string& item) {
          item.find("..")==std::string::npos &&
          item.find('\\')==std::string::npos;
 }
-inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
+inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo* requested=nullptr,
+                                      bool indexArtwork=true) {
   ShelfIndexResult result{};
   if(bookPath.empty() || bookPath.size()>1000)return result;
   if(isTxtFilename(bookPath))return result;  // no OPF or cover: the file name is the title
@@ -36,16 +37,20 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
   if(::lstat(bookPath.c_str(),&st)!=0 || !S_ISREG(st.st_mode) ||
      st.st_size<=0 || st.st_size>128ll*1024*1024)return result;
 
+  ShelfBookInfo info;
+  const bool infoReady=loadShelfBookInfo(bookPath,info);
+  if(requested && infoReady)*requested=info;
   ShelfDetails existing{};
   const bool metadataReady=loadShelfDetails(bookPath,existing);
   ShelfCover cachedCover{};
-  const bool coverReady=loadShelfCover(bookPath,cachedCover);
+  const bool coverReady=indexArtwork && loadShelfCover(bookPath,cachedCover);
   FlowCover cachedFlow;
-  const bool flowReady=loadFlowCover(bookPath,cachedFlow);
+  const bool flowReady=indexArtwork && loadFlowCover(bookPath,cachedFlow);
   result.flowCover=flowReady;
   result.metadata=metadataReady;
   result.cover=coverReady;
-  if(metadataReady && coverReady && flowReady)return result;
+  if(infoReady && metadataReady && (!indexArtwork || info.cover.empty() ||
+      (coverReady && flowReady)))return result;
 
   // Keep only ZIP metadata and at most one bounded image in memory.
   // ZipFile retains a const reference to bookPath for its entire lifetime.
@@ -69,15 +74,21 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath) {
   ContentOpfParser parser("",base,bytes,nullptr,false);
   if(!parser.setup() || !zip.readFileToStream(opf.c_str(),parser,1024))
     return result;
-  if(!metadataReady && (!parser.title.empty()||!parser.author.empty())) {
+  if(!infoReady) {
+    info={parser.title,parser.author,parser.publisher,parser.language,parser.description,
+          parser.identifier,parser.isbn,parser.asin,parser.series,parser.coverItemHref,parser.seriesIndex};
+    if(requested)*requested=info;
+    result.updated=saveShelfBookInfo(bookPath,info);
+  }
+  if(!metadataReady) {
     result.metadata=saveShelfDetails(bookPath,{parser.title,parser.author});
-    result.updated=result.metadata;
+    result.updated=result.updated || result.metadata;
   }
 
   // An EPUB with no declared image cover is still a valid book.
   // Do not synthesize a cover from the first XHTML page.
   const std::string& cover=parser.coverItemHref;
-  if((coverReady && flowReady) || !isSafeEpubItem(cover))return result;
+  if(!indexArtwork || (coverReady && flowReady) || !isSafeEpubItem(cover))return result;
   bytes=0;
   if(!zip.getInflatedFileSize(cover.c_str(),&bytes) ||
      bytes<8 || bytes>2u*1024u*1024u)return result;

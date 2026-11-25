@@ -52,6 +52,8 @@ class ChapterHtmlSlimParser {
   int partWordBufferIndex = 0;
   bool nextWordContinues = false;  // true when next flushed word attaches to previous (inline element boundary)
   std::unique_ptr<ParsedText> currentTextBlock = nullptr;
+  struct LanguageScope { int depth; const LanguageHyphenator* rules; };
+  std::vector<LanguageScope> languageScopes_;
   // Ruby text state
   bool inRuby = false;
   int rubyStartWordIndex = -1;

@@ -62,6 +62,7 @@ add_test(NAME books_shelf_recursive_search COMMAND books_shelf_search_tests)
 
 add_executable(books_shelf_library_tests tests/shelf_library_test.cpp)
 target_include_directories(books_shelf_library_tests PRIVATE reader)
+target_link_libraries(books_shelf_library_tests PRIVATE crosspoint_utf8)
 target_compile_options(books_shelf_library_tests PRIVATE -UNDEBUG)
 add_test(NAME books_shelf_library_history COMMAND books_shelf_library_tests)
 
@@ -611,6 +612,16 @@ if(FREETYPE_FOUND)
 else()
   message(STATUS "Books: no FreeType: menus use the built-in bitmap font")
 endif()
+find_file(BOOKS_PUBLISHER_TEST_FONT LiberationMono-Regular.ttf
+  PATHS /usr/share/fonts/truetype/liberation /usr/share/fonts/truetype/liberation2 NO_DEFAULT_PATH)
+set(BOOKS_PUBLISHER_TEST_ARGS)
+if(FREETYPE_FOUND AND BOOKS_PUBLISHER_TEST_FONT)
+  list(APPEND BOOKS_PUBLISHER_TEST_ARGS "${BOOKS_PUBLISHER_TEST_FONT}")
+endif()
+add_test(NAME books_metadata_search_and_publisher_fonts
+  COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_roadmap_reader.py"
+    "$<TARGET_FILE:books-reader>" ${BOOKS_PUBLISHER_TEST_ARGS})
+
 # Opening a book is not required to index its OPF title, author and cover.
 # Test with a generated EPUB3 cover-image and invalidated file identity.
 add_test(NAME books_reader_unopened_shelf_index

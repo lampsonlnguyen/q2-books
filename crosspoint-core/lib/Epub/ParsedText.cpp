@@ -434,7 +434,8 @@ bool ParsedText::storeWord(const std::string_view text, WordStore::StoredWord& o
 
 void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle, const bool underline,
                          const bool attachToPrevious, const uint32_t visibleTextOffset, const uint8_t linkId,
-                         const uint8_t sizeSlot, const bool noSpaceBefore) {
+                         const uint8_t sizeSlot, const bool noSpaceBefore,
+                         const LanguageHyphenator* const* languageOverride) {
   if (word.empty()) return;
 
   // The device fonts carry no combining-mark positioning, so EPUB text stored in NFD
@@ -473,6 +474,10 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
                                    const bool padRuby) {
     WordStore::StoredWord stored;
     if (!storeWord(token, stored)) return;
+    if (languageOverride && wordHyphenation_.empty())
+      wordHyphenation_.resize(words.size(), Hyphenator::documentRules());
+    if (languageOverride || !wordHyphenation_.empty())
+      wordHyphenation_.push_back(languageOverride ? *languageOverride : Hyphenator::documentRules());
     words.push_back(stored);
     // Small caps share the style byte's high bit with the discretionary-hyphen flag, so it
     // rides in the size slot instead.
@@ -876,6 +881,8 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
       wordStore.release(words[i]);  // retires arena chunks as lines are consumed
     }
     words.erase(words.begin(), words.begin() + consumed);
+    if (!wordHyphenation_.empty())
+      wordHyphenation_.erase(wordHyphenation_.begin(), wordHyphenation_.begin() + consumed);
     wordStyles.erase(wordStyles.begin(), wordStyles.begin() + consumed);
     wordContinues.erase(wordContinues.begin(), wordContinues.begin() + consumed);
     wordNoSpaceBefore.erase(wordNoSpaceBefore.begin(), wordNoSpaceBefore.begin() + consumed);
@@ -1337,7 +1344,8 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   // Hangul breaks come first so they win a tie against a hyphenated break at the same width.
   auto breakInfos = hangulLineEndBreaks(word);
   const size_t hangulCount = breakInfos.size();
-  const auto hyphenBreaks = Hyphenator::breakOffsets(word, allowFallbackBreaks);
+  const auto* rules = wordHyphenation_.empty() ? Hyphenator::documentRules() : wordHyphenation_[wordIndex];
+  const auto hyphenBreaks = Hyphenator::breakOffsets(word, allowFallbackBreaks, rules);
   breakInfos.insert(breakInfos.end(), hyphenBreaks.begin(), hyphenBreaks.end());
   if (breakInfos.empty()) {
     return false;
@@ -1435,6 +1443,10 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
 
   // Insert the remainder word (with matching style and continuation flag) directly after the prefix.
   words.insert(words.begin() + wordIndex + 1, remainderStored);
+  if (!wordHyphenation_.empty()) {
+    const auto* rules = wordHyphenation_[wordIndex];
+    wordHyphenation_.insert(wordHyphenation_.begin() + wordIndex + 1, rules);
+  }
   wordStyles.insert(wordStyles.begin() + wordIndex + 1, storedStyle);
   insertVisibleOffset(wordIndex + 1, remainderOffset);
   // Emphasis follows the text across the split, so a break at or after the boundary leaves the

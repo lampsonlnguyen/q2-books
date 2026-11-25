@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <vector>
 
 class LanguageHyphenator;
@@ -37,6 +38,10 @@ class Hyphenator {
 
   // Provide a publication-level language hint (e.g. "en", "en-US", "ru") used to select hyphenation rules.
   static void setPreferredLanguage(const std::string& lang);
+  static const LanguageHyphenator* rulesFor(std::string_view lang);
+  static const LanguageHyphenator* documentRules() { return cachedHyphenator_; }
+  static std::vector<BreakInfo> breakOffsets(const std::string& word, bool includeFallback,
+                                             const LanguageHyphenator* rules);
 
  private:
   static const LanguageHyphenator* cachedHyphenator_;

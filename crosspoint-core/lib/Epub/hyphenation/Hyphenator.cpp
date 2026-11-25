@@ -25,18 +25,23 @@ struct Iso639Mapping {
 };
 static constexpr Iso639Mapping kIso639Mappings[] = {{"eng", "en"}, {"fra", "fr"}, {"fre", "fr"}, {"deu", "de"},
                                                     {"ger", "de"}, {"rus", "ru"}, {"spa", "es"}, {"ita", "it"},
-                                                    {"ukr", "uk"}, {"swe", "sv"}, {"fin", "fi"}};
+                                                    {"ukr", "uk"}, {"swe", "sv"}, {"fin", "fi"},
+                                                    {"pol", "pl"}, {"por", "pt"}};
 
 // Maps a BCP-47 or ISO 639-2 language tag to a language-specific hyphenator.
-const LanguageHyphenator* hyphenatorForLanguage(const std::string& langTag) {
-  if (langTag.empty()) return nullptr;
+const LanguageHyphenator* hyphenatorForLanguage(std::string_view langTag) {
+  const auto first = langTag.find_first_not_of(" \t\r\n");
+  if (first == std::string_view::npos) return nullptr;
+  langTag.remove_prefix(first);
+  langTag = langTag.substr(0, langTag.find_last_not_of(" \t\r\n") + 1);
 
   // Extract primary subtag and normalize to lowercase (e.g., "en-US" -> "en", "ENG" -> "en").
   std::string primary;
-  primary.reserve(langTag.size());
+  primary.reserve(3);
   for (char c : langTag) {
     if (c == '-' || c == '_') break;
     if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    if (c < 'a' || c > 'z' || primary.size() == 3) return nullptr;
     primary.push_back(c);
   }
   if (primary.empty()) return nullptr;
@@ -180,14 +185,16 @@ void sortAndDedupeBreakInfos(std::vector<Hyphenator::BreakInfo>& infos) {
 }  // namespace
 
 std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& word, const bool includeFallback) {
-  if (word.empty()) {
-    return {};
-  }
+  return breakOffsets(word, includeFallback, cachedHyphenator_);
+}
+
+std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& word, const bool includeFallback,
+                                                            const LanguageHyphenator* hyphenator) {
+  if (word.empty()) return {};
 
   // Convert to codepoints and normalize word boundaries.
   auto cps = collectCodepoints(word);
   trimSurroundingPunctuationAndFootnote(cps);
-  const auto* hyphenator = cachedHyphenator_;
 
   // Detect apostrophe-like separators early; used by both branches below.
   bool hasApostropheLikeSeparator = false;
@@ -277,4 +284,6 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
   return breaks;
 }
 
-void Hyphenator::setPreferredLanguage(const std::string& lang) { cachedHyphenator_ = hyphenatorForLanguage(lang); }
+const LanguageHyphenator* Hyphenator::rulesFor(std::string_view lang) { return hyphenatorForLanguage(lang); }
+
+void Hyphenator::setPreferredLanguage(const std::string& lang) { cachedHyphenator_ = rulesFor(lang); }

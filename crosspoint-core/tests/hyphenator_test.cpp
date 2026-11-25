@@ -21,5 +21,13 @@ int main() {
   auto french = Hyphenator::breakOffsets("extraordinaire", false);
   for (const auto& br : french)
     assert(br.byteOffset > 0 && br.byteOffset < std::string("extraordinaire").size());
+  assert(Hyphenator::rulesFor(" por-BR ") == Hyphenator::rulesFor("pt"));
+  assert(Hyphenator::rulesFor("POL") == Hyphenator::rulesFor("pl"));
+  assert(Hyphenator::rulesFor("ja") == nullptr);
+  const auto inlineEnglish = Hyphenator::rulesFor("ENG-us");
+  assert(inlineEnglish && inlineEnglish != Hyphenator::documentRules());
+  assert(!Hyphenator::breakOffsets(word, false, inlineEnglish).empty());
+  assert(Hyphenator::breakOffsets(word, false, nullptr).empty());
+  assert(Hyphenator::documentRules() == Hyphenator::rulesFor("fr-FR"));
   return 0;
 }

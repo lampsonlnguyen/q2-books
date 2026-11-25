@@ -50,6 +50,9 @@
 #include "ShelfArtwork.hpp"
 #include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
+#include "ShelfCollections.hpp"
+#include "BookSearch.hpp"
+#include "EmbeddedBookFont.hpp"
 #include "ReaderLinks.hpp"
 #include "Highlights.hpp"
 #include "SelectionGeometry.hpp"
@@ -92,6 +95,7 @@
 
 namespace {
 constexpr size_t MAX_XML_BYTES = 4 * 1024 * 1024;
+constexpr size_t MAX_SEARCH_XML_BYTES = 16 * 1024 * 1024;
 constexpr size_t MAX_TEXT_BYTES = 2 * 1024 * 1024;
 constexpr size_t MAX_BLOCKS = 16000;
 constexpr size_t MAX_PAGES_PER_SPINE = 512;
@@ -119,7 +123,7 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 22;  // 19: About, 20: Dictionaries, 21: Export notes (menus follow Q2 Pod's language)
+constexpr int kTypographyItems = 24;
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -484,18 +488,29 @@ struct HtmlCollector {
 class ChapterXmlSink final : public Print {
   XML_Parser parser_;
   size_t seen_=0;
+  const size_t limit_;
+  const books::Q2SocketInput* const yieldInput_;
   bool failed_=false;
+  bool yielded_=false;
   XmlRepairPipeline pipeline_;
  public:
-  explicit ChapterXmlSink(XML_Parser parser):parser_(parser) {}
+  explicit ChapterXmlSink(XML_Parser parser,size_t limit=MAX_XML_BYTES,
+                          const books::Q2SocketInput* yieldInput=nullptr)
+      :parser_(parser),limit_(limit),yieldInput_(yieldInput) {}
+  bool yielded() const {return yielded_;}
   size_t write(uint8_t byte) override {return write(&byte,1);}
   size_t write(const uint8_t* data,size_t len) override {
-    if(failed_ || !data || len>MAX_XML_BYTES-seen_ ||
+    if(failed_ || interrupted || !data || len>limit_-seen_ ||
        len>static_cast<size_t>(INT_MAX)) {
       failed_=true;
       return 0;
     }
     if(!len)return 0;
+    if(yieldInput_ && seen_%65536u<len && yieldInput_->waitForInput(0)>0) {
+      yielded_=true;
+      failed_=true;
+      return 0;
+    }
     seen_+=len;
     const bool fed=pipeline_.push(reinterpret_cast<const char*>(data),len,false,
         [this](const char* d,size_t n){
@@ -604,6 +619,10 @@ class Reader {
   std::shared_ptr<Epub> upstreamEpub_;
   std::unique_ptr<Section> upstreamSection_;
   int upstreamFontId_=0;
+#ifdef BOOKS_HAVE_FREETYPE
+  books::EmbeddedBookFont publisherFont_;
+  static constexpr int publisherFontBase=3000;
+#endif
   books::Typography typography_{};
   books::ReaderPreferences preferences_{};
   std::string typographyNotice_;
@@ -628,6 +647,24 @@ class Reader {
   void clearRasterCache() {
     for(auto& item:rasterCache_) {item.spine=-1;item.jpegs.clear();}
   }
+  enum class SearchMode {None, Query, Results};
+  SearchMode searchMode_=SearchMode::None;
+  books::T9Keypad bookKeypad_;
+  int bookKey_=books::T9Keypad::Abc;
+  std::string bookQuery_;
+  std::vector<uint32_t> searchQuery_;
+  std::vector<size_t> searchPrefix_;
+  std::vector<books::BookSearchMatch> searchMatches_;
+  std::unique_ptr<ZipFile> searchArchive_;
+  ReaderClock::time_point searchPaint_{},searchHold_{};
+  size_t searchFailedSpines_=0;
+  uint32_t searchStartOffset_=0;
+  size_t searchSelection_=0;
+  int searchSpine_=0;
+  bool searchRunning_=false;
+  bool searchLimit_=false;
+  std::optional<books::ReadingPosition> searchOrigin_;
+  std::optional<books::BookSearchMatch> searchHighlight_;
   std::vector<books::Highlight> highlights_;
   bool highlightsLoaded_=false;
   std::vector<books::SelectedWord> selectedWords_;
@@ -757,6 +794,25 @@ class Reader {
     if(!ok)Storage.remove(dest);
     return ok;
   }
+  void selectPublisherFont() {
+#ifdef BOOKS_HAVE_FREETYPE
+    const int fallback=fontIdForTypography(typography_);
+    const int publisherFontId=publisherFontBase+fallback;
+    renderer_.removeFont(publisherFontId);
+    upstreamFontId_=fallback;
+    if(!upstreamEpub_ || !preferences_.embeddedStyle || !preferences_.bookFonts) {
+      publisherFont_.releaseGlyphs();
+      return;
+    }
+    publisherFont_.scan(packagePath_);
+    if(!publisherFont_.use(static_cast<unsigned>(typography_.size)))return;
+    renderer_.insertFont(publisherFontId,publisherFont_.family(static_cast<uint16_t>(typography_.size)));
+    renderer_.addFallbackFont(publisherFontId,fallback);
+    for(size_t i=0;i<books::scriptFontSpecs.size();++i)
+      if(scriptFonts_.hasScript(i))renderer_.addFallbackFont(publisherFontId,400+static_cast<int>(i));
+    upstreamFontId_=publisherFontId;
+#endif
+  }
   bool useTypography(books::Typography settings) {
     if(!books::validTypography(settings))return false;
     auto next=std::make_unique<SdCardFont>();
@@ -771,7 +827,10 @@ class Reader {
     scriptFonts_.clear(renderer_);
     smoothGlyphs_.clear();  // its keys are the old font's data
     renderer_.removeFont(1);
-    if(upstreamFontId_)renderer_.removeFont(upstreamFontId_);
+    if(upstreamFontId_) {
+      renderer_.removeFont(upstreamFontId_);
+      renderer_.removeFont(fontIdForTypography(typography_));
+    }
     const int nextFontId=fontIdForTypography(settings);
     if(next && next->getEpdFont()) {
       renderer_.insertFont(1,books::sdCardFontFamily(static_cast<uint16_t>(settings.size),*next));
@@ -788,6 +847,7 @@ class Reader {
     scriptFonts_.load(renderer_,settings.size,{1,nextFontId});
     menuLanguageFont.attach(renderer_,kUiFontSlot);
     typography_=settings;
+    selectPublisherFont();
     clearRasterCache();
     return true;
   }
@@ -985,6 +1045,7 @@ class Reader {
       auto candidate=std::make_shared<Epub>(packagePath_,upstreamCachePath());
       if(candidate->load(true,false)) {
         upstreamEpub_=std::move(candidate);
+        selectPublisherFont();
         ImageBlock::setExtractor(this,&Reader::extractUpstreamImage);
       } else std::fprintf(stderr,
           "Books: original Section unavailable; using legacy collector\n");
@@ -1535,6 +1596,236 @@ class Reader {
     }
     return highlights_;
   }
+#ifndef BOOKS_Q2_RUNTIME
+  size_t searchMatchCount() const {return searchMatches_.size();}
+  bool publisherFontActive() const {
+#ifdef BOOKS_HAVE_FREETYPE
+    return upstreamFontId_==publisherFontBase+fontIdForTypography(typography_);
+#else
+    return false;
+#endif
+  }
+#endif
+  bool searchOpen() const {return searchMode_!=SearchMode::None;}
+  bool searchRunning() const {return searchRunning_;}
+  bool searchPreview() const {return searchOrigin_.has_value();}
+  void showBookSearch() {
+    using L=books::MenuLayout;
+    constexpr int keyX=14,keyY=105,keyW=86,keyH=39;
+    paintListBar("Find in book");
+    if(searchMode_==SearchMode::Query) {
+      renderer_.drawRect(14,57,347,29,true);
+      renderer_.drawText(2,20,54,renderer_.truncatedText(2,bookQuery_.c_str(),333).c_str());
+      for(int key=0;key<books::kT9Keys;++key) {
+        const int x=keyX+(key%4)*keyW,y=keyY+(key/4)*keyH;
+        renderer_.drawRect(x,y,keyW-2,keyH-2,true);
+        drawMenuText(x+7,y+9,bookKeypad_.label(key).c_str(),2,x+keyW-6);
+        if(key==bookKey_)invertMenuRect(x,y,keyW-2,keyH-2);
+      }
+    } else {
+      const auto count=std::to_string(searchMatches_.size())+
+          (searchLimit_?"+ ":" ")+books::tr("Matches");
+      drawMenuText(20,53,count.c_str(),2);
+      if(searchRunning_)drawMenuText(203,53,"Searching...",2,356);
+      else if(searchFailedSpines_)drawMenuText(203,53,"Some chapters skipped",1,356);
+      if(searchMatches_.empty() && !searchRunning_)drawMenuText(20,117,"No matches",2);
+      constexpr size_t rows=5;
+      const size_t last=searchMatches_.empty()?0:searchMatches_.size()-1;
+      const size_t first=(std::min(searchSelection_,last)/rows)*rows;
+      for(size_t row=0;row<rows && first+row<searchMatches_.size();++row) {
+        const auto& item=searchMatches_[first+row];
+        const int y=78+static_cast<int>(row)*36;
+        const auto title=std::string(books::tr("Chapter"))+" "+std::to_string(item.spine+1);
+        drawMenuText(20,y,title.c_str(),1,355);
+        const auto label=renderer_.truncatedText(2,item.snippet.c_str(),333);
+        renderer_.drawText(2,20,y+7,label.c_str());
+        if(first+row==searchSelection_)invertMenuRect(13,y-2,349,34);
+      }
+      drawMenuText(L::kTextX,277,"New search",2,175);
+      if(searchLimit_)drawMenuText(193,277,"More results",2,350);
+      if(!searchRunning_ && searchSelection_>=searchMatches_.size()) {
+        const bool more=searchSelection_>searchMatches_.size();
+        invertMenuRect(more?184:13,266,172,32);
+      }
+    }
+    display_.displayBuffer();
+  }
+  bool startBookSearch(std::string query) {
+    auto normalized=books::bookSearchQuery(query);
+    if(normalized.empty() || !upstreamEpub_)return false;
+    auto archive=std::make_unique<ZipFile>(packagePath_);
+    if(!archive->loadAllFileStatSlims())return false;
+    searchArchive_=std::move(archive);
+    searchPaint_={};
+    searchFailedSpines_=0;
+    bookQuery_=std::move(query);
+    searchQuery_=std::move(normalized);
+    searchPrefix_=books::BookSearchChapter::prefixTable(searchQuery_);
+    searchMatches_.clear();
+    searchSelection_=0;
+    searchSpine_=0;
+    searchStartOffset_=0;
+    searchLimit_=false;
+    searchRunning_=true;
+    searchMode_=SearchMode::Results;
+    return true;
+  }
+  void enterBookSearch(bool newQuery=false) {
+    searchMode_=!newQuery && (searchRunning_ || !searchMatches_.empty())?
+        SearchMode::Results:SearchMode::Query;
+    if(searchMode_==SearchMode::Query){bookKeypad_.reset();bookKey_=books::T9Keypad::Abc;}
+    showBookSearch();
+  }
+  void searchTick(const books::Q2SocketInput* input=nullptr) {
+    if(!searchRunning_)return;
+    constexpr size_t limit=256;
+    const int count=upstreamEpub_?upstreamEpub_->getSpineItemsCount():0;
+    if(searchSpine_<count && searchArchive_) {
+      const auto item=upstreamEpub_->getSpineItem(searchSpine_);
+      auto& zip=*searchArchive_;
+      size_t bytes=0;
+      bool good=false;
+      if(zip.getInflatedFileSize(item.href.c_str(),&bytes) && bytes && bytes<=MAX_SEARCH_XML_BYTES) {
+        std::unique_ptr<XML_ParserStruct,decltype(&XML_ParserFree)> parser(XML_ParserCreate(nullptr),&XML_ParserFree);
+        if(parser) {
+          const size_t prior=searchMatches_.size();
+          books::BookSearchChapter scanner(searchQuery_,searchPrefix_,searchSpine_,searchMatches_,limit,searchStartOffset_);
+          scanner.attach(parser.get());
+          ChapterXmlSink sink(parser.get(),MAX_SEARCH_XML_BYTES,input);
+          good=zip.readFileToStream(item.href.c_str(),sink,4096,true) && sink.finish();
+          if(!good)searchMatches_.erase(searchMatches_.begin()+prior,searchMatches_.end());
+          if(sink.yielded())return;
+        }
+      }
+      if(!good)++searchFailedSpines_;
+      if(searchMatches_.size()>=limit)searchStartOffset_=searchMatches_.back().begin+1;
+      else {++searchSpine_;searchStartOffset_=0;}
+    }
+    searchLimit_=searchMatches_.size()>=limit;
+    searchRunning_=searchSpine_<count && !searchLimit_;
+    if(!searchRunning_ && !searchLimit_)searchArchive_.reset();
+    const auto now=ReaderClock::now();
+    if(!searchRunning_ || now-searchPaint_>=std::chrono::milliseconds(150)) {
+      searchPaint_=now;
+      showBookSearch();
+    }
+  }
+  bool restoreSearchOrigin() {
+    if(!searchOrigin_)return false;
+    const auto origin=*searchOrigin_;
+    searchOrigin_.reset();
+    searchHighlight_.reset();
+    if(currentSpine_!=origin.spine && (!loadSpine(origin.spine,1) || currentSpine_!=origin.spine))return false;
+    placeSavedPosition(origin);
+    return true;
+  }
+  bool goToSearchMatch(size_t index) {
+    if(index>=searchMatches_.size())return false;
+    const auto& match=searchMatches_[index];
+    const auto before=currentPosition();
+    flushPosition();
+    if((currentSpine_!=match.spine && !loadSpine(match.spine,1)) ||
+       currentSpine_!=match.spine || !upstreamSection_) {
+      if(currentSpine_!=before.spine)(void)loadSpine(before.spine,1);
+      if(currentSpine_==before.spine)placeSavedPosition(before);
+      return false;
+    }
+    books::ReadingPosition target{match.spine,0};
+    target.engine='o';
+    target.textOffset=match.begin;
+    placeSavedPosition(target);
+    if(!upstreamSection_)return false;
+    if(!searchOrigin_)searchOrigin_=before;
+    searchHighlight_=match;
+    searchSelection_=index;
+    return true;
+  }
+  bool loadMoreSearchMatches() {
+    if(!searchLimit_)return false;
+    if(!searchArchive_) {
+      auto archive=std::make_unique<ZipFile>(packagePath_);
+      if(!archive->loadAllFileStatSlims())return false;
+      searchArchive_=std::move(archive);
+    }
+    searchMatches_.clear();
+    searchSelection_=0;
+    searchLimit_=false;
+    searchRunning_=true;
+    showBookSearch();
+    return true;
+  }
+  enum class SearchInput { Stay, Close, Book };
+  SearchInput bookSearchInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    const bool touch=event.kind==K::TouchUp;
+    if(action==A::Back || (touch && event.y<45)) {
+      searchRunning_=false;searchArchive_.reset();searchMode_=SearchMode::None;
+      return SearchInput::Close;
+    }
+    if(searchMode_==SearchMode::Query) {
+      if(action==A::Next || action==A::Previous)
+        bookKey_=(bookKey_+(action==A::Next?1:books::kT9Keys-1))%books::kT9Keys;
+      bool activate=action==A::Confirm;
+      if(touch && event.x>=14 && event.x<358 && event.y>=105 && event.y<261) {
+        bookKey_=(event.y-105)/39*4+(event.x-14)/86;activate=true;
+      }
+      if(activate && bookKeypad_.press(bookKey_,bookQuery_,96)==books::T9Result::Done)
+        (void)startBookSearch(bookQuery_);
+    } else {
+      if(touch && event.y>=269) {
+        if(event.x>=184 && loadMoreSearchMatches())return SearchInput::Stay;
+        searchRunning_=false;searchArchive_.reset();
+        enterBookSearch(true);
+        return SearchInput::Stay;
+      }
+      const size_t rows=searchMatches_.size()+static_cast<size_t>(!searchRunning_)+static_cast<size_t>(searchLimit_);
+      if(action==A::Next && searchSelection_+1<rows)++searchSelection_;
+      if(action==A::Previous && searchSelection_)--searchSelection_;
+      bool activate=action==A::Confirm;
+      if(touch && event.y>=78 && event.y<258) {
+        const size_t last=searchMatches_.empty()?0:searchMatches_.size()-1;
+        const size_t index=(std::min(searchSelection_,last)/5)*5+(event.y-78)/36;
+        if(index<searchMatches_.size()){searchSelection_=index;activate=true;}
+      }
+      if(activate && searchSelection_>searchMatches_.size() && loadMoreSearchMatches())return SearchInput::Stay;
+      if(activate && !searchRunning_ && searchSelection_==searchMatches_.size()) {
+        enterBookSearch(true);
+        return SearchInput::Stay;
+      }
+      if(activate && goToSearchMatch(searchSelection_)) {
+        searchMode_=SearchMode::None;
+        return SearchInput::Book;
+      }
+    }
+    if(action!=A::None && event.kind!=K::TouchMove && event.kind!=K::TouchDown)showBookSearch();
+    return SearchInput::Stay;
+  }
+  void stepBookSearch(int direction) {
+    if(direction>0 && searchSelection_+1<searchMatches_.size())(void)goToSearchMatch(searchSelection_+1);
+    if(direction<0 && searchSelection_) (void)goToSearchMatch(searchSelection_-1);
+  }
+  bool handleSearchPreview(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    if(!searchPreview())return false;
+    if(event.kind==K::KeyDown && event.value==218 && searchHold_==ReaderClock::time_point{})
+      searchHold_=ReaderClock::now();
+    const bool hold=action==A::Confirm && searchHold_!=ReaderClock::time_point{} &&
+        ReaderClock::now()-searchHold_>=std::chrono::milliseconds(550);
+    if(event.kind==K::KeyUp)searchHold_={};
+    if(action==A::Back) {(void)restoreSearchOrigin();present();}
+    else if(hold || (event.kind==K::TouchUp && event.y>=272)) {
+      searchOrigin_.reset();
+      searchHighlight_.reset();
+      persistPosition();
+      present();
+    } else if(action==A::Confirm)enterBookSearch();
+    else if(action==A::Next || action==A::Previous) {
+      stepBookSearch(action==A::Next?1:-1);present();
+    }
+    return true;
+  }
   bool beginTextSelection() {
     if(!upstreamSection_)return false;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
@@ -1589,6 +1880,32 @@ class Reader {
     }
     return text.substr(0,400);
   }
+  std::string selectedSearchText() const {
+    if(selectionAnchor_<0 || selectionFocus_<0)return {};
+    const int first=std::min(selectionAnchor_,selectionFocus_);
+    const int last=std::max(selectionAnchor_,selectionFocus_);
+    std::vector<const books::SelectedWord*> words;
+    for(int i=first;i<=last;++i)words.push_back(&selectedWords_[i]);
+    std::sort(words.begin(),words.end(),[](const auto* a,const auto* b) {
+      return a->begin==b->begin?a->end<b->end:a->begin<b->begin;
+    });
+    std::string text;
+    uint32_t end=0;
+    for(const auto* item:words) {
+      if(item->end<=end)continue;
+      if(!text.empty() && item->begin>end)text+=' ';
+      const std::string& word=item->text;
+      size_t count=0;
+      for(size_t pos=0;pos<word.size();++count)(void)books::utf8case::next(word,pos);
+      // A rendered discretionary hyphen has no source offset. The next
+      // token can be adjacent, as it is for CJK text and inline styling.
+      const bool discretionary=!word.empty() && word.back()=='-' && count>item->end-item->begin;
+      text.append(word,0,word.size()-static_cast<size_t>(discretionary));
+      if(text.size()>384)return {};
+      end=item->end;
+    }
+    return text;
+  }
   bool saveSelectionHighlight() {
     uint32_t start=0,end=0;
     if(!selectionRange(start,end) ||
@@ -1610,7 +1927,8 @@ class Reader {
   void paintHighlightOverlay() {
     if(!upstreamSection_ || currentSpine_<0)return;
     const auto& highlights=this->highlights();
-    if(highlights.empty() && selectionAnchor_<0)return;
+    const bool found=searchHighlight_ && searchHighlight_->spine==currentSpine_;
+    if(highlights.empty() && selectionAnchor_<0 && !found)return;
     auto page=upstreamSection_->loadPage(static_cast<int>(currentPage_));
     if(!page)return;
     const auto words=books::selectableWords(
@@ -1618,8 +1936,8 @@ class Reader {
     uint32_t start=0,end=0;
     const bool active=selectionRange(start,end);
     for(const auto& word:words) {
-      bool marked=active &&
-          books::overlapsVisibleWord(word,start,end);
+      bool marked=(active && books::overlapsVisibleWord(word,start,end)) ||
+          (found && books::overlapsVisibleWord(word,searchHighlight_->begin,searchHighlight_->end));
       if(!marked)
         for(const auto& h:highlights)
           if(h.spine==static_cast<uint32_t>(currentSpine_) &&
@@ -1646,11 +1964,11 @@ class Reader {
     renderer_.drawText(2,20,215,books::tr("Select text"));
     const auto text=clippedLabel(selectedText(),44);
     renderer_.drawText(2,20,235,text.c_str());
-    const char* choices[]={"Highlight","Define","Remove","Cancel"};
-    for(int i=0;i<4;++i) {
-      const int x=20+i*85;
-      drawMenuText(x,270,choices[i],1);
-      if(option==i)invertMenuRect(x-3,265,83,23);
+    const char* choices[]={"Highlight","Define","Remove","Find","Cancel"};
+    for(int i=0;i<5;++i) {
+      const int x=20+i*68;
+      drawMenuText(x,270,choices[i],1,x+64);
+      if(option==i)invertMenuRect(x-3,265,66,23);
     }
     display_.displayBuffer();
   }
@@ -1808,6 +2126,7 @@ class Reader {
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
       case 7: books::toggleNight(next,systemDark());break;
+      case 23: next.bookFonts=!next.bookFonts;break;
       case 16: next.focusReading=!next.focusReading;break;
       case 17: {
         const auto& choices=books::autoTurnChoices;
@@ -1842,9 +2161,11 @@ class Reader {
       upstreamSection_->getVisibleTextOffsetForPage(
         static_cast<uint16_t>(currentPage_)):std::nullopt;
     preferences_=next;
+    if(option==6 || option==23)selectPublisherFont();
     clearRasterCache();
     if(spine>=0 && (!loadSpine(spine,1)||currentSpine_!=spine)) {
       preferences_=previous;
+      if(option==6 || option==23)selectPublisherFont();
       clearRasterCache();
       (void)loadSpine(spine,1);
       currentPage_=std::min(priorPage,pageCount()-1);
@@ -2076,7 +2397,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Find in book","Book fonts"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -2094,7 +2415,9 @@ class Reader {
       std::to_string(bookPercent())+"%",
       std::string("v")+BOOKS_VERSION,
       std::to_string(dictionaryCount())+" "+books::tr("installed"),
-      "To Clippings"
+      "To Clippings",
+      searchMatches_.empty()?"Enter text":"Search matches",
+      preferences_.bookFonts?"On":"Off"
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2662,6 +2985,11 @@ class Reader {
   }
   void present() {
     render();
+    if(searchPreview()) {
+      renderer_.fillRect(38,272,299,35,false);
+      books::paintFrame(display_,38,272,299,35,1);
+      drawMenuText(50,282,"Read from here",2,326);
+    }
     std::vector<uint32_t> frame;
     if(!composeReadingColor(frame) || !display_.presentColorFrame(frame.data(),frame.size()))
       display_.displayBuffer();
@@ -2800,8 +3128,32 @@ class CardShelf {
   books::ShelfSortMode sortMode_=books::ShelfSortMode::Title;
   std::vector<books::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
+  enum class LibraryMenu {None, Tools, Info, Collections, Collection, Membership, Series, Name};
+  LibraryMenu libraryMenu_=LibraryMenu::None;
+  size_t libraryChoice_=0;
+  bool libraryDeleteArmed_=false;
+  books::Collections collections_;
+  std::string collectionName_,collectionFilter_,seriesFilter_;
+  bool favoritesFilter_=false;
+  struct SeriesVolume {size_t index;std::optional<float> number;};
+  struct SeriesGroup {std::string label;std::vector<SeriesVolume> volumes;};
+  std::map<std::string,SeriesGroup> series_;
+  std::vector<decltype(series_)::const_iterator> seriesRows_;
+  std::vector<bool> seriesChecked_;
+  size_t seriesScan_=0;
+  std::string collectionInput_;
+  bool collectionRename_=false;
+  books::ShelfBookInfo localInfo_;
+  std::vector<std::string> localInfoLines_;
+  size_t localInfoScroll_=0;
+  bool localInfoResume_=false;
+  std::vector<size_t> recentIndices_;
+  size_t recentChoice_=0;
+  bool recentFocus_=false;
+
   books::ShelfCover currentCover_{};
-  bool currentCoverChecked_=false;
+  size_t displayedCoverIndex_=size_t(-1);
+  books::FlowCover displayedColorCover_;
   bool currentCoverAvailable_=false;
   bool browsing_ = false;
   enum class LibraryView {CoverFlow,List,Grid};
@@ -2901,6 +3253,7 @@ class CardShelf {
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
   static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
+  static constexpr int HOME_COVER_X=18, HOME_COVER_Y=(224-books::ShelfCover::height)/2;
   static constexpr int OPTION_COUNT=4;
   static constexpr int JUMP_X=12,JUMP_Y=78,JUMP_W=117,JUMP_H=46;
   static constexpr size_t JUMP_COLS=3,JUMP_ROWS=4,JUMP_PAGE=JUMP_COLS*JUMP_ROWS;
@@ -2914,6 +3267,13 @@ class CardShelf {
       books_(books),root_(std::move(root)),renderer_(display_),font_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
+    seriesChecked_.resize(books_.size());
+    collections_=books::loadCollections();
+    (void)books::restoreMovedCollectionBooks(collections_,books_);
+    for(const auto& path:books::loadRecentBooks()) {
+      const auto found=std::find_if(books_.begin(),books_.end(),[&](const auto& book){return book.path==path;});
+      if(found!=books_.end())recentIndices_.push_back(static_cast<size_t>(found-books_.begin()));
+    }
     if(books_.empty())homeSelection_=1;
     libraryView_=loadLibraryView();
     cachedDetails_.resize(books_.size());
@@ -2923,7 +3283,7 @@ class CardShelf {
     refreshVisible();
     if(!books_.empty()) {
       selected_=std::min(selection,books_.size()-1)+1;
-      current_=std::min(current,books_.size()-1);
+      current_=recentIndices_.empty()?std::min(current,books_.size()-1):recentIndices_.front();
     }
   }
   void loadShelfFonts() {
@@ -2951,13 +3311,108 @@ class CardShelf {
   }
   bool flowActive() const {
     return selected_<visible_.size() && libraryView_==LibraryView::CoverFlow && browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
-        folderRows()==0 && !visible_.empty();
+        libraryMenu_==LibraryMenu::None && folderRows()==0 && !visible_.empty();
   }
   bool gridActive() const {
-    return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_;
+    return libraryView_==LibraryView::Grid && browsing_ && !onlineMode_ && !searchEditing_ &&
+        !jumpOpen_ && libraryMenu_==LibraryMenu::None;
   }
   bool hasBrowsed() const {return browsed_;}
   bool jumpOpen() const {return jumpOpen_;}
+  bool hasBookRow() const {
+    if(!browsing_)return !books_.empty();
+    return selected_>=folderRows() && selected_-folderRows()<visible_.size() &&
+        visible_[selected_-folderRows()]<books_.size();
+  }
+  bool libraryMenuOpen() const {return libraryMenu_!=LibraryMenu::None;}
+  struct BrowseContext {
+    std::string collection,series,query,path;
+    bool favorites=false;
+    bool filtered() const {return favorites || !collection.empty() || !series.empty();}
+  };
+  BrowseContext browseContext() const {
+    return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_};
+  }
+  void restoreBrowseContext(const BrowseContext& context) {
+    if(!context.filtered())return;
+    favoritesFilter_=context.favorites;
+    collectionFilter_=context.collection;
+    seriesFilter_=context.series;
+    searchQuery_=context.query;
+    if(!seriesFilter_.empty()) {
+      for(size_t i=0;i<books_.size();++i) {
+        if(books_[i].path!=context.path)continue;
+        books::ShelfBookInfo info;
+        if(books::loadShelfBookInfo(context.path,info))cacheSeries(i,info);
+        break;
+      }
+    }
+    refreshVisible();
+    for(size_t i=1;i<visible_.size();++i) {
+      if(books_[visible_[i]].path!=context.path)continue;
+      selected_=i;
+      break;
+    }
+    flowPosition_=static_cast<float>(selected_);
+  }
+
+  bool scanningSeries() const {return libraryMenu_==LibraryMenu::Series;}
+  bool libraryInputBusy() const {
+    return libraryMenu_!=LibraryMenu::None && libraryMenu_!=LibraryMenu::Series;
+  }
+  bool cacheSeries(size_t index,const books::ShelfBookInfo& info) {
+    if(index>=books_.size() || seriesChecked_[index])return false;
+    seriesChecked_[index]=true;++seriesScan_;
+    if(info.series.empty())return libraryMenu_==LibraryMenu::Series && seriesScan_==books_.size();
+    const auto result=series_.try_emplace(books::utf8Lower(books::foldShelfSearch(info.series)));
+    auto& group=result.first->second;
+    if(result.second) {
+      group.label=info.series;
+      const auto place=std::lower_bound(seriesRows_.begin(),seriesRows_.end(),result.first,
+        [](const auto& a,const auto& b){return a->first<b->first;});
+      if(static_cast<size_t>(place-seriesRows_.begin())<=libraryChoice_ && !seriesRows_.empty() &&
+         libraryMenu_==LibraryMenu::Series)++libraryChoice_;
+      seriesRows_.insert(place,result.first);
+    }
+    const SeriesVolume volume{index,info.volume};
+    const auto before=[](const auto& a,const auto& b) {
+      if(a.number.has_value()!=b.number.has_value())return a.number.has_value();
+      if(a.number!=b.number)return a.number<b.number;
+      return a.index<b.index;
+    };
+    group.volumes.insert(std::lower_bound(group.volumes.begin(),group.volumes.end(),volume,before),volume);
+    if(!seriesFilter_.empty()) {
+      const size_t before=hasBookRow()?selected():books_.size();
+      refreshVisible();
+      const auto row=std::find(visible_.begin(),visible_.end(),before);
+      if(row!=visible_.end())selected_=static_cast<size_t>(row-visible_.begin());
+      flowPosition_=static_cast<float>(selected_);
+    }
+    return libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty();
+  }
+  void changeRecent(int direction) {
+    if(recentIndices_.empty())return;
+    const auto last=static_cast<int>(recentIndices_.size())-1;
+    const auto next=static_cast<size_t>(std::clamp(static_cast<int>(recentChoice_)+direction,0,last));
+    if(next==recentChoice_)return;
+    recentChoice_=next;
+    current_=recentIndices_[recentChoice_];
+    present();
+  }
+  bool recentInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    if(browsing_ || optionsOpen_ || onlineMode_)return false;
+    const bool step=action==A::Previous || action==A::Next;
+    if(step && (recentFocus_ || (event.kind==K::KeyUp && homeSelection_==0)) &&
+       recentIndices_.size()>1) {
+      changeRecent(action==A::Next?1:-1);
+      return true;
+    }
+    if(action==A::Back && recentFocus_) {recentFocus_=false;return true;}
+    if(action==A::Confirm || event.kind==K::TouchUp)recentFocus_=false;
+    return false;
+  }
   bool canJump() const {
     return browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ && rowCount()>1;
   }
@@ -3028,13 +3483,19 @@ class CardShelf {
   bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
-    if(!canJump()) {jumpHold_={};return false;}
+    const bool canRecent=!browsing_ && !optionsOpen_ && homeSelection_==0 && recentIndices_.size()>1;
+    if(!browsing_ && !canRecent) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
     if(action==A::Confirm || event.kind==K::KeyUp || event.kind==K::TouchDown) {
+      const auto started=jumpHold_;
       const bool held=action==A::Confirm && jumpHold_!=ReaderClock::time_point{} &&
           ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
       jumpHold_={};
+      if(held && canRecent) {recentFocus_=true;return true;}
+      if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
+        openLibraryMenu(LibraryMenu::Tools);return true;
+      }
       if(held)return enterJump();
     }
     return false;
@@ -3172,7 +3633,7 @@ class CardShelf {
     return true;
   }
   bool folderMode() const {
-    return sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
+    return !favoritesFilter_ && collectionFilter_.empty() && seriesFilter_.empty() && sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
   }
   size_t folderRows() const {return folderMode()?folders_.size():0;}
   size_t rowCount() const {return folderRows()+visible_.size();}
@@ -3557,12 +4018,24 @@ class CardShelf {
       if(selected_>=rowCount())selected_=0;
       return;
     }
-    for(size_t i=0;i<books_.size();++i) {
-      if(searchQuery_.empty()) {visible_.push_back(i);continue;}
+    const auto addBook=[&](size_t i) {
+      const auto& path=books_[i].path;
+      if(favoritesFilter_ && !collections_.favorites.count(path))return;
+      if(!collectionFilter_.empty()) {
+        const auto group=collections_.groups.find(collectionFilter_);
+        if(group==collections_.groups.end() || !group->second.count(path))return;
+      }
+      if(searchQuery_.empty()) {visible_.push_back(i);return;}
       const auto& info=details(i);
       if(books::shelfSearchMatches(
           searchQuery_,books_[i].label,info.title,info.author))
         visible_.push_back(i);
+    };
+    if(seriesFilter_.empty()) {
+      for(size_t i=0;i<books_.size();++i)addBook(i);
+    } else {
+      const auto group=series_.find(seriesFilter_);
+      if(group!=series_.end())for(const auto& volume:group->second.volumes)addBook(volume.index);
     }
     if(selected_>=visible_.size())selected_=0;
   }
@@ -3639,6 +4112,15 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
+      if(y>=74 && y<149 && !recentIndices_.empty()) {
+        if(x<18 || x>=359)return false;
+        if(x>=287 && recentIndices_.size()>1) {
+          changeRecent(x<322?-1:1);
+          return false;
+        }
+        homeSelection_=0;
+        return true;
+      }
       if(x<12 || x>=362 || y<HOME_TOP_Y)return false;
       const int offset=y-HOME_TOP_Y;
       const int row=offset/HOME_ROW_STEP;
@@ -3647,7 +4129,7 @@ class CardShelf {
       return true;
     }
     if(y>=39 && y<74) {
-      if(x>=291)return enterOnline();
+      if(x>=291){openLibraryMenu(LibraryMenu::Tools);return true;}
       if(x>=232)return enterJump();
       enterSearch();return true;
     }
@@ -3693,9 +4175,11 @@ class CardShelf {
     return cachedDetails_[index];
   }
   void drawBookCover(int x,int y,size_t index) {
-    if(!currentCoverChecked_) {
+    if(displayedCoverIndex_!=index) {
       currentCoverAvailable_=books::loadShelfCover(books_[index].path,currentCover_);
-      currentCoverChecked_=true;
+      displayedColorCover_={};
+      (void)books::loadFlowCover(books_[index].path,displayedColorCover_);
+      displayedCoverIndex_=index;
     }
     renderer_.drawLine(x-1,y-1,x+books::ShelfCover::width,y-1,true);
     renderer_.drawLine(x-1,y-1,x-1,y+books::ShelfCover::height,true);
@@ -3711,21 +4195,12 @@ class CardShelf {
           renderer_.drawPixel(x+px,y+py,true);
     books::paintPicture(display_,x,y,books::ShelfCover::width,books::ShelfCover::height);
   }
-  void onIndexedBook(const std::string& path) {
-    // A new cache file may have appeared since this shelf object was made.
-    // Refresh only that book's lazy metadata (and current cover, if any).
-    for(size_t i=0;i<books_.size();++i) {
-      if(books_[i].path!=path)continue;
-      for(auto& slot:flowSlots_)if(slot.used&&slot.index==i)slot.used=false;
-      detailsChecked_[i]=false;
-      cachedDetails_[i]={};
-      if(i==current_) {
-        currentCoverChecked_=false;
-        currentCoverAvailable_=false;
-      }
-      if(!searchQuery_.empty())refreshVisible();
-      break;
-    }
+  void onIndexedBook(size_t index) {
+    for(auto& slot:flowSlots_)if(slot.used && slot.index==index)slot.used=false;
+    detailsChecked_[index]=false;
+    cachedDetails_[index]={};
+    if(index==displayedCoverIndex_)displayedCoverIndex_=size_t(-1);
+    if(!searchQuery_.empty() && libraryMenu_==LibraryMenu::None)refreshVisible();
   }
   void setNotice(std::string notice) {notice_=std::move(notice);}
   // Draw compact ASCII interface labels using CrossPoint's existing
@@ -3851,6 +4326,315 @@ class CardShelf {
     const int textY=y+(height-renderer_.getLineHeight(1))/2;
     renderer_.drawText(1,x,textY,books::tr(label),black);
   }
+  void openLibraryMenu(LibraryMenu menu) {
+    libraryMenu_=menu;
+    libraryChoice_=0;
+    libraryDeleteArmed_=false;
+    if(menu!=LibraryMenu::None)notice_.clear();
+    flowMoving_=false;flowTouch_=false;gridTouchX_=-1;
+  }
+  void showLocalInfo() {
+    if(!hasBookRow())return;
+    const auto index=selected();
+    localInfo_={};
+    const auto result=books::indexShelfBook(books_[index].path,&localInfo_);
+    if(result.updated)onIndexedBook(index);
+    (void)cacheSeries(index,localInfo_);
+    const auto row=std::find(visible_.begin(),visible_.end(),index);
+    if(row!=visible_.end())selected_=folderRows()+static_cast<size_t>(row-visible_.begin());
+    localInfoLines_.clear();
+    const auto append=[&](const std::string& value) {
+      auto lines=wrapSmall(value,337);
+      localInfoLines_.insert(localInfoLines_.end(),lines.begin(),lines.end());
+    };
+    if(!localInfo_.publisher.empty())append(std::string(books::tr("Publisher"))+"  "+localInfo_.publisher);
+    if(!localInfo_.language.empty())append(std::string(books::tr("Language"))+"  "+localInfo_.language);
+    if(!localInfo_.series.empty()) {
+      auto value=localInfo_.series;
+      if(localInfo_.volume) {
+        char number[32]{};
+        std::snprintf(number,sizeof(number)," #%g",static_cast<double>(*localInfo_.volume));
+        value+=number;
+      }
+      append(std::string(books::tr("Series"))+"  "+value);
+    }
+    if(!localInfo_.isbn.empty())append("ISBN  "+localInfo_.isbn);
+    if(!localInfo_.asin.empty())append("ASIN  "+localInfo_.asin);
+    if(!localInfo_.identifier.empty() && localInfo_.isbn.empty() && localInfo_.asin.empty())
+      append(localInfo_.identifier);
+    append(localInfo_.description.empty()?books::tr("No description"):localInfo_.description);
+    localInfoScroll_=0;
+    books::ReadingPosition saved;
+    localInfoResume_=books::loadReadingPosition(books_[index].path,saved);
+    openLibraryMenu(LibraryMenu::Info);
+  }
+  std::vector<std::string> libraryLabels() const {
+    std::vector<std::string> rows;
+    switch(libraryMenu_) {
+      case LibraryMenu::Tools:
+        rows={books::tr("Favorites"),books::tr("Collections"),books::tr("Series"),
+              books::tr("All books")};
+        if(hasBookRow()) {
+          rows.push_back(books::tr("Book details"));
+          rows.push_back(books::tr(collections_.favorites.count(bookPath())?
+                                    "Remove favorite":"Add favorite"));
+          rows.push_back(books::tr("Collection membership"));
+        }
+        rows.push_back(books::tr("Online"));
+        break;
+      case LibraryMenu::Collections:
+        rows.push_back(books::tr("New collection"));
+        for(const auto& group:collections_.groups)rows.push_back(group.first);
+        break;
+      case LibraryMenu::Collection:
+        rows={books::tr("Browse collection"),books::tr("Rename collection"),
+              books::tr(libraryDeleteArmed_?"Confirm delete collection":"Delete collection")};
+        break;
+      case LibraryMenu::Membership:
+        for(const auto& group:collections_.groups)
+          rows.push_back(std::string(group.second.count(bookPath())?"[x] ":"[ ] ")+group.first);
+        break;
+      default:break;
+    }
+    return rows;
+  }
+  bool storeCollections(books::Collections next) {
+    if(hasBookRow()) {
+      const auto& path=bookPath();
+      if(books::collectionsContain(next,path) && !next.identities.count(path))
+        next.identities[path]=books::collectionIdentity(path);
+    }
+    for(auto it=next.identities.begin();it!=next.identities.end();) {
+      if(!books::collectionsContain(next,it->first))it=next.identities.erase(it);
+      else ++it;
+    }
+    if(!books::saveCollections(next)) {notice_="Cannot save collections";return false;}
+    collections_=std::move(next);
+    return true;
+  }
+  void startCollectionName(bool rename) {
+    collectionRename_=rename;
+    collectionInput_=rename?collectionName_:std::string();
+    searchKey_=books::T9Keypad::Abc;
+    keypad_.reset();
+    openLibraryMenu(LibraryMenu::Name);
+  }
+  bool collectionNameInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    const bool touch=event.kind==K::TouchUp;
+    if(action==A::Back || (touch && event.y<74)) {
+      openLibraryMenu(collectionRename_?LibraryMenu::Collection:LibraryMenu::Collections);
+      return false;
+    }
+    bool activate=action==A::Confirm;
+    if(action==A::Next)searchKey_=(searchKey_+1)%SEARCH_KEY_COUNT;
+    if(action==A::Previous)searchKey_=(searchKey_+SEARCH_KEY_COUNT-1)%SEARCH_KEY_COUNT;
+    if(touch && event.x>=KB_X && event.y>=KB_Y) {
+      const auto col=(event.x-KB_X)/(KB_W+KB_GAP),row=(event.y-KB_Y)/(KB_H+KB_GAP);
+      if(row<4 && col<4) {searchKey_=static_cast<size_t>(4*row+col);activate=true;}
+    }
+    if(!activate)return false;
+    if(keypad_.press(static_cast<int>(searchKey_),collectionInput_,books::Collections::maxNameBytes)!=
+       books::T9Result::Done)return false;
+    while(!collectionInput_.empty() && collectionInput_.back()==' ')collectionInput_.pop_back();
+    const auto first=collectionInput_.find_first_not_of(' ');
+    if(first!=std::string::npos)collectionInput_.erase(0,first);
+    if(!collections_.nameAvailable(collectionInput_,collectionRename_?collectionName_:std::string()) ||
+       (!collectionRename_ && collections_.groups.size()>=books::Collections::maxCollections)) {
+      notice_="Collection name unavailable";return false;
+    }
+    auto next=collections_;
+    if(collectionRename_) {
+      auto existing=next.groups.extract(collectionName_);
+      existing.key()=collectionInput_;
+      next.groups.insert(std::move(existing));
+    } else next.groups[collectionInput_];
+    if(!storeCollections(std::move(next)))return false;
+    if(collectionFilter_==collectionName_ && collectionRename_)collectionFilter_=collectionInput_;
+    collectionName_=collectionInput_;
+    openLibraryMenu(LibraryMenu::Collection);
+    return false;
+  }
+  void setLibraryFilter(bool favorites,std::string collection={},std::string series={}) {
+    favoritesFilter_=favorites;
+    collectionFilter_=std::move(collection);
+    seriesFilter_=std::move(series);
+    selected_=0;
+    openLibraryMenu(LibraryMenu::None);
+    refreshVisible();
+    if(visible_.size()>1)selected_=folderRows()+1;
+    flowPosition_=static_cast<float>(selected_);
+  }
+  bool libraryInput(books::LogicalAction action,const books::PhysicalEvent& event) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    const bool touch=event.kind==K::TouchUp;
+    if(libraryMenu_==LibraryMenu::Name)return collectionNameInput(action,event);
+    if(action==A::Back || (touch && event.y<74)) {
+      if(libraryMenu_==LibraryMenu::Collection)openLibraryMenu(LibraryMenu::Collections);
+      else if(libraryMenu_==LibraryMenu::Tools)openLibraryMenu(LibraryMenu::None);
+      else openLibraryMenu(LibraryMenu::Tools);
+      return false;
+    }
+    if(libraryMenu_==LibraryMenu::Info) {
+      if(action==A::Next && localInfoScroll_+6<localInfoLines_.size())++localInfoScroll_;
+      if(action==A::Previous && localInfoScroll_)--localInfoScroll_;
+      if(action==A::Confirm || (touch && event.y>=269)) {
+        openLibraryMenu(LibraryMenu::None);
+        return true;
+      }
+      if(touch && event.y>=154 && event.y<269) {
+        if(event.y<210 && localInfoScroll_)--localInfoScroll_;
+        if(event.y>=210 && localInfoScroll_+6<localInfoLines_.size())++localInfoScroll_;
+      }
+      return false;
+    }
+    const size_t rows=libraryMenu_==LibraryMenu::Series?seriesRows_.size():libraryLabels().size();
+    if(!rows)return false;
+    libraryChoice_=std::min(libraryChoice_,rows-1);
+    if(action==A::Next || action==A::Previous) {
+      if(action==A::Next && libraryChoice_+1<rows)++libraryChoice_;
+      if(action==A::Previous && libraryChoice_)--libraryChoice_;
+      libraryDeleteArmed_=false;notice_.clear();return false;
+    }
+    if(touch) {
+      if(event.y>=269) {
+        const size_t first=libraryChoice_/VISIBLE_ROWS*VISIBLE_ROWS;
+        if(event.x<140 && first>=VISIBLE_ROWS)libraryChoice_=first-VISIBLE_ROWS;
+        if(event.x>=235 && first+VISIBLE_ROWS<rows)libraryChoice_=first+VISIBLE_ROWS;
+        libraryDeleteArmed_=false;
+        return false;
+      }
+      if(event.x<12 || event.x>=362 || event.y<TOP_Y || event.y>=TOP_Y+VISIBLE_ROWS*ROW_H)return false;
+      const auto row=(libraryChoice_/VISIBLE_ROWS)*VISIBLE_ROWS+(event.y-TOP_Y)/ROW_H;
+      if(row>=rows)return false;
+      if(libraryChoice_!=row)libraryDeleteArmed_=false;
+      libraryChoice_=row;
+    } else if(action!=A::Confirm)return false;
+    notice_.clear();
+    switch(libraryMenu_) {
+      case LibraryMenu::Tools:
+        if(libraryChoice_==rows-1) {
+          openLibraryMenu(LibraryMenu::None);
+          (void)enterOnline();
+          break;
+        }
+        switch(libraryChoice_) {
+          case 0:setLibraryFilter(true,{},seriesFilter_);break;
+          case 1:openLibraryMenu(LibraryMenu::Collections);break;
+          case 2:openLibraryMenu(LibraryMenu::Series);break;
+          case 3:setLibraryFilter(false);break;
+          case 4:showLocalInfo();break;
+          case 5: {
+            auto next=collections_;
+            const auto path=bookPath();
+            if(!next.favorites.erase(path))next.favorites.insert(path);
+            if(storeCollections(std::move(next)))refreshVisible();
+            break;
+          }
+          case 6:openLibraryMenu(LibraryMenu::Membership);break;
+        }
+        break;
+      case LibraryMenu::Collections:
+        if(!libraryChoice_)startCollectionName(false);
+        else {
+          auto group=collections_.groups.begin();
+          std::advance(group,libraryChoice_-1);
+          collectionName_=group->first;
+          openLibraryMenu(LibraryMenu::Collection);
+        }
+        break;
+      case LibraryMenu::Collection:
+        if(libraryChoice_==0)setLibraryFilter(false,collectionName_,seriesFilter_);
+        if(libraryChoice_==1)startCollectionName(true);
+        if(libraryChoice_==2) {
+          if(!libraryDeleteArmed_) {libraryDeleteArmed_=true;break;}
+          auto next=collections_;
+          next.groups.erase(collectionName_);
+          if(storeCollections(std::move(next))) {
+            if(collectionFilter_==collectionName_) {collectionFilter_.clear();refreshVisible();}
+            openLibraryMenu(LibraryMenu::Collections);
+          }
+        }
+        break;
+      case LibraryMenu::Membership: {
+        auto next=collections_;
+        auto group=next.groups.begin();
+        std::advance(group,libraryChoice_);
+        const auto path=bookPath();
+        if(!group->second.erase(path))group->second.insert(path);
+        if(storeCollections(std::move(next))) {
+          refreshVisible();
+          if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::Tools);
+        }
+        break;
+      }
+      case LibraryMenu::Series:
+        setLibraryFilter(favoritesFilter_,collectionFilter_,seriesRows_[libraryChoice_]->first);
+        break;
+      default:break;
+    }
+    return false;
+  }
+  void paintLibraryMenu() {
+    const char* heading="Library";
+    switch(libraryMenu_) {
+      case LibraryMenu::Info:heading="Book details";break;
+      case LibraryMenu::Collections:heading="Collections";break;
+      case LibraryMenu::Collection:heading=collectionName_.c_str();break;
+      case LibraryMenu::Membership:heading="Collection membership";break;
+      case LibraryMenu::Series:heading="Series";break;
+      case LibraryMenu::Name:heading=collectionRename_?"Rename collection":"New collection";break;
+      default:break;
+    }
+    drawRowLabel(16,39,35,heading);
+    renderer_.drawLine(15,74,359,74,true);
+    if(libraryMenu_==LibraryMenu::Info) {
+      const size_t index=selected();
+      drawBookCover(20,83,index);
+      const auto& title=localInfo_.title.empty()?books_[index].label:localInfo_.title;
+      drawRowLabel(87,78,26,fitWidth(title,263).c_str());
+      drawRowLabel(87,104,25,fitWidth(localInfo_.author,263).c_str());
+      uint32_t ppm=0;
+      if(books::loadShelfProgress(books_[index].path,ppm)) {
+        const auto progress=std::to_string(ppm/10000)+"%";
+        drawCompactLabel(87,149,progress.c_str());
+      }
+      for(size_t row=0;row<6 && localInfoScroll_+row<localInfoLines_.size();++row) {
+        const auto& line=localInfoLines_[localInfoScroll_+row];
+        const int y=154+static_cast<int>(row)*18;
+        if(!uiDraw(18,y,line,15,358) && !drawSmallLine(18,y+15,line,337))
+          drawRowLabel(18,y,19,fitWidth(line,337).c_str());
+      }
+      return;
+    }
+    if(libraryMenu_==LibraryMenu::Name) {
+      renderer_.drawRect(12,78,350,28,true);
+      auto name=collectionInput_;
+      drawRowLabel(20,78,28,fitWidth(name,330).c_str());
+      for(size_t i=0;i<SEARCH_KEY_COUNT;++i) {
+        const int x=KB_X+static_cast<int>(i%4)*(KB_W+KB_GAP);
+        const int y=KB_Y+static_cast<int>(i/4)*(KB_H+KB_GAP);
+        drawRowLabel(x+8,y,KB_H,keypad_.label(static_cast<int>(i)).c_str());
+        renderer_.drawRect(x,y,KB_W,KB_H,true);
+        if(i==searchKey_)books::paintSelection(display_,x,y,KB_W,KB_H);
+      }
+      return;
+    }
+    const auto labels=libraryLabels();
+    const bool series=libraryMenu_==LibraryMenu::Series;
+    const size_t rows=series?seriesRows_.size():labels.size();
+    const auto page=(libraryChoice_/VISIBLE_ROWS)*VISIBLE_ROWS;
+    for(size_t row=0;row<VISIBLE_ROWS && page+row<rows;++row) {
+      const auto& label=series?seriesRows_[page+row]->second.label:labels[page+row];
+      drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,label,{},page+row==libraryChoice_);
+    }
+    if(!rows)drawRowLabel(20,106,32,libraryMenu_==LibraryMenu::Series?
+        (seriesScan_<books_.size()?"Indexing series...":"No series"):"No collections");
+    if(page>=VISIBLE_ROWS)drawRowLabel(49,269,38,"<");
+    if(page+VISIBLE_ROWS<rows)drawRowLabel(306,269,38,">");
+  }
   void paint() {
     renderer_.clearScreen(0xff);
     // Fixed title and footer are outside both the home and file-list regions.
@@ -3899,6 +4683,8 @@ class CardShelf {
             std::string(books::tr("Download"))+"  "+size;
         drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,books::tr(pack.label),detail,index==fontSelection_);
       }
+    } else if(libraryMenu_!=LibraryMenu::None) {
+      paintLibraryMenu();
     } else if(jumpOpen_) {
       paintJump();
     } else if(optionsOpen_) {
@@ -3935,18 +4721,31 @@ class CardShelf {
     } else if(!browsing_) {
       drawRowLabel(16,39,35,"Home");
       constexpr int top=74,bottom=149,right=359;
-      constexpr int coverX=18,textX=82,textWidth=right-textX,lineHeight=21;
-      constexpr int coverY=(top+bottom-books::ShelfCover::height+1)/2;
+      constexpr int textX=82,lineHeight=21;
+      const int textWidth=(recentIndices_.size()>1?289:right)-textX;
       renderer_.drawLine(15,top,right,top,true);
       // The shelf only reads the cached thumbnail; the reader decodes the cover.
-      if(!books_.empty())drawBookCover(coverX,coverY,current_);
-      else renderer_.drawRect(coverX-1,coverY-1,
+      if(!books_.empty())drawBookCover(HOME_COVER_X,HOME_COVER_Y,current_);
+      else renderer_.drawRect(HOME_COVER_X-1,HOME_COVER_Y-1,
                               books::ShelfCover::width+2,books::ShelfCover::height+2,true);
 
       const auto* info=books_.empty()?nullptr:&details(current_);
       const bool hasAuthor=info && !info->author.empty();
       const int textY=(top+bottom+1-lineHeight*(hasAuthor?3:2))/2;
-      drawCompactLabel(textX,textY+16,"Current book",150);
+      uint32_t ppm=0;
+      const bool haveProgress=info && books::loadShelfProgress(books_[current_].path,ppm);
+      drawCompactLabel(textX,textY+16,recentIndices_.empty()?"Current book":"Recently read",150);
+      if(haveProgress) {
+        const auto progress=std::to_string(ppm/10000)+"%";
+        drawCompactLabel(242,textY+16,progress.c_str(),145,285);
+      }
+      if(recentIndices_.size()>1) {
+        drawCompactLabel(298,textY+16,"<",165);
+        drawCompactLabel(340,textY+16,">",165);
+        const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
+        drawCompactLabel(295,textY+38,page.c_str(),138,355);
+        if(recentFocus_)books::paintSelection(display_,290,textY,68,lineHeight);
+      }
       const int titleY=textY+lineHeight;
       if(info) {
         const auto& title=info->title.empty()?books_[current_].label:info->title;
@@ -4046,10 +4845,16 @@ class CardShelf {
         std::string crumb=books::shelfBreadcrumb(folder_,24);
         if(crumb.compare(0,5,"Books")==0)crumb=books::tr("Books")+crumb.substr(5);
         drawCompactLabel(16,61,crumb.c_str(),145,146);
-      } else drawCompactLabel(16,61,count,145,146);
+      } else {
+        const auto group=series_.find(seriesFilter_);
+        if(group!=series_.end())drawCompactLabel(16,61,group->second.label.c_str(),145,146);
+        else if(!collectionFilter_.empty())drawCompactLabel(16,61,collectionFilter_.c_str(),145,146);
+        else if(favoritesFilter_)drawCompactLabel(16,61,"Favorites",145,146);
+        else drawCompactLabel(16,61,count,145,146);
+      }
       drawCompactLabel(155,61,"Search",145,227);
       if(canJump())drawCompactLabel(243,61,"A-Z",145,283);
-      drawCompactLabel(301,61,"Online",145,360);
+      drawCompactLabel(301,61,"Library",145,360);
       renderer_.drawLine(15,72,359,72,true);
       if(gridActive()) paintGrid();
       else if(flowActive()) {
@@ -4106,7 +4911,8 @@ class CardShelf {
     // The footer strip holds a notice, or the details screen's action (a
     // tap there downloads); no control hints: the Q2's keys are known.
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
-      :detailsOpen()?(detailsOnCard_?"Show on card":"Download"):std::string();
+      :detailsOpen()?(detailsOnCard_?"Show on card":"Download")
+      :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book"):std::string();
     if(!footer.empty()) {
       // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).
       const int lineH=renderer_.getLineHeight(1);
@@ -4310,6 +5116,17 @@ class CardShelf {
     paint();
     if(!flowActive() && !gridActive()) {
       flowMoving_=false;flowTouch_=false;flowPosition_=float(selected_);
+      const bool info=libraryMenu_==LibraryMenu::Info;
+      const bool home=!browsing_ && !optionsOpen_ && !onlineMode_ && !fontManager_ && !books_.empty();
+      if((home || info) && displayedColorCover_.valid()) {
+        flowFrame_.resize(HalDisplay::PIXELS);
+        if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
+          const int x=info?20:HOME_COVER_X,y=info?83:HOME_COVER_Y;
+          books::grid::drawThumbnail(flowFrame_.data(),displayedColorCover_,x,y,books::ShelfCover::width,
+                                    books::ShelfCover::height);
+          if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+        }
+      }
       std::vector<uint32_t>().swap(flowFrame_);std::vector<uint8_t>().swap(flowAlpha_);
       for(auto& slot:flowSlots_)slot={};
       display_.displayBuffer();return;
@@ -4461,6 +5278,7 @@ int runCardApp(const std::string& bookDir) {
   books::Q2Controls controls(loadWheelSensitivity());
   std::unique_ptr<Reader> reader;
   bool readingUserGuide=false,readingFromGrid=false;
+  CardShelf::BrowseContext readingContext;
   bool typeMenu=false;
   bool navigationMenu=false;
   bool linkMenu=false;
@@ -4488,7 +5306,7 @@ int runCardApp(const std::string& bookDir) {
   int typeSelection=0;
   auto nextBuildTick=std::chrono::steady_clock::now();
   auto nextStatusCheck=std::chrono::steady_clock::now();
-  size_t nextShelfIndex=0;
+  size_t nextShelfIndex=0,nextSeriesIndex=0;
   auto nextShelfIndexTick=std::chrono::steady_clock::now()+
       std::chrono::milliseconds(800);
   // A wheel datagram can carry several ticks (MappedEvent::repeat): play each as
@@ -4504,17 +5322,26 @@ int runCardApp(const std::string& bookDir) {
       // input handling. One bounded OPF/thumbnail attempt per idle tick;
       // never parse chapter pages or write an index on every wheel turn.
       if(!reader && shelf && shelf->animating())shelf->animationTick();
-      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && nextShelfIndex<books.size() && now>=nextShelfIndexTick) {
-        const std::string& book=books[nextShelfIndex++].path;
-        const auto result=books::indexShelfBook(book);
-        if(result.updated) {
-          shelf->onIndexedBook(book);
-          shelf->present();
+      const bool seriesScan=shelf && shelf->scanningSeries();
+      auto& indexCursor=seriesScan?nextSeriesIndex:nextShelfIndex;
+      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() &&
+         !shelf->libraryInputBusy() && indexCursor<books.size() && now>=nextShelfIndexTick) {
+        if(seriesScan)indexCursor=std::max(indexCursor,nextShelfIndex);
+        if(indexCursor<books.size()) {
+          const size_t index=indexCursor++;
+          books::ShelfBookInfo info;
+          const auto result=books::indexShelfBook(books[index].path,&info,!seriesScan);
+          const bool seriesAdded=shelf->cacheSeries(index,info);
+          if(result.updated)shelf->onIndexedBook(index);
+          if(seriesAdded || (result.updated && !seriesScan))shelf->present();
         }
-        nextShelfIndexTick=std::chrono::steady_clock::now()+
-            std::chrono::milliseconds(800);
+        nextShelfIndexTick=ReaderClock::now()+std::chrono::milliseconds(seriesScan?30:800);
       }
-      const bool canPrefetch=reader && !typeMenu && !navigationMenu && !linkMenu &&
+      if(reader && reader->searchOpen() && reader->searchRunning()) {
+        reader->searchTick(&input);
+        continue;
+      }
+      const bool canPrefetch=reader && !reader->searchOpen() && !reader->searchPreview() && !typeMenu && !navigationMenu && !linkMenu &&
           !selectionChoosing && !selectionActions && !dictionaryOverlay &&
           !footnoteOverlay && reader->needsPagePrefetch();
       if(canPrefetch && now>=nextBuildTick) {
@@ -4522,7 +5349,7 @@ int runCardApp(const std::string& bookDir) {
         (void)reader->buildNextPages(2);
         nextBuildTick=ReaderClock::now()+std::chrono::milliseconds(150);
       }
-      const bool canAutoTurn=reader && !typeMenu && !navigationMenu && !linkMenu &&
+      const bool canAutoTurn=reader && !reader->searchOpen() && !reader->searchPreview() && !typeMenu && !navigationMenu && !linkMenu &&
           !selectionChoosing && !selectionActions && !dictionaryOverlay &&
           !footnoteOverlay && !percentDialog;
       // A new minute or battery level: show the footer again, but only
@@ -4541,7 +5368,7 @@ int runCardApp(const std::string& bookDir) {
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
       deadline=std::min(deadline,turnDue);
       if(!reader && shelf && shelf->animating())deadline=std::min(deadline,ReaderClock::now()+std::chrono::milliseconds(16));
-      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && nextShelfIndex<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && !shelf->libraryInputBusy() && indexCursor<books.size())deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
         std::fputs("Books: input socket poll failed\n",stderr);
@@ -4562,11 +5389,25 @@ int runCardApp(const std::string& bookDir) {
       if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
     }
     nextShelfIndexTick=std::chrono::steady_clock::now()+
-        std::chrono::milliseconds(800);
+        std::chrono::milliseconds(shelf && shelf->scanningSeries()?30:800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
     if(reader) {
+      if(reader->searchOpen()) {
+        const auto result=reader->bookSearchInput(action,event);
+        if(result==Reader::SearchInput::Book) {typeMenu=false;reader->present();}
+        if(result==Reader::SearchInput::Close) {
+          if(reader->searchPreview()) {
+            (void)reader->restoreSearchOrigin();
+            typeMenu=false;
+          }
+          if(typeMenu)reader->showTypographyMenu(typeSelection);
+          else reader->present();
+        }
+        continue;
+      }
+      if(reader->handleSearchPreview(action,event))continue;
       if(syncDialog) {  // M4: which reading position to keep
         int pick=-1;
         if(action==books::LogicalAction::Back)pick=2;
@@ -4632,17 +5473,22 @@ int runCardApp(const std::string& bookDir) {
         } else if(action==books::LogicalAction::Next ||
                   action==books::LogicalAction::Previous) {
           selectionAction=(selectionAction+
-              (action==books::LogicalAction::Next?1:3))%4;
+              (action==books::LogicalAction::Next?1:4))%5;
           reader->showTextSelectionMenu(selectionAction);
         } else if(action==books::LogicalAction::Confirm ||
                   event.kind==books::PhysicalKind::TouchUp) {
           if(event.kind==books::PhysicalKind::TouchUp) {
             if(event.y<260||event.y>=302)continue;
-            selectionAction=std::clamp((event.x-20)/85,0,3);
+            selectionAction=std::clamp((event.x-20)/68,0,4);
           }
           if(selectionAction==1) {
             selectionActions=false;dictionaryOverlay=true;
             reader->showDictionaryDefinition();
+          } else if(selectionAction==3) {
+            const auto query=reader->selectedSearchText();
+            selectionActions=false;reader->discardSelection();
+            if(reader->startBookSearch(query))reader->showBookSearch();
+            else reader->present();
           } else {
             if(selectionAction==0)(void)reader->saveSelectionHighlight();
             if(selectionAction==2)(void)reader->eraseSelectionHighlight();
@@ -4797,6 +5643,12 @@ int runCardApp(const std::string& bookDir) {
             reader->showDictionaryList(0);
             continue;
           }
+          if(typeSelection==23) {
+            (void)reader->adjustPreference(typeSelection);
+            reader->showTypographyMenu(typeSelection);
+            continue;
+          }
+          if(typeSelection==22) {reader->enterBookSearch();continue;}
           if(typeSelection==21) {
             (void)reader->exportNotes();
             reader->showTypographyMenu(typeSelection);
@@ -4896,9 +5748,13 @@ int runCardApp(const std::string& bookDir) {
         books::sortShelfBooks(books,sortMode,recent);
         selection=books::lastOpenedIndex(books,recent);
         shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
+        nextShelfIndex=nextSeriesIndex=0;
         if(!shelf->open())return 6;
-        if(readingUserGuide || readingFromGrid)shelf->enterBrowser(readingUserGuide);
-        readingUserGuide=false;readingFromGrid=false;
+        if(readingUserGuide || readingFromGrid || readingContext.filtered()) {
+          shelf->restoreBrowseContext(readingContext);
+          shelf->enterBrowser(readingUserGuide);
+        }
+        readingUserGuide=false;readingFromGrid=false;readingContext={};
         shelf->present();
         continue;
       }
@@ -5020,11 +5876,11 @@ int runCardApp(const std::string& bookDir) {
       selection=found==books.end()?0:
           static_cast<size_t>(found-books.begin());
       shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
+      nextShelfIndex=nextSeriesIndex=0;
       if(!shelf->open())return 6;
       shelf->enterBrowser();
       shelf->setNotice(already?"Already on the card":"EPUB downloaded to Books/Online");
       shelf->present();
-      nextShelfIndex=0;
       continue;
     }
     if(shelf->searching()) {
@@ -5041,13 +5897,23 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
+    if(shelf->libraryMenuOpen()) {
+      if(action==books::LogicalAction::None || action==books::LogicalAction::TouchPress ||
+         action==books::LogicalAction::TouchMove)continue;
+      const bool open=shelf->libraryInput(action,event);
+      shelf->present();
+      if(!open)continue;
+      action=books::LogicalAction::Confirm;
+      event={};
+    }
+    if(shelf->recentInput(action,event)) {shelf->present();continue;}
     if(shelf->jumpOpen()) {
       const size_t steps=1+pendingRepeat;
       pendingRepeat=0;
       if(shelf->jumpInput(action,event,steps))shelf->present();
       continue;
     }
-    if(shelf->jumpShortcut(action,event)) {shelf->present();continue;}
+    if(!shelf->searching() && shelf->jumpShortcut(action,event)) {shelf->present();continue;}
     if(shelf->optionsOpen() && (action==books::LogicalAction::Back ||
        (event.kind==books::PhysicalKind::TouchUp && event.y<74))) {
       shelf->closeOptions();
@@ -5065,7 +5931,7 @@ int runCardApp(const std::string& bookDir) {
     bool activate=action==books::LogicalAction::Confirm;
     if(event.kind==books::PhysicalKind::TouchUp)activate=shelf->tap(event.x,event.y);
     if(!activate) {if(event.kind==books::PhysicalKind::TouchUp && (shelf->animating() || shelf->gridActive()))shelf->present();continue;}
-    if(shelf->jumpOpen() || shelf->onlineMode()) {shelf->present();continue;}
+    if(shelf->jumpOpen() || shelf->onlineMode() || shelf->libraryMenuOpen()) {shelf->present();continue;}
     if(shelf->optionsChosen()) {shelf->enterOptions();shelf->present();continue;}
     if(shelf->viewChosen()) {shelf->toggleView();shelf->present();continue;}
     if(shelf->fontsChosen()) {shelf->enterFontManager();shelf->present();continue;}
@@ -5076,6 +5942,7 @@ int runCardApp(const std::string& bookDir) {
       continue;
     }
     if(shelf->sortChosen()) {
+      const auto context=shelf->browseContext();
       sortMode=sortMode==books::ShelfSortMode::Title?
           books::ShelfSortMode::Recent:
           (sortMode==books::ShelfSortMode::Recent?
@@ -5085,7 +5952,9 @@ int runCardApp(const std::string& bookDir) {
       books::sortShelfBooks(books,sortMode,recent);
       selection=books::lastOpenedIndex(books,recent);
       shelf.reset(new CardShelf(books,selection,selection,sortMode,bookDir));
+      nextShelfIndex=nextSeriesIndex=0;
       if(!shelf->open())return 6;
+      shelf->restoreBrowseContext(context);
       shelf->enterOptions();
       shelf->present();
       continue;
@@ -5095,6 +5964,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
       continue;
     }
+    if(!shelf->hasBookRow() && !shelf->folderSelected() && !shelf->guideSelected())continue;
     if(shelf->folderSelected()) {shelf->openSelectedFolder();shelf->present();continue;}
     const bool userGuide=shelf->guideSelected();
     std::string chosen;
@@ -5125,6 +5995,7 @@ int runCardApp(const std::string& bookDir) {
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
+      readingContext=shelf->browseContext();
       shelf.reset();
       reader=std::move(next);
       reader->present();
@@ -5187,6 +6058,75 @@ int main(int argc,char** argv) {
     return runCardApp("/mnt/mmc/Books");
   }
 #ifndef BOOKS_Q2_RUNTIME
+  if(argc==4 && std::strcmp(argv[1],"--test-library-roadmap")==0) {
+    using A=books::LogicalAction;
+    using K=books::PhysicalKind;
+    const std::vector<ShelfEntry> shelfBooks={{argv[2],"First",0,0},{argv[3],"Second",0,0}};
+    if(!books::recordRecentBook(argv[2]) || !books::recordRecentBook(argv[3]))return 1;
+    CardShelf shelf(shelfBooks);
+    if(!shelf.open() || shelf.bookPath()!=argv[3] ||
+       !shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[2])return 2;
+    shelf.enterBrowser(true);
+    if(!shelf.change(1) || shelf.bookPath()!=argv[2] ||
+       !shelf.tap(310,61) || !shelf.libraryMenuOpen() || shelf.flowActive() || shelf.gridActive())return 3;
+    const auto tap=[&](int x,int y){return shelf.libraryInput(A::TouchRelease,{K::TouchUp,0,x,y});};
+    (void)tap(300,283);
+    (void)tap(22,95);
+    if(!shelf.libraryInput(A::Confirm,{}) || shelf.libraryMenuOpen())return 4;
+    if(!shelf.tap(310,61))return 5;
+    (void)tap(300,283);
+    (void)tap(22,135);
+    if(!books::loadCollections().favorites.count(argv[2]))return 6;
+    (void)tap(45,283);
+    (void)tap(22,85);
+    if(!shelf.browseContext().favorites || shelf.bookPath()!=argv[2])return 7;
+    if(!shelf.tap(310,61))return 8;
+    (void)tap(22,231);
+    if(shelf.browseContext().filtered())return 9;
+    for(size_t i=0;i<shelfBooks.size();++i) {
+      books::ShelfBookInfo info;
+      if(!books::loadShelfBookInfo(shelfBooks[i].path,info))return 10;
+      (void)shelf.cacheSeries(i,info);
+    }
+    if(!shelf.tap(310,61))return 10;
+    (void)tap(22,179);
+    (void)tap(22,85);
+    if(shelf.browseContext().series.empty() || shelf.bookPath()!=argv[3] ||
+       !shelf.change(1) || shelf.bookPath()!=argv[2])return 11;
+    return 0;
+  }
+  if(argc==3 && std::strcmp(argv[1],"--test-local-book-info")==0) {
+    books::ShelfBookInfo info;
+    (void)books::indexShelfBook(argv[2],&info);
+    if(!books::loadShelfBookInfo(argv[2],info))return 1;
+    std::printf("title=%s\nauthor=%s\npublisher=%s\nlang=%s\nidentifier=%s\ndescription=%s\nseries=%s\nvolume=%g\n",
+        info.title.c_str(),info.author.c_str(),info.publisher.c_str(),info.language.c_str(),
+        info.identifier.c_str(),info.description.c_str(),info.series.c_str(),
+        static_cast<double>(info.volume.value_or(-1.f)));
+    return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--test-book-search")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.startBookSearch(argv[3]))return 1;
+    const auto original=reader.currentPosition();
+    while(reader.searchRunning())reader.searchTick();
+    size_t count=reader.searchMatchCount();
+    if(count && (!reader.goToSearchMatch(0) || !reader.searchPreview() || !reader.restoreSearchOrigin()))return 2;
+    const auto restored=reader.currentPosition();
+    if(original.spine!=restored.spine || original.page!=restored.page || original.textOffset!=restored.textOffset)return 3;
+    while(reader.loadMoreSearchMatches()) {
+      while(reader.searchRunning())reader.searchTick();
+      count+=reader.searchMatchCount();
+    }
+    std::printf("matches=%zu\n",count);
+    return 0;
+  }
+  if(argc==4 && std::strcmp(argv[1],"--test-book-font")==0) {
+    Reader reader(argv[2]);
+    if(!reader.open() || !reader.savePgm(argv[3]))return 1;
+    std::printf("publisher-font=%d\n",int(reader.publisherFontActive()));
+    return 0;
+  }
   if(argc==2 && std::strcmp(argv[1],"--test-shelf-jump")==0) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
@@ -5885,7 +6825,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,22,23,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;
@@ -5902,12 +6842,14 @@ int main(int argc,char** argv) {
     reader.flushPosition(false);
     books::PhysicalEvent event{};
     if (pendingRepeat==0 && !input.receive(event)) {
-      if(!typeMenu && !percentDialog && !aboutShown && ReaderClock::now()>=nextStatusCheck) {
+      if(reader.searchOpen() && reader.searchRunning()) {reader.searchTick(&input);continue;}
+      if(!reader.searchOpen() && !reader.searchPreview() && !typeMenu && !percentDialog && !aboutShown && ReaderClock::now()>=nextStatusCheck) {
         nextStatusCheck=ReaderClock::now()+std::chrono::seconds(1);
         if(reader.statusChanged())reader.present();
       }
       const auto beforeTurn=nextAutoTurn;
-      const auto turnDue=autoTurnTick(reader,!typeMenu && !percentDialog,nextAutoTurn);
+      const auto turnDue=autoTurnTick(reader,!reader.searchOpen() && !reader.searchPreview() &&
+          !typeMenu && !percentDialog,nextAutoTurn);
       if(beforeTurn!=ReaderClock::time_point::max() && nextAutoTurn!=beforeTurn &&
          beforeTurn<=ReaderClock::now())continue;
       if(waitForReaderInput(input,std::min(reader.nextPositionFlush(),turnDue))<0) {
@@ -5930,6 +6872,17 @@ int main(int argc,char** argv) {
     }
     bool changed=false;
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
+    if(reader.searchOpen()) {
+      const auto result=reader.bookSearchInput(action,event);
+      if(result==Reader::SearchInput::Book) {typeMenu=false;reader.present();}
+      if(result==Reader::SearchInput::Close) {
+        if(reader.searchPreview()) {(void)reader.restoreSearchOrigin();typeMenu=false;}
+        if(typeMenu)reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);
+        else reader.present();
+      }
+      continue;
+    }
+    if(reader.handleSearchPreview(action,event))continue;
     if(percentDialog) {
       const auto result=handlePercentInput(reader,action,event,percentValue);
       if(result==PercentResult::Open)continue;
@@ -5972,6 +6925,7 @@ int main(int argc,char** argv) {
           reader.showAbout();
           continue;
         }
+        if(typeSelection==22) {reader.enterBookSearch();continue;}
         if(typeSelection==21) {
           (void)reader.exportNotes();
           reader.showTypographyMenu(typeSelection,kHandoffItems,kHandoffCount);

@@ -7,7 +7,7 @@ EPUB engine, layout and fonts to the Q2's Linux. It appears in Q2 Pod as **Books
 differently; the first start of this version copies your reading positions,
 bookmarks, highlights and settings from the old card folder into `.books`.
 
-**Status:** [v1.4.2](https://github.com/lampsonlnguyen/q2-books/releases/tag/v1.4.2) is the current release. Grid View and the v1.4.2 library updates were checked on a physical Shanling Q2 and looked good in the maintainer’s test. The broader hardware QA checklist is below. The next feature release is [v1.5.0 — Alphabetical navigation](#v150--alphabetical-navigation).
+**Status:** [v1.5.0](https://github.com/lampsonlnguyen/q2-books/releases/tag/v1.5.0) is the current release and adds alphabetical navigation. The maintainer checked Grid View and the v1.4.2 library updates on a physical Shanling Q2. The broader hardware QA checklist is below.
 
 ## Automatic releases
 
@@ -21,18 +21,18 @@ Each minor release has one primary feature. Patch releases address fixes, compat
 
 | Release | Primary feature | Status |
 | --- | --- | --- |
-| v1.5.0 | Alphabetical navigation | In development |
-| v1.6.0 | Book information panel | Planned |
-| v1.7.0 | Collections and favorites | Planned |
+| v1.5.0 | Alphabetical navigation | Released |
+| v1.6.0 | Book information panel | In development |
+| v1.7.0 | Collections and favorites | In development |
 | v1.8.0 | Reading status filters | Planned |
-| v1.9.0 | Recently read carousel | Planned |
-| v1.10.0 | Series grouping | Planned |
+| v1.9.0 | Recently read carousel | In development |
+| v1.10.0 | Series grouping | In development |
 | v1.11.0 | Cover Flow customization | Planned |
-| v1.12.0 | In-book search | Planned |
-| v1.13.0 | Embedded EPUB fonts | Planned |
+| v1.12.0 | In-book search | In development |
+| v1.13.0 | Embedded EPUB fonts | In development |
 | v1.14.0 | Markdown support | Planned |
 | v1.15.0 | HTML support | Planned |
-| v1.16.0 | Language-aware hyphenation | Planned |
+| v1.16.0 | Language-aware hyphenation | In development |
 | v1.17.0 | Reading statistics | Planned |
 | v1.18.0 | Reading streaks and goals | Planned |
 
@@ -46,6 +46,16 @@ In Browse files, tap **A-Z** or hold Centre and release to open the picker. Turn
 - [ ] 1.5-M4 — Test multilingual and 4000-book libraries, rapid wheel input and boundary behavior; keep index generation off the frame-critical path.
 
 **Acceptance:** Users can jump to populated groups quickly without corrupting search, sort or selection.
+
+### Testing the library and reader changes
+
+- In **Browse files**, highlight a book and tap **Library** or hold Centre for just over a second and release. **Book details** shows local metadata and progress without opening the book. Turn the wheel to scroll the description and press Centre to open or resume. The shorter Centre hold still opens A–Z.
+- Use **Library** to create and browse collections, add the selected book to collections, or toggle its favorite. **All books** clears the active group. Moved books retain membership when the card contains one matching file. The app leaves ambiguous or missing files associated with their saved paths.
+- On **Home**, tap the arrows to cycle through cached recent books. With **Continue reading** highlighted, hold Centre and release to focus the carousel, then turn the wheel and press Centre to resume.
+- **Library → Series** lists EPUB3 and Calibre series as their metadata is indexed. Select a series to browse in ascending volume order; books without a volume follow numbered books. Books outside a series are available under **All books**.
+- Use **Reading settings → Find in book** or **Find** from the selection menu. The T9 keyboard enters ASCII queries; use selected text to search for accented or non-Latin words. From a result, turn the wheel for adjacent hits, press Centre for results, or press Back to return to the original page. Tap **Read from here** or hold Centre to resume reading at the hit. Results use bounded batches; chapters outside the parser's limits can be skipped.
+- **Book fonts** uses a supported TTF or OTF family declared by a local stylesheet for the document body. Disable **Book fonts** to use your chosen reading typeface. Per-element families, WOFF, obfuscated fonts and fonts with restricted embedding fall back to the normal reading typeface or script font.
+- **Hyphenation** uses book-language rules and supported XHTML `lang` / `xml:lang` overrides when enabled. Languages without a bundled pattern retain ordinary wrapping and explicit break opportunities.
 
 ### v1.6.0 — Book information panel
 

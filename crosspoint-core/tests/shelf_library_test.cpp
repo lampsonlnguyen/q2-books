@@ -5,6 +5,7 @@
 #include "ShelfCover.hpp"
 #include "ShelfFolders.hpp"
 #include "ShelfLibrary.hpp"
+#include "ShelfCollections.hpp"
 #include <chrono>
 #include <sys/stat.h>
 #include <algorithm>
@@ -81,7 +82,24 @@ int main() {
   assert(std::fputs("BOOKS-RECENT1\nnot-hex\n",f)>=0);
   assert(std::fclose(f)==0);
   assert(books::loadRecentBooks().empty());
-  assert(std::remove(a.c_str())==0);
+  const auto renamed=std::string(dir)+"/Renamed.epub";
+  books::Collections tags;
+  tags.favorites.insert(a);
+  tags.groups["Fiction"].insert(a);
+  tags.groups["On vacation"].insert(a);
+  tags.identities[a]=books::collectionIdentity(a);
+  assert(!tags.nameAvailable("fICTion"));
+  assert(books::saveCollections(tags));
+  assert(std::rename(a.c_str(),renamed.c_str())==0);
+  tags=books::loadCollections();
+  assert(books::restoreMovedCollectionBooks(tags,books::scanCardBooks(dir)));
+  assert(tags.favorites.count(renamed)==1 && tags.groups["Fiction"].count(renamed)==1 &&
+         tags.groups["On vacation"].count(renamed)==1);
+  tags.groups.erase("Fiction");
+  assert(books::saveCollections(tags));
+  assert(books::loadCollections().favorites.count(renamed)==1);
+  assert(std::remove(books::collectionsFile().c_str())==0);
+  assert(std::remove(renamed.c_str())==0);
   assert(std::remove(b.c_str())==0);
   // M4 folders: built from the book paths, empty folders hidden.
   {

@@ -3129,6 +3129,7 @@ class CardShelf {
   size_t seriesScan_=0;
   std::string collectionInput_;
   bool collectionRename_=false;
+  std::string collectionCreateForBook_;
   books::ShelfBookInfo localInfo_;
   std::vector<std::string> localInfoLines_;
   size_t localInfoScroll_=0;
@@ -3318,7 +3319,7 @@ class CardShelf {
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
-    bool filtered() const {return favorites || !collection.empty() || !series.empty();}
+    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty();}
   };
   BrowseContext browseContext() const {
     return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_};
@@ -3326,7 +3327,7 @@ class CardShelf {
   void restoreBrowseContext(const BrowseContext& context) {
     if(!context.filtered())return;
     favoritesFilter_=context.favorites;
-    collectionFilter_=context.collection;
+    collectionFilter_=collections_.groups.count(context.collection)?context.collection:std::string();
     seriesFilter_=context.series;
     searchQuery_=context.query;
     if(!seriesFilter_.empty()) {
@@ -3338,11 +3339,8 @@ class CardShelf {
       }
     }
     refreshVisible();
-    for(size_t i=1;i<visible_.size();++i) {
-      if(books_[visible_[i]].path!=context.path)continue;
-      selected_=i;
-      break;
-    }
+    selectVisiblePath(context.path);
+    browsed_=true; // do not refocus the guide on the next Browse action
     flowPosition_=static_cast<float>(selected_);
   }
 
@@ -3998,7 +3996,32 @@ class CardShelf {
     selected_=0;
     return true;
   }
+  // Preserve book identity across list rebuilds, not its numeric row.
+  void selectVisiblePath(const std::string& path) {
+    if(!path.empty()) {
+      for(size_t i=0;i<visible_.size();++i) {
+        const auto index=visible_[i];
+        if(index<books_.size() && books_[index].path==path) {
+          selected_=folderRows()+i;
+          flowPosition_=static_cast<float>(selected_);
+          return;
+        }
+      }
+    }
+    selected_=folderRows()+(visible_.size()>1?1u:0u);
+    flowPosition_=static_cast<float>(selected_);
+  }
   void refreshVisible() {
+    // Capture the old selection using the actual previous folder count;
+    // the filter flags may already have changed before rebuilding.
+    const size_t oldFolders=folders_.size();
+    std::string previousPath;
+    const bool wasGuide=selected_>=oldFolders && selected_-oldFolders<visible_.size() &&
+        visible_[selected_-oldFolders]==books_.size();
+    if(selected_>=oldFolders && selected_-oldFolders<visible_.size()) {
+      const auto index=visible_[selected_-oldFolders];
+      if(index<books_.size())previousPath=books_[index].path;
+    }
     flowMoving_=false;flowTouch_=false;
     visible_.clear();
     visible_.push_back(books_.size());  // Virtual guide, even when the shelf is empty.
@@ -4032,7 +4055,8 @@ class CardShelf {
       const auto group=series_.find(seriesFilter_);
       if(group!=series_.end())for(const auto& volume:group->second.volumes)addBook(volume.index);
     }
-    if(selected_>=visible_.size())selected_=0;
+    if(wasGuide) {selected_=0;flowPosition_=0;}
+    else selectVisiblePath(previousPath);
   }
   const std::string& bookPath() const {return books_[selected()].path;}
   bool change(int direction) {
@@ -4407,7 +4431,7 @@ class CardShelf {
     std::vector<std::string> rows;
     switch(libraryMenu_) {
       case LibraryMenu::Tools:
-        rows={books::tr("Favorites"),books::tr("Collections"),books::tr("Series"),
+        rows={std::string(favoritesFilter_?"[x] ":"[ ] ")+books::tr("Favorites"),books::tr("Collections"),books::tr("Series"),
               books::tr("All books")};
         if(hasBookRow()) {
           rows.push_back(books::tr("Book details"));
@@ -4428,6 +4452,8 @@ class CardShelf {
       case LibraryMenu::Membership:
         for(const auto& group:collections_.groups)
           rows.push_back(std::string(group.second.count(bookPath())?"[x] ":"[ ] ")+group.first);
+        if(collections_.groups.size()<books::Collections::maxCollections)
+          rows.push_back(books::tr("New collection"));
         break;
       default:break;
     }
@@ -4436,8 +4462,10 @@ class CardShelf {
   bool storeCollections(books::Collections next) {
     if(hasBookRow()) {
       const auto& path=bookPath();
-      if(books::collectionsContain(next,path) && !next.identities.count(path))
-        next.identities[path]=books::collectionIdentity(path);
+      if(books::collectionsContain(next,path) && !next.identities.count(path)) {
+        const auto identity=books::collectionIdentity(path);
+        if(books::Collections::validIdentity(identity))next.identities[path]=identity;
+      }
     }
     for(auto it=next.identities.begin();it!=next.identities.end();) {
       if(!books::collectionsContain(next,it->first))it=next.identities.erase(it);
@@ -4447,7 +4475,8 @@ class CardShelf {
     collections_=std::move(next);
     return true;
   }
-  void startCollectionName(bool rename) {
+  void startCollectionName(bool rename,bool forBook=false) {
+    collectionCreateForBook_=forBook && hasBookRow()?bookPath():std::string();
     collectionRename_=rename;
     collectionInput_=rename?collectionName_:std::string();
     searchKey_=books::T9Keypad::Abc;
@@ -4459,7 +4488,10 @@ class CardShelf {
     using K=books::PhysicalKind;
     const bool touch=event.kind==K::TouchUp;
     if(action==A::Back || (touch && event.y<74)) {
-      openLibraryMenu(collectionRename_?LibraryMenu::Collection:LibraryMenu::Collections);
+      const bool forBook=!collectionCreateForBook_.empty();
+      collectionCreateForBook_.clear();
+      openLibraryMenu(collectionRename_?LibraryMenu::Collection:
+          forBook?LibraryMenu::Membership:LibraryMenu::Collections);
       return false;
     }
     bool activate=action==A::Confirm;
@@ -4467,7 +4499,10 @@ class CardShelf {
     if(action==A::Previous)searchKey_=(searchKey_+SEARCH_KEY_COUNT-1)%SEARCH_KEY_COUNT;
     if(touch && event.x>=KB_X && event.y>=KB_Y) {
       const auto col=(event.x-KB_X)/(KB_W+KB_GAP),row=(event.y-KB_Y)/(KB_H+KB_GAP);
-      if(row<4 && col<4) {searchKey_=static_cast<size_t>(4*row+col);activate=true;}
+      if(row<4 && col<4 && (event.x-KB_X)%(KB_W+KB_GAP)<KB_W &&
+         (event.y-KB_Y)%(KB_H+KB_GAP)<KB_H) {
+        searchKey_=static_cast<size_t>(4*row+col);activate=true;
+      }
     }
     if(!activate)return false;
     if(keypad_.press(static_cast<int>(searchKey_),collectionInput_,books::Collections::maxNameBytes)!=
@@ -4482,24 +4517,33 @@ class CardShelf {
     auto next=collections_;
     if(collectionRename_) {
       auto existing=next.groups.extract(collectionName_);
+      if(existing.empty()) {notice_="Collection name unavailable";return false;}
       existing.key()=collectionInput_;
       next.groups.insert(std::move(existing));
-    } else next.groups[collectionInput_];
+    } else {
+      auto& group=next.groups[collectionInput_];
+      if(!collectionCreateForBook_.empty())group.insert(collectionCreateForBook_);
+    }
     if(!storeCollections(std::move(next)))return false;
     if(collectionFilter_==collectionName_ && collectionRename_)collectionFilter_=collectionInput_;
     collectionName_=collectionInput_;
-    openLibraryMenu(LibraryMenu::Collection);
+    const bool forBook=!collectionCreateForBook_.empty();
+    collectionCreateForBook_.clear();
+    if(forBook) {
+      openLibraryMenu(LibraryMenu::Membership);
+      const auto group=collections_.groups.find(collectionName_);
+      libraryChoice_=static_cast<size_t>(std::distance(collections_.groups.begin(),group));
+    } else openLibraryMenu(LibraryMenu::Collection);
     return false;
   }
   void setLibraryFilter(bool favorites,std::string collection={},std::string series={}) {
+    const std::string previous=hasBookRow()?bookPath():std::string();
     favoritesFilter_=favorites;
     collectionFilter_=std::move(collection);
     seriesFilter_=std::move(series);
-    selected_=0;
     openLibraryMenu(LibraryMenu::None);
     refreshVisible();
-    if(visible_.size()>1)selected_=folderRows()+1;
-    flowPosition_=static_cast<float>(selected_);
+    selectVisiblePath(previous);
   }
   bool libraryInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
@@ -4507,7 +4551,12 @@ class CardShelf {
     const bool touch=event.kind==K::TouchUp;
     if(libraryMenu_==LibraryMenu::Name)return collectionNameInput(action,event);
     if(action==A::Back || (touch && event.y<74)) {
-      if(libraryMenu_==LibraryMenu::Collection)openLibraryMenu(LibraryMenu::Collections);
+      if(libraryMenu_==LibraryMenu::Collection) {
+        openLibraryMenu(LibraryMenu::Collections);
+        const auto group=collections_.groups.find(collectionName_);
+        if(group!=collections_.groups.end())
+          libraryChoice_=1+static_cast<size_t>(std::distance(collections_.groups.begin(),group));
+      }
       else if(libraryMenu_==LibraryMenu::Tools ||
               (libraryMenu_==LibraryMenu::Info && !localInfoFromTools_))openLibraryMenu(LibraryMenu::None);
       else openLibraryMenu(LibraryMenu::Tools);
@@ -4557,7 +4606,7 @@ class CardShelf {
           break;
         }
         switch(libraryChoice_) {
-          case 0:setLibraryFilter(true,{},seriesFilter_);break;
+          case 0:setLibraryFilter(!favoritesFilter_,collectionFilter_,seriesFilter_);break;
           case 1:openLibraryMenu(LibraryMenu::Collections);break;
           case 2:openLibraryMenu(LibraryMenu::Series);break;
           case 3:setLibraryFilter(false);break;
@@ -4566,7 +4615,10 @@ class CardShelf {
             auto next=collections_;
             const auto path=bookPath();
             if(!next.favorites.erase(path))next.favorites.insert(path);
-            if(storeCollections(std::move(next)))refreshVisible();
+            if(storeCollections(std::move(next))) {
+              refreshVisible();
+              if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::None);
+            }
             break;
           }
           case 6:openLibraryMenu(LibraryMenu::Membership);break;
@@ -4582,7 +4634,7 @@ class CardShelf {
         }
         break;
       case LibraryMenu::Collection:
-        if(libraryChoice_==0)setLibraryFilter(false,collectionName_,seriesFilter_);
+        if(libraryChoice_==0)setLibraryFilter(favoritesFilter_,collectionName_,seriesFilter_);
         if(libraryChoice_==1)startCollectionName(true);
         if(libraryChoice_==2) {
           if(!libraryDeleteArmed_) {libraryDeleteArmed_=true;break;}
@@ -4595,6 +4647,10 @@ class CardShelf {
         }
         break;
       case LibraryMenu::Membership: {
+        if(!hasBookRow()) {openLibraryMenu(LibraryMenu::None);break;}
+        if(libraryChoice_==collections_.groups.size()) {
+          startCollectionName(false,true);break;
+        }
         auto next=collections_;
         auto group=next.groups.begin();
         std::advance(group,libraryChoice_);
@@ -4602,7 +4658,7 @@ class CardShelf {
         if(!group->second.erase(path))group->second.insert(path);
         if(storeCollections(std::move(next))) {
           refreshVisible();
-          if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::Tools);
+          if(!hasBookRow() || bookPath()!=path)openLibraryMenu(LibraryMenu::None);
         }
         break;
       }
@@ -4904,9 +4960,11 @@ class CardShelf {
         drawCompactLabel(16,61,crumb.c_str(),145,146);
       } else {
         const auto group=series_.find(seriesFilter_);
-        if(group!=series_.end())drawCompactLabel(16,61,group->second.label.c_str(),145,146);
-        else if(!collectionFilter_.empty())drawCompactLabel(16,61,collectionFilter_.c_str(),145,146);
-        else if(favoritesFilter_)drawCompactLabel(16,61,"Favorites",145,146);
+        std::string filterLabel;
+        if(!collectionFilter_.empty())filterLabel=collectionFilter_;
+        else if(group!=series_.end())filterLabel=group->second.label;
+        if(favoritesFilter_)filterLabel=filterLabel.empty()?books::tr("Favorites"):"* "+filterLabel;
+        if(!filterLabel.empty())drawCompactLabel(16,61,filterLabel.c_str(),145,146);
         else drawCompactLabel(16,61,count,145,146);
       }
       drawCompactLabel(155,61,"Search",145,227);
@@ -4969,7 +5027,11 @@ class CardShelf {
     // tap there downloads); no control hints: the Q2's keys are known.
     const std::string footer=!notice_.empty()?clippedLabel(notice_,24)
       :detailsOpen()?(detailsOnCard_?"Show on card":"Download")
-      :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book"):std::string();
+      :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book")
+      :browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
+       libraryMenu_==LibraryMenu::None && visible_.size()==1 &&
+       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty())?
+       books::tr("No books yet"):std::string();
     if(!footer.empty()) {
       // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).
       const int lineH=renderer_.getLineHeight(1);

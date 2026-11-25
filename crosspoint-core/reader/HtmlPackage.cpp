@@ -312,6 +312,8 @@ struct Html {
   struct Heading {Anchor anchor;std::string label;};
   struct Image {std::string name,data;bool png;};
   const int root;
+  const ImportedImageReader* imported=nullptr;
+  bool legacyMobi=false;
   explicit Html(int folder):root(folder) {}
   std::vector<Chapter> chapters{1};
   struct OpenTag {std::string name,continuation;};
@@ -389,8 +391,39 @@ struct Html {
     images.push_back({result,std::move(bytes),png});
     return result;
   }
+  std::string embeddedImage(std::string_view recindex) {
+    if(!imported || !*imported || recindex.empty() || recindex.size()>10)return {};
+    size_t index=0;
+    const auto parsed=std::from_chars(recindex.data(),recindex.data()+recindex.size(),index);
+    if(parsed.ec!=std::errc{} || parsed.ptr!=recindex.data()+recindex.size() || !index)return {};
+    const auto key="rec:"+std::to_string(index);
+    if(const auto it=imagePaths.find(key);it!=imagePaths.end())return it->second;
+    if(images.size()>=maxImages || imagePaths.size()>=maxImages*2)return {};
+    auto& result=imagePaths[key];
+    std::string bytes;
+    if(!(*imported)(index,bytes) || bytes.size()>imageLimit || bytes.size()>imageBudget-imageBytes)return {};
+    const bool png=bytes.starts_with("\x89PNG\r\n\x1a\n");
+    if(!png && !bytes.starts_with("\xff\xd8\xff"))return {};
+    imageBytes+=bytes.size();
+    result="image"+std::to_string(images.size())+(png?".png":".jpg");
+    images.push_back({result,std::move(bytes),png});
+    return result;
+  }
+  void pageBreak() {
+    if(chapters.back().body.empty() || chapters.size()>=512)return;
+    // Retain common outer containers, not paragraph or inline formatting.
+    while(!stack.empty() && !std::all_of(stack.begin(),stack.end(),[](const OpenTag& t){
+      return oneOf(t.name,"div","main","section","article");
+    }))closeTo(stack.size()-1);
+    auto wrappers=stack;
+    closeTo(0);
+    chapters.emplace_back();
+    for(const auto& tag:wrappers)append(tag.continuation);
+    stack=std::move(wrappers);
+  }
   void element(const Tag& tag) {
     const auto& name=tag.name;
+    if(legacyMobi && name=="mbp:pagebreak") {if(!tag.close)pageBreak();return;}
     if(name=="head") {head=!tag.close;return;}
     if(name=="html" || name=="body") {
       if(!tag.close) {
@@ -453,7 +486,7 @@ struct Html {
         attrs+=attr(key,value);
     }
     if(name=="img") {
-      const auto file=image(tag.get("src"));
+      const auto file=legacyMobi?embeddedImage(tag.get("recindex")):image(tag.get("src"));
       if(file.empty())append(txtpkg::xmlEscape(tag.get("alt")));
       else append("<img"+attrs+attr("src",file)+attr("alt",tag.get("alt"))+"/>");
       return;
@@ -570,11 +603,14 @@ uint64_t hash(std::string_view bytes) {
 
 std::string packageImportedBook(const std::string& source,std::string_view title,
     std::string_view raw,bool isHtml,const std::string& cacheDir,std::string& error,
-    std::string_view author,std::string_view language) {
+    std::string_view author,std::string_view language,
+    const ImportedImageReader& imageReader,bool legacyMobi) {
   if(raw.size()>sourceLimit) {error="Imported ebook exceeds 1 MiB";return {};}
   std::string payload;
   if(isHtml) {
     Html html(-1); // no external file or network access
+    html.imported=&imageReader;
+    html.legacyMobi=legacyMobi;
     if(!html.parse(cleanDocument(raw))) {error="MOBI HTML exceeded conversion limits";return {};}
     if(!title.empty())html.title=cleanDocument(title);
     html.author=cleanDocument(author);

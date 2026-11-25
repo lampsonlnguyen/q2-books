@@ -3135,7 +3135,7 @@ class CardShelf {
     statusCounts_={books_.size(),0,0,0};
     for(size_t i=0;i<books_.size();++i)++statusCounts_[1+static_cast<size_t>(bookStatus(i))];
   }
-  struct SeriesVolume {size_t index;std::optional<float> number;};
+  using SeriesVolume=books::SeriesVolumeRef;
   struct SeriesGroup {std::string label;std::vector<SeriesVolume> volumes;};
   std::map<std::string,SeriesGroup> series_;
   std::vector<decltype(series_)::const_iterator> seriesRows_;
@@ -3363,39 +3363,36 @@ class CardShelf {
     flowPosition_=static_cast<float>(selected_);
   }
 
-  bool scanningSeries() const {return libraryMenu_==LibraryMenu::Series;}
+  bool scanningSeries() const {return seriesScan_<books_.size() && (libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty());}
+  bool seriesIndexed(size_t index) const {return seriesChecked_[index];}
   bool libraryInputBusy() const {
     return libraryMenu_!=LibraryMenu::None && libraryMenu_!=LibraryMenu::Series;
   }
   bool cacheSeries(size_t index,const books::ShelfBookInfo& info) {
     if(index>=books_.size() || seriesChecked_[index])return false;
     seriesChecked_[index]=true;++seriesScan_;
-    if(info.series.empty())return libraryMenu_==LibraryMenu::Series && seriesScan_==books_.size();
-    const auto result=series_.try_emplace(books::utf8Lower(books::foldShelfSearch(info.series)));
+    const auto key=books::seriesIdentity(info.series);
+    if(key.empty())return libraryMenu_==LibraryMenu::Series && seriesScan_==books_.size();
+    const auto result=series_.try_emplace(key);
     auto& group=result.first->second;
     if(result.second) {
-      group.label=info.series;
+      group.label=books::normalizeSeriesName(info.series);
       const auto place=std::lower_bound(seriesRows_.begin(),seriesRows_.end(),result.first,
         [](const auto& a,const auto& b){return a->first<b->first;});
       if(static_cast<size_t>(place-seriesRows_.begin())<=libraryChoice_ && !seriesRows_.empty() &&
          libraryMenu_==LibraryMenu::Series)++libraryChoice_;
       seriesRows_.insert(place,result.first);
     }
-    const SeriesVolume volume{index,info.volume};
-    const auto before=[](const auto& a,const auto& b) {
-      if(a.number.has_value()!=b.number.has_value())return a.number.has_value();
-      if(a.number!=b.number)return a.number<b.number;
-      return a.index<b.index;
-    };
-    group.volumes.insert(std::lower_bound(group.volumes.begin(),group.volumes.end(),volume,before),volume);
-    if(!seriesFilter_.empty()) {
+    const SeriesVolume volume{static_cast<uint32_t>(index),books::compactSeriesVolume(info.volume)};
+    group.volumes.insert(std::lower_bound(group.volumes.begin(),group.volumes.end(),volume,books::seriesVolumeBefore),volume);
+    if(seriesFilter_==key) {
       const size_t before=hasBookRow()?selected():books_.size();
       refreshVisible();
       const auto row=std::find(visible_.begin(),visible_.end(),before);
       if(row!=visible_.end())selected_=static_cast<size_t>(row-visible_.begin());
       flowPosition_=static_cast<float>(selected_);
     }
-    return libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty();
+    return libraryMenu_==LibraryMenu::Series || seriesFilter_==key;
   }
   void changeRecent(int direction) {
     if(recentIndices_.empty())return;
@@ -4813,7 +4810,8 @@ class CardShelf {
     const auto page=(libraryChoice_/VISIBLE_ROWS)*VISIBLE_ROWS;
     for(size_t row=0;row<VISIBLE_ROWS && page+row<rows;++row) {
       const auto& label=series?seriesRows_[page+row]->second.label:labels[page+row];
-      drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,label,{},page+row==libraryChoice_);
+      const auto count=series?std::to_string(seriesRows_[page+row]->second.volumes.size()):std::string();
+      drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,label,count,page+row==libraryChoice_);
     }
     if(!rows)drawRowLabel(20,106,32,libraryMenu_==LibraryMenu::Series?
         (seriesScan_<books_.size()?"Indexing series...":"No series"):"No collections");
@@ -5528,7 +5526,7 @@ int runCardApp(const std::string& bookDir) {
       const auto featured=shelf?shelf->featuredArtwork():std::nullopt;
       if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() &&
          !shelf->libraryInputBusy() && (featured || indexCursor<books.size()) && now>=nextShelfIndexTick) {
-        if(seriesScan)indexCursor=std::max(indexCursor,nextShelfIndex);
+        if(seriesScan)while(indexCursor<books.size() && shelf->seriesIndexed(indexCursor))++indexCursor;
         if(featured || indexCursor<books.size()) {
           const size_t index=featured?*featured:indexCursor++;
           if(!seriesScan)shelf->markArtworkChecked(index);
@@ -5538,7 +5536,7 @@ int runCardApp(const std::string& bookDir) {
           if(result.updated)shelf->onIndexedBook(index);
           if(seriesAdded || (result.updated && !seriesScan))shelf->present();
         }
-        nextShelfIndexTick=ReaderClock::now()+std::chrono::milliseconds(seriesScan?30:800);
+        nextShelfIndexTick=ReaderClock::now()+std::chrono::milliseconds(seriesScan?100:800);
       }
       if(reader && reader->searchOpen() && reader->searchRunning()) {
         reader->searchTick(&input);
@@ -5592,7 +5590,7 @@ int runCardApp(const std::string& bookDir) {
       if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
     }
     nextShelfIndexTick=std::chrono::steady_clock::now()+
-        std::chrono::milliseconds(shelf && shelf->scanningSeries()?30:800);
+        std::chrono::milliseconds(shelf && shelf->scanningSeries()?100:800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval

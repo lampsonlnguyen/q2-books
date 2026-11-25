@@ -85,6 +85,7 @@ class HalDisplay {
   };
   static constexpr int kMaxZones=64;
   void setPalette(uint32_t ink,uint32_t paper) {themed_=true;baseInk_=ink;basePaper_=paper;}
+  void clearPalette() {themed_=false;}
   bool themed() const {return themed_;}
   void addZone(const ColorZone& zone) const {if(zoneCount_<kMaxZones)zones_[zoneCount_++]=zone;}
   void clearZones() const {zoneCount_=0;}

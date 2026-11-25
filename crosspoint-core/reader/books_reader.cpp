@@ -37,6 +37,7 @@
 #include "Clippings.hpp"
 #include "UiLanguage.hpp"
 #include "Q2Theme.hpp"
+#include "Q2Display.hpp"
 #include "StatusBar.hpp"
 #include "MenuLayout.hpp"
 #include "UiText.hpp"
@@ -131,7 +132,8 @@ using ReaderClock = std::chrono::steady_clock;
 constexpr auto positionSaveInterval = std::chrono::seconds(5);
 // Reading settings rows (showTypographyMenu): 16 settings/actions, then Focus
 // reading (16), Auto turn (17) and Go to percent (18).
-constexpr int kTypographyItems = 24;
+constexpr int kPageWarmthItem = 24;
+constexpr int kTypographyItems = 25;
 
 // A finite ceiling also covers a shutdown signal arriving just before poll.
 int waitForReaderInput(const books::Q2SocketInput& input,ReaderClock::time_point deadline) {
@@ -2145,6 +2147,10 @@ class Reader {
       case 5: next.hyphenation=!next.hyphenation;break;
       case 6: next.embeddedStyle=!next.embeddedStyle;break;
       case 7: books::toggleNight(next,systemDark());break;
+      case kPageWarmthItem:
+        if(nightShown())return false;
+        next.pageWarmth=(next.pageWarmth+1)%books::kPageWarmthCount;
+        break;
       case 23: next.bookFonts=!next.bookFonts;break;
       case 16: next.focusReading=!next.focusReading;break;
       case 17: {
@@ -2164,11 +2170,9 @@ class Reader {
           next.autoTurnSeconds?"Over 2 min idle needs Q2 Pod Smart Awake":"";
       return true;
     }
-    if(option==7) {
-      // Inversion is a framebuffer setting; no new Section layout and no
-      // SD cache invalidation are necessary.
+    if(option==7 || option==kPageWarmthItem) {
+      // The raster stores ink coverage. Apply the new palette when presenting.
       preferences_=next;
-      clearRasterCache();
       const bool saved=books::saveReaderPreferences(preferences_);
       typographyNotice_=saved?"":"Reading settings not saved";
       return true;
@@ -2416,7 +2420,7 @@ class Reader {
     const char* labels[]={"Font","Size","Line spacing","Margins","Alignment",
         "Hyphenation","Book CSS","Night mode","Add bookmark","Bookmarks","Chapters",
         "Page links","Return link","Select text","Sync: upload","Sync: download",
-        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Find in book","Book fonts"};
+        "Focus read","Auto turn","Go to %","About","Dictionaries","Export notes","Find in book","Book fonts","Page warmth"};
     const std::string values[]={
       books::typographyFamilyName(typography_.family),
       std::to_string(typography_.size)+"pt",
@@ -2436,7 +2440,8 @@ class Reader {
       std::to_string(dictionaryCount())+" "+books::tr("installed"),
       "To Clippings",
       searchMatches_.empty()?"Enter text":"Search matches",
-      preferences_.bookFonts?"On":"Off"
+      preferences_.bookFonts?"On":"Off",
+      nightShown()?"Light only":books::pageWarmthChoices[preferences_.pageWarmth].label
     };
     static_assert(sizeof(labels)/sizeof(labels[0])==kItems,"one label per row");
     static_assert(sizeof(values)/sizeof(values[0])==kItems,"one value per row");
@@ -2652,14 +2657,21 @@ class Reader {
   // never inverted, so smooth text and the theme's zones stay as drawn.
   void applyPagePalette() {
     const auto& t=books::uiTheme();
-    if(t.active()) {
-      if(nightShown()!=systemDark())display_.setPalette(t.box,t.title);
+    const bool darkTheme=systemDark();
+    const bool night=books::nightActive(preferences_,darkTheme);
+    const uint32_t tint=books::readingPaperTint(preferences_,darkTheme);
+    if(tint) {
+      const uint32_t ink=t.active()?(darkTheme?t.box:t.title):books::Q2Display::kDefaultLightInk;
+      display_.setPalette(ink,tint);
+    } else if(t.active()) {
+      if(night!=darkTheme)display_.setPalette(t.box,t.title);
       else books::applyThemePalette(display_);
-      display_.setInverted(false);
-    } else display_.setInverted(nightShown());
+    } else display_.clearPalette();
+    display_.setInverted(!t.active() && night);
   }
   // Menus and dialogs: always the system's theme colours.
   void applyMenuPalette() {
+    display_.clearPalette();
     books::applyThemePalette(display_);
     display_.setInverted(false);
   }
@@ -6080,7 +6092,7 @@ int runCardApp(const std::string& bookDir) {
             reader->showDictionaryList(0);
             continue;
           }
-          if(typeSelection==23) {
+          if(typeSelection==23 || typeSelection==kPageWarmthItem) {
             (void)reader->adjustPreference(typeSelection);
             reader->showTypographyMenu(typeSelection);
             continue;
@@ -7361,7 +7373,7 @@ int main(int argc,char** argv) {
   int typeSelection=0;
   // The Books handoff reader has no shelf, so it offers the settings rows and
   // the reading actions that need none: not bookmarks, links, selection or sync.
-  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,16,17,18,21,22,23,19};
+  constexpr int kHandoffItems[]={0,1,2,3,4,5,6,7,kPageWarmthItem,16,17,18,21,22,23,19};
   bool aboutShown=false;
   constexpr int kHandoffCount=static_cast<int>(std::size(kHandoffItems));
   int handoffIndex=0;

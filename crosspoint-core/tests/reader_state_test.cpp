@@ -109,6 +109,29 @@ int main() {
     assert(!books::loadReaderPreferences(back));
   }
 
+  {
+    books::ReaderPreferences p;
+    assert(p.pageWarmth==books::kDefaultPageWarmth);
+    assert(books::readingPaperTint(p,false)==0);
+    p.pageWarmth=0;
+    assert(books::readingPaperTint(p,false)==0xdeeaff);
+    p.pageWarmth=books::kPageWarmthCount-1;
+    assert(books::readingPaperTint(p,false)==0xffdcb0);
+    assert(books::readingPaperTint(p,true)==0);
+    books::toggleNight(p,true);
+    assert(books::readingPaperTint(p,true)==0xffdcb0);
+    assert(books::saveReaderPreferences(p));
+    books::ReaderPreferences back;
+    assert(books::loadReaderPreferences(back) && back.pageWarmth==p.pageWarmth);
+    p.pageWarmth=books::kPageWarmthCount;
+    assert(!books::saveReaderPreferences(p));
+
+    FILE* v5=std::fopen(books::readerPreferencesFile().c_str(),"wb");
+    assert(v5 && std::fputs("BOOKS-SETTINGS5 14 100 0 0 1 1 0 0 0\n",v5)>0 && std::fclose(v5)==0);
+    assert(books::loadReaderPreferences(back) && back.pageWarmth==books::kDefaultPageWarmth &&
+           back.night==books::kNightOff && !back.bookFonts);
+  }
+
   assert(books::loadBookmarks(book).empty());
   assert(books::addBookmark(book,{0,3,100}));
   assert(books::addBookmark(book,{0,3,100})); // de-dup

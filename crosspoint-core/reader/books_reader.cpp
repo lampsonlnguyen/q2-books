@@ -3404,20 +3404,20 @@ class CardShelf {
     if(next==recentChoice_)return;
     recentChoice_=next;
     current_=recentIndices_[recentChoice_];
-    present();
+    notice_.clear();
   }
   bool recentInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
     if(browsing_ || optionsOpen_ || onlineMode_)return false;
     const bool step=action==A::Previous || action==A::Next;
-    if(step && (recentFocus_ || (event.kind==K::KeyUp && homeSelection_==0)) &&
-       recentIndices_.size()>1) {
+    if(step && recentFocus_ && recentIndices_.size()>1) {
       changeRecent(action==A::Next?1:-1);
       return true;
     }
     if(action==A::Back && recentFocus_) {recentFocus_=false;return true;}
-    if(action==A::Confirm || event.kind==K::TouchUp)recentFocus_=false;
+    // Confirm must reach jumpShortcut first so a held Centre is consumed,
+    // not interpreted as a second short press.
     return false;
   }
   bool canJump() const {
@@ -3490,7 +3490,7 @@ class CardShelf {
   bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
-    const bool canRecent=!browsing_ && !optionsOpen_ && homeSelection_==0 && recentIndices_.size()>1;
+    const bool canRecent=!browsing_ && !optionsOpen_ && !onlineMode_ && homeSelection_==0 && recentIndices_.size()>1;
     if(!browsing_ && !canRecent) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
@@ -3501,6 +3501,7 @@ class CardShelf {
           ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
       jumpHold_={};
       if(held && canRecent) {recentFocus_=true;return true;}
+      if(!browsing_ && action==A::Confirm)recentFocus_=false;
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
         if(hasBookRow())showLocalInfo();
         else openLibraryMenu(LibraryMenu::Tools);
@@ -3514,6 +3515,7 @@ class CardShelf {
   bool optionsOpen() const {return optionsOpen_;}
   void enterOptions() {
     homeSelection_=2;
+    recentFocus_=false;
     optionsOpen_=true;
     optionSelection_=0;
     notice_.clear();
@@ -3969,6 +3971,7 @@ class CardShelf {
   void goHome() {
     browsing_=false;onlineMode_=false;onlineFromOptions_=false;searchEditing_=false;optionsOpen_=false;
     homeSelection_=books_.empty()?1:0;
+    recentFocus_=false;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
     detailsOpen_=false;
     keypad_.setUrlMode(false);
@@ -4113,6 +4116,7 @@ class CardShelf {
       const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
+      recentFocus_=false;
       return true;
     }
     if(rowCount()==0)return false;
@@ -4154,10 +4158,14 @@ class CardShelf {
       if(y>=HOME_CARD_TOP && y<HOME_CARD_BOTTOM && !books_.empty()) {
         if(x<18 || x>=HOME_CARD_RIGHT)return false;
         if(x>=HOME_NAV_X && recentIndices_.size()>1) {
+          homeSelection_=0;
+          recentFocus_=true;
           changeRecent(x<HOME_NAV_MID?-1:1);
+          present();
           return false;
         }
         homeSelection_=0;
+        recentFocus_=false;
         return true;
       }
       if(x<12 || x>=362 || y<HOME_TOP_Y)return false;
@@ -4165,6 +4173,7 @@ class CardShelf {
       const int row=offset/HOME_ROW_STEP;
       if(row>2 || offset%HOME_ROW_STEP>=HOME_ROW_H || (row==0 && books_.empty()))return false;
       homeSelection_=row;
+      recentFocus_=false;
       return true;
     }
     if(y>=39 && y<74) {
@@ -6185,6 +6194,7 @@ int runCardApp(const std::string& bookDir) {
     const bool opened=next->open(true);
     if(interrupted)break;
     if(!opened) {
+      next.reset(); // release failed reader resources before repainting Home
       shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
       shelf->present();
     } else {
@@ -6258,8 +6268,16 @@ int main(int argc,char** argv) {
     const std::vector<ShelfEntry> shelfBooks={{argv[2],"First",0,0},{argv[3],"Second",0,0}};
     if(!books::recordRecentBook(argv[2]) || !books::recordRecentBook(argv[3]))return 1;
     CardShelf shelf(shelfBooks);
-    if(!shelf.open() || shelf.bookPath()!=argv[3] ||
-       !shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.open() || shelf.bookPath()!=argv[3])return 2;
+    // Home wheel navigation is independent until a carousel arrow or hold
+    // explicitly enters carousel focus.
+    if(shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[3])return 2;
+    if(shelf.tap(340,115) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3])return 2;
+    if(!shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.recentInput(A::Back,{}) || shelf.recentInput(A::Next,{K::WheelStep,0}))return 2;
+    if(!shelf.tap(90,115) || shelf.bookPath()!=argv[2])return 2;
+    if(books::loadRecentBooks().front()!=argv[3])return 2;
     shelf.enterBrowser(true);
     if(!shelf.change(1) || shelf.bookPath()!=argv[2] ||
        !shelf.tap(310,61) || !shelf.libraryMenuOpen() || shelf.flowActive() || shelf.gridActive())return 3;

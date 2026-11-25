@@ -5,6 +5,30 @@
 #include <Epub/BookMetadataCache.h>
 int main(int argc, char** argv) {
   assert(argc == 2);
+  const auto checkSeries = [](const std::string& meta, const std::string& title,
+                              std::optional<float> volume) {
+    const std::string xml = "<package xmlns=\"http://www.idpf.org/2007/opf\"><metadata>" +
+        meta + "</metadata><manifest/><spine/></package>";
+    ContentOpfParser parser("", "", xml.size(), nullptr, false);
+    assert(parser.setup());
+    assert(parser.write(reinterpret_cast<const uint8_t*>(xml.data()), xml.size()) == xml.size());
+    assert(parser.series == title);
+    assert(parser.seriesIndex == volume);
+  };
+  checkSeries("<meta name=\"calibre:series\" content=\"  Saga   One  \"/>"
+              "<meta name=\"calibre:series_index\" content=\" 2.5 \"/>","Saga One",2.5f);
+  checkSeries("<meta refines=\"#s\" property=\"group-position\">10</meta>"
+              "<meta refines=\"#s\" property=\"collection-type\">series</meta>"
+              "<meta id=\"s\" property=\"belongs-to-collection\">Saga</meta>","Saga",10.f);
+  checkSeries("<meta id=\"s\" property=\"belongs-to-collection\">Saga</meta>"
+              "<meta refines=\"#s\" property=\"collection-type\">set</meta>","",std::nullopt);
+  checkSeries("<meta name=\"calibre:series\" content=\"Saga\"/>"
+              "<meta name=\"calibre:series_index\" content=\"NaN\"/>","Saga",std::nullopt);
+  checkSeries("<meta name=\"calibre:series\" content=\"Saga\"/>"
+              "<meta id=\"s\" property=\"belongs-to-collection\">Saga</meta>"
+              "<meta refines=\"#s\" property=\"collection-type\">series</meta>"
+              "<meta refines=\"#s\" property=\"group-position\">0.5</meta>","Saga",0.5f);
+
   const std::string path = argv[1];
   ZipFile zip(path);
   size_t n = 0;

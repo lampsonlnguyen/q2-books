@@ -6,6 +6,7 @@
 #include "ShelfFolders.hpp"
 #include "ShelfLibrary.hpp"
 #include "ShelfCollections.hpp"
+#include "ShelfReadingStatus.hpp"
 #include <chrono>
 #include <sys/stat.h>
 #include <algorithm>
@@ -42,6 +43,43 @@ int main() {
     assert(std::fputs("book",f)>=0);
     assert(std::fclose(f)==0);
   }
+  using Status=books::ReadingStatus;
+  assert(books::shelfReadingStatus(a,{})==Status::Unread);
+  assert(books::shelfReadingStatus(a,{a})==Status::Reading);
+  assert(books::shelfReadingStatus(a+".missing",{a+".missing"})==Status::Unread);
+  assert(books::saveReadingPosition(a,{0,0,'?',0,1000000}));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,0));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,999999));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveShelfProgress(a,1000000));
+  assert(books::shelfReadingStatus(a,{})==Status::Completed);
+  assert(books::saveShelfProgress(a,500000));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::classifyReadingStatus(true,1000001,false,false)==Status::Unread);
+  using Filter=books::ReadingStatusFilter;
+  using Override=books::ReadingStatusOverride;
+  assert(books::loadReadingStatusFilter()==Filter::All);
+  for(const auto filter:{Filter::Unread,Filter::Reading,Filter::Completed,Filter::All}) {
+    assert(books::saveReadingStatusFilter(filter));
+    assert(books::loadReadingStatusFilter()==filter);
+  }
+  assert(books::matchesReadingStatus(Filter::All,Status::Unread));
+  assert(books::matchesReadingStatus(Filter::Reading,Status::Reading));
+  assert(!books::matchesReadingStatus(Filter::Completed,Status::Reading));
+  assert(books::saveReadingStatusOverride(a,Override::Unread));
+  assert(books::shelfReadingStatus(a,{a})==Status::Unread);
+  books::ReadingPosition preserved;
+  assert(books::loadReadingPosition(a,preserved));
+  uint32_t progress=0;
+  assert(books::loadShelfProgress(a,progress) && progress==500000);
+  assert(books::saveReadingStatusOverride(a,Override::Completed));
+  assert(books::shelfReadingStatus(a,{})==Status::Completed);
+  assert(books::saveReadingStatusOverride(a,Override::Automatic));
+  assert(books::shelfReadingStatus(a,{})==Status::Reading);
+  assert(books::saveReadingStatusOverride(a,Override::Completed));
+
   assert(books::loadRecentBooks().empty());
   assert(books::recordRecentBook(a));
   assert(books::recordRecentBook(b));
@@ -49,6 +87,14 @@ int main() {
   auto recent=books::loadRecentBooks();
   assert(recent.size()==2 && recent[0]==a && recent[1]==b);
   std::vector<TestBook> books={{b,"zebra",30},{a,"Alpha",20}};
+  assert(books::recentShelfIndices(books,recent)==(std::vector<size_t>{1,0}));
+  assert(books::recentShelfIndices(books,{a+".missing",b,b,a})==(std::vector<size_t>{0,1}));
+  assert(books::recentShelfIndices(books,{}).empty());
+  assert(books::recentShelfIndices(std::vector<TestBook>{},recent).empty());
+  std::vector<std::string> capped(books::kMaxRecentBooks,a+".missing");
+  capped.push_back(a);
+  assert(books::recentShelfIndices(books,capped).empty());
+  assert(books::loadRecentBooks()==recent);
   books::sortShelfBooks(books,books::ShelfSortMode::Title,recent);
   assert(books[0].path==a);
   books::sortShelfBooks(books,books::ShelfSortMode::RecentlyAdded,recent);
@@ -76,6 +122,8 @@ int main() {
   assert(std::fclose(f)==0);
   assert(!books::loadShelfDetails(a,details));
   assert(!books::loadShelfCover(a,loadedCover));
+  assert(books::loadReadingStatusOverride(a)==Override::Automatic);
+  assert(books::shelfReadingStatus(a,{})==Status::Unread);
   // Ignore malformed history rather than trusting arbitrary SD bytes.
   f=std::fopen(books::recentBooksFile().c_str(),"wb");
   assert(f);

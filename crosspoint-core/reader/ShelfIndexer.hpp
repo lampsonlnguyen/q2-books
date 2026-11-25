@@ -86,6 +86,8 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
   if(!infoReady) {
     info={parser.title,parser.author,parser.publisher,parser.language,parser.description,
           parser.identifier,parser.isbn,parser.asin,parser.series,parser.coverItemHref,parser.seriesIndex};
+    info.series=normalizeSeriesName(info.series);
+    if(info.series.empty())info.volume.reset();
     if(requested)*requested=info;
     result.updated=saveShelfBookInfo(bookPath,info);
   }

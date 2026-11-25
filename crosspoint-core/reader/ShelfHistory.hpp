@@ -70,6 +70,23 @@ inline std::vector<std::string> loadRecentBooks() {
   std::fclose(f);
   return items;
 }
+// Keep most-recent-first order independently of the current shelf sort.
+// Missing paths are skipped, not erased from persistent history: a removed
+// SD file may return later. The scan already excludes non-book entries.
+template<class Book>
+inline std::vector<size_t> recentShelfIndices(const std::vector<Book>& library,
+                                              const std::vector<std::string>& history) {
+  std::vector<size_t> result;
+  result.reserve(std::min(history.size(),kMaxRecentBooks));
+  for(size_t i=0;i<std::min(history.size(),kMaxRecentBooks);++i) {
+    const auto found=std::find_if(library.begin(),library.end(),
+        [&](const auto& book){return book.path==history[i];});
+    if(found==library.end())continue;
+    const auto index=static_cast<size_t>(found-library.begin());
+    if(std::find(result.begin(),result.end(),index)==result.end())result.push_back(index);
+  }
+  return result;
+}
 inline bool saveRecentBooks(const std::vector<std::string>& items) {
   if(items.size()>kMaxRecentBooks)return false;
   const auto name=recentBooksFile(),tmp=name+".tmp";

@@ -105,11 +105,26 @@ std::string stripMetadataPrefix(const std::string& value, const char* prefix) {
 }
 
 std::optional<float> parseFiniteFloat(const std::string& value) {
-  if (value.empty()) return std::nullopt;
-  char* end = nullptr;
-  const float parsed = std::strtof(value.c_str(), &end);
-  if (end == value.c_str() || *end != '\0' || !std::isfinite(parsed)) return std::nullopt;
-  return parsed;
+  // EPUB group-position is a decimal, not a locale-dependent C float.
+  // Accept zero and fractional positions (including prequels), reject
+  // negative, exponent, hex, overflow and malformed values.
+  size_t first = 0, last = value.size();
+  while (first < last && isXmlWhitespace(value[first])) ++first;
+  while (last > first && isXmlWhitespace(value[last - 1])) --last;
+  if (first == last) return std::nullopt;
+  if (value[first] == '+') ++first;
+  double number = 0, fraction = 0.1;
+  bool dot = false, digit = false;
+  for (size_t i = first; i < last; ++i) {
+    const char c = value[i];
+    if (c == '.' && !dot) { dot = true; continue; }
+    if (c < '0' || c > '9') return std::nullopt;
+    digit = true;
+    if (dot) { number += (c - '0') * fraction; fraction *= 0.1; }
+    else number = number * 10 + (c - '0');
+    if (number > 1000000.0) return std::nullopt;
+  }
+  return digit ? std::optional<float>(static_cast<float>(number)) : std::nullopt;
 }
 }  // namespace
 
@@ -311,7 +326,9 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
         self->metaProperty = boundedMetadataValue(atts[i + 1]);
       } else if (xmlLocalNameEquals(atts[i], "refines")) {
         self->metaRefines = boundedMetadataValue(atts[i + 1]);
+        // Only local fragment references can refine this package's metadata.
         if (!self->metaRefines.empty() && self->metaRefines[0] == '#') self->metaRefines.erase(0, 1);
+        else self->metaRefines.clear();
       } else if (xmlLocalNameEquals(atts[i], "id")) {
         self->metaId = boundedMetadataValue(atts[i + 1]);
       }
@@ -319,7 +336,10 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
 
     const std::string lowerName = lowerAscii(metaName);
     if (lowerName == "cover") self->coverItemId = content;
-    if (lowerName == "calibre:series" && self->calibreSeries.empty()) self->calibreSeries = content;
+    if (lowerName == "calibre:series" && self->calibreSeries.empty()) {
+      bool pending = false;
+      appendMetadataText(self->calibreSeries, content.c_str(), static_cast<int>(content.size()), pending);
+    }
     if (lowerName == "calibre:series_index" && !self->calibreSeriesIndex.has_value()) {
       self->calibreSeriesIndex = parseFiniteFloat(content);
     }
@@ -651,9 +671,9 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
         candidate = &self->collectionCandidates.back();
       }
       if (candidate != nullptr) {
-        if (property == "collection-type" && lowerAscii(self->metaText) == "series") {
-          candidate->isSeries = true;
-        } else if (property == "group-position") {
+        if (property == "collection-type") {
+          candidate->isSeries = lowerAscii(self->metaText) == "series";
+        } else if (property == "group-position" && !candidate->index.has_value()) {
           candidate->index = parseFiniteFloat(self->metaText);
         }
       }
@@ -675,6 +695,16 @@ void XMLCALL ContentOpfParser::endElement(void* userData, const XML_Char* name) 
     if (!self->calibreSeries.empty()) {
       self->series = self->calibreSeries;
       self->seriesIndex = self->calibreSeriesIndex;
+      // Mixed EPUB2/EPUB3 exports may supply the volume only in the
+      // standard collection refinement. Never borrow another series' index.
+      if (!self->seriesIndex.has_value()) {
+        for (const auto& candidate : self->collectionCandidates) {
+          if (candidate.isSeries && candidate.title == self->series && candidate.index.has_value()) {
+            self->seriesIndex = candidate.index;
+            break;
+          }
+        }
+      }
     } else {
       for (const auto& candidate : self->collectionCandidates) {
         if (!candidate.isSeries || candidate.title.empty()) continue;

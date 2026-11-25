@@ -2,6 +2,7 @@
 #pragma once
 
 #include "ShelfDetails.hpp"
+#include "ShelfSeries.hpp"
 #include <array>
 #include <charconv>
 #include <cmath>
@@ -25,6 +26,7 @@ inline bool parseShelfVolume(std::string_view text,std::optional<float>& volume)
   float value=0;
   const auto result=std::from_chars(text.data(),text.data()+text.size(),value);
   if(result.ec!=std::errc{} || result.ptr!=text.data()+text.size() || !std::isfinite(value))return false;
+  if(value<0 || value>1000000.f)return false;
   volume=value;
   return true;
 }
@@ -37,7 +39,7 @@ inline bool loadShelfBookInfo(const std::string& path,ShelfBookInfo& info) {
   char header[128]{};
   unsigned long long bytes=0,modified=0;
   if(!std::fgets(header,sizeof(header),f.get()) ||
-     !parseShelfIdentityHeader(header,"BOOKS-INFO1",bytes,modified) ||
+     !parseShelfIdentityHeader(header,"BOOKS-INFO2",bytes,modified) ||
      bytes!=static_cast<unsigned long long>(st.st_size) ||
      modified!=static_cast<unsigned long long>(st.st_mtime))return false;
 
@@ -66,6 +68,8 @@ inline bool loadShelfBookInfo(const std::string& path,ShelfBookInfo& info) {
   if(number.empty() || number.back()!='\n')return false;
   number.remove_suffix(1);
   if(!parseShelfVolume(number,value.volume))return false;
+  value.series=normalizeSeriesName(value.series);
+  if(value.series.empty())value.volume.reset();
   info=std::move(value);
   return true;
 }
@@ -76,7 +80,7 @@ inline bool saveShelfBookInfo(const std::string& path,const ShelfBookInfo& info)
   const auto file=shelfBookInfoFile(path),temp=file+".tmp";
   FILE* f=std::fopen(temp.c_str(),"wb");
   if(!f)return false;
-  bool ok=std::fprintf(f,"BOOKS-INFO1 %llu %llu\n",static_cast<unsigned long long>(st.st_size),
+  bool ok=std::fprintf(f,"BOOKS-INFO2 %llu %llu\n",static_cast<unsigned long long>(st.st_size),
       static_cast<unsigned long long>(st.st_mtime))>0;
   for(const auto* field:{&info.title,&info.author,&info.publisher,&info.language,&info.description,
                          &info.identifier,&info.isbn,&info.asin,&info.series,&info.cover}) {
@@ -88,7 +92,7 @@ inline bool saveShelfBookInfo(const std::string& path,const ShelfBookInfo& info)
   if(info.volume) {
     // Stock Q2 libstdc++ predates floating-point to_chars.
     const int written=std::snprintf(volume,sizeof(volume),"%.9g",static_cast<double>(*info.volume));
-    ok=ok && std::isfinite(*info.volume) && written>0 && static_cast<size_t>(written)<sizeof(volume);
+    ok=ok && std::isfinite(*info.volume) && *info.volume>=0 && *info.volume<=1000000.f && written>0 && static_cast<size_t>(written)<sizeof(volume);
   }
   ok=ok && std::fprintf(f,"%s\n",volume)>0 && std::fflush(f)==0 && fsync(fileno(f))==0;
   if(std::fclose(f)!=0)ok=false;

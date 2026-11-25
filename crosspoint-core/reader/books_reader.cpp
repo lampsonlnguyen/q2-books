@@ -51,6 +51,7 @@
 #include "ShelfProgress.hpp"
 #include "ShelfIndexer.hpp"
 #include "ShelfCollections.hpp"
+#include "ShelfReadingStatus.hpp"
 #include "BookSearch.hpp"
 #include "EmbeddedBookFont.hpp"
 #include "ReaderLinks.hpp"
@@ -3114,14 +3115,27 @@ class CardShelf {
   books::ShelfSortMode sortMode_=books::ShelfSortMode::Title;
   std::vector<books::ShelfDetails> cachedDetails_;
   std::vector<bool> detailsChecked_;
-  enum class LibraryMenu {None, Tools, Info, Collections, Collection, Membership, Series, Name};
+  enum class LibraryMenu {None, Tools, Info, Collections, Collection, Membership, Series, Name, StatusFilter, StatusMark};
   LibraryMenu libraryMenu_=LibraryMenu::None;
   size_t libraryChoice_=0;
   bool libraryDeleteArmed_=false;
   books::Collections collections_;
   std::string collectionName_,collectionFilter_,seriesFilter_;
   bool favoritesFilter_=false;
-  struct SeriesVolume {size_t index;std::optional<float> number;};
+  books::ReadingStatusFilter statusFilter_=books::ReadingStatusFilter::All;
+  std::vector<int8_t> statusCache_;
+  std::vector<std::string> statusHistory_;
+  std::array<size_t,4> statusCounts_{};
+  books::ReadingStatus bookStatus(size_t index) {
+    auto& cached=statusCache_[index];
+    if(cached<0)cached=static_cast<int8_t>(books::shelfReadingStatus(books_[index].path,statusHistory_));
+    return static_cast<books::ReadingStatus>(cached);
+  }
+  void prepareStatusCounts() {
+    statusCounts_={books_.size(),0,0,0};
+    for(size_t i=0;i<books_.size();++i)++statusCounts_[1+static_cast<size_t>(bookStatus(i))];
+  }
+  using SeriesVolume=books::SeriesVolumeRef;
   struct SeriesGroup {std::string label;std::vector<SeriesVolume> volumes;};
   std::map<std::string,SeriesGroup> series_;
   std::vector<decltype(series_)::const_iterator> seriesRows_;
@@ -3241,8 +3255,10 @@ class CardShelf {
   // 4 rows of 47 px: a title line and an author line need about 45 px with
   // Vietnamese stacked marks; 5 rows of 38 px made the two lines touch.
   static constexpr int TOP_Y=78, ROW_H=47, VISIBLE_ROWS=4;
-  static constexpr int HOME_TOP_Y=153, HOME_ROW_H=29, HOME_ROW_STEP=32;
-  static constexpr int HOME_COVER_X=18, HOME_COVER_Y=(224-books::ShelfCover::height)/2;
+  static constexpr int HOME_CARD_TOP=74,HOME_CARD_BOTTOM=165;
+  static constexpr int HOME_TOP_Y=171, HOME_ROW_H=29, HOME_ROW_STEP=32;
+  static constexpr int HOME_COVER_X=18,HOME_COVER_Y=80,HOME_COVER_W=60,HOME_COVER_H=78;
+  static constexpr int HOME_NAV_X=290,HOME_NAV_MID=323,HOME_CARD_RIGHT=359;
   static constexpr int OPTION_COUNT=4;
   static constexpr int JUMP_X=12,JUMP_Y=78,JUMP_W=117,JUMP_H=46;
   static constexpr size_t JUMP_COLS=3,JUMP_ROWS=4,JUMP_PAGE=JUMP_COLS*JUMP_ROWS;
@@ -3260,19 +3276,20 @@ class CardShelf {
     artworkChecked_.resize(books_.size());
     collections_=books::loadCollections();
     (void)books::restoreMovedCollectionBooks(collections_,books_);
-    for(const auto& path:books::loadRecentBooks()) {
-      const auto found=std::find_if(books_.begin(),books_.end(),[&](const auto& book){return book.path==path;});
-      if(found!=books_.end())recentIndices_.push_back(static_cast<size_t>(found-books_.begin()));
-    }
+    statusHistory_=books::loadRecentBooks();
+    recentIndices_=books::recentShelfIndices(books_,statusHistory_);
     if(books_.empty())homeSelection_=1;
     libraryView_=loadLibraryView();
+    statusFilter_=books::loadReadingStatusFilter();
+    statusCache_.assign(books_.size(),-1);
     cachedDetails_.resize(books_.size());
     detailsChecked_.resize(books_.size(),false);
     alphabetGroups_.reserve(books_.size());
     for(const auto& book:books_)alphabetGroups_.push_back(books::alphabet::titleGroup(book.label));
     refreshVisible();
     if(!books_.empty()) {
-      selected_=std::min(selection,books_.size()-1)+1;
+      if(statusFilter_==books::ReadingStatusFilter::All)selected_=std::min(selection,books_.size()-1)+1;
+      else selectVisiblePath(books_[std::min(selection,books_.size()-1)].path);
       current_=recentIndices_.empty()?std::min(current,books_.size()-1):recentIndices_.front();
     }
   }
@@ -3319,14 +3336,16 @@ class CardShelf {
   struct BrowseContext {
     std::string collection,series,query,path;
     bool favorites=false;
-    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty();}
+    books::ReadingStatusFilter status=books::ReadingStatusFilter::All;
+    bool filtered() const {return favorites || !collection.empty() || !series.empty() || !query.empty() || status!=books::ReadingStatusFilter::All;}
   };
   BrowseContext browseContext() const {
-    return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_};
+    return {collectionFilter_,seriesFilter_,searchQuery_,hasBookRow()?bookPath():std::string(),favoritesFilter_,statusFilter_};
   }
   void restoreBrowseContext(const BrowseContext& context) {
     if(!context.filtered())return;
     favoritesFilter_=context.favorites;
+    statusFilter_=context.status;
     collectionFilter_=collections_.groups.count(context.collection)?context.collection:std::string();
     seriesFilter_=context.series;
     searchQuery_=context.query;
@@ -3344,39 +3363,36 @@ class CardShelf {
     flowPosition_=static_cast<float>(selected_);
   }
 
-  bool scanningSeries() const {return libraryMenu_==LibraryMenu::Series;}
+  bool scanningSeries() const {return seriesScan_<books_.size() && (libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty());}
+  bool seriesIndexed(size_t index) const {return seriesChecked_[index];}
   bool libraryInputBusy() const {
     return libraryMenu_!=LibraryMenu::None && libraryMenu_!=LibraryMenu::Series;
   }
   bool cacheSeries(size_t index,const books::ShelfBookInfo& info) {
     if(index>=books_.size() || seriesChecked_[index])return false;
     seriesChecked_[index]=true;++seriesScan_;
-    if(info.series.empty())return libraryMenu_==LibraryMenu::Series && seriesScan_==books_.size();
-    const auto result=series_.try_emplace(books::utf8Lower(books::foldShelfSearch(info.series)));
+    const auto key=books::seriesIdentity(info.series);
+    if(key.empty())return libraryMenu_==LibraryMenu::Series && seriesScan_==books_.size();
+    const auto result=series_.try_emplace(key);
     auto& group=result.first->second;
     if(result.second) {
-      group.label=info.series;
+      group.label=books::normalizeSeriesName(info.series);
       const auto place=std::lower_bound(seriesRows_.begin(),seriesRows_.end(),result.first,
         [](const auto& a,const auto& b){return a->first<b->first;});
       if(static_cast<size_t>(place-seriesRows_.begin())<=libraryChoice_ && !seriesRows_.empty() &&
          libraryMenu_==LibraryMenu::Series)++libraryChoice_;
       seriesRows_.insert(place,result.first);
     }
-    const SeriesVolume volume{index,info.volume};
-    const auto before=[](const auto& a,const auto& b) {
-      if(a.number.has_value()!=b.number.has_value())return a.number.has_value();
-      if(a.number!=b.number)return a.number<b.number;
-      return a.index<b.index;
-    };
-    group.volumes.insert(std::lower_bound(group.volumes.begin(),group.volumes.end(),volume,before),volume);
-    if(!seriesFilter_.empty()) {
+    const SeriesVolume volume{static_cast<uint32_t>(index),books::compactSeriesVolume(info.volume)};
+    group.volumes.insert(std::lower_bound(group.volumes.begin(),group.volumes.end(),volume,books::seriesVolumeBefore),volume);
+    if(seriesFilter_==key) {
       const size_t before=hasBookRow()?selected():books_.size();
       refreshVisible();
       const auto row=std::find(visible_.begin(),visible_.end(),before);
       if(row!=visible_.end())selected_=static_cast<size_t>(row-visible_.begin());
       flowPosition_=static_cast<float>(selected_);
     }
-    return libraryMenu_==LibraryMenu::Series || !seriesFilter_.empty();
+    return libraryMenu_==LibraryMenu::Series || seriesFilter_==key;
   }
   void changeRecent(int direction) {
     if(recentIndices_.empty())return;
@@ -3385,20 +3401,20 @@ class CardShelf {
     if(next==recentChoice_)return;
     recentChoice_=next;
     current_=recentIndices_[recentChoice_];
-    present();
+    notice_.clear();
   }
   bool recentInput(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
     if(browsing_ || optionsOpen_ || onlineMode_)return false;
     const bool step=action==A::Previous || action==A::Next;
-    if(step && (recentFocus_ || (event.kind==K::KeyUp && homeSelection_==0)) &&
-       recentIndices_.size()>1) {
+    if(step && recentFocus_ && recentIndices_.size()>1) {
       changeRecent(action==A::Next?1:-1);
       return true;
     }
     if(action==A::Back && recentFocus_) {recentFocus_=false;return true;}
-    if(action==A::Confirm || event.kind==K::TouchUp)recentFocus_=false;
+    // Confirm must reach jumpShortcut first so a held Centre is consumed,
+    // not interpreted as a second short press.
     return false;
   }
   bool canJump() const {
@@ -3471,7 +3487,7 @@ class CardShelf {
   bool jumpShortcut(books::LogicalAction action,const books::PhysicalEvent& event) {
     using A=books::LogicalAction;
     using K=books::PhysicalKind;
-    const bool canRecent=!browsing_ && !optionsOpen_ && homeSelection_==0 && recentIndices_.size()>1;
+    const bool canRecent=!browsing_ && !optionsOpen_ && !onlineMode_ && homeSelection_==0 && recentIndices_.size()>1;
     if(!browsing_ && !canRecent) {jumpHold_={};return false;}
     if(event.kind==K::KeyDown && event.value==218 && jumpHold_==ReaderClock::time_point{})
       jumpHold_=ReaderClock::now();
@@ -3482,6 +3498,7 @@ class CardShelf {
           ReaderClock::now()-jumpHold_>=std::chrono::milliseconds(550);
       jumpHold_={};
       if(held && canRecent) {recentFocus_=true;return true;}
+      if(!browsing_ && action==A::Confirm)recentFocus_=false;
       if(held && browsing_ && ReaderClock::now()-started>=std::chrono::milliseconds(1100)) {
         if(hasBookRow())showLocalInfo();
         else openLibraryMenu(LibraryMenu::Tools);
@@ -3495,6 +3512,7 @@ class CardShelf {
   bool optionsOpen() const {return optionsOpen_;}
   void enterOptions() {
     homeSelection_=2;
+    recentFocus_=false;
     optionsOpen_=true;
     optionSelection_=0;
     notice_.clear();
@@ -3624,7 +3642,7 @@ class CardShelf {
     return true;
   }
   bool folderMode() const {
-    return !favoritesFilter_ && collectionFilter_.empty() && seriesFilter_.empty() && sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
+    return statusFilter_==books::ReadingStatusFilter::All && !favoritesFilter_ && collectionFilter_.empty() && seriesFilter_.empty() && sortMode_==books::ShelfSortMode::Folders && searchQuery_.empty() && !root_.empty();
   }
   size_t folderRows() const {return folderMode()?folders_.size():0;}
   size_t rowCount() const {return folderRows()+visible_.size();}
@@ -3944,12 +3962,13 @@ class CardShelf {
       const auto it=std::find(visible_.begin(),visible_.end(),current_);
       selected_=it==visible_.end()?0:folderRows()+static_cast<size_t>(it-visible_.begin());
     }
-    if(focusGuide)selected_=folderRows();
+    if(focusGuide && statusFilter_==books::ReadingStatusFilter::All)selected_=folderRows();
     browsed_=true;
   }
   void goHome() {
     browsing_=false;onlineMode_=false;onlineFromOptions_=false;searchEditing_=false;optionsOpen_=false;
     homeSelection_=books_.empty()?1:0;
+    recentFocus_=false;
     fieldEditing_=false;serverEditMode_=false;onlineScreen_=OnlineScreen::Servers;
     detailsOpen_=false;
     keypad_.setUrlMode(false);
@@ -4039,6 +4058,7 @@ class CardShelf {
     const auto addBook=[&](size_t i) {
       const auto& path=books_[i].path;
       if(favoritesFilter_ && !collections_.favorites.count(path))return;
+      if(statusFilter_!=books::ReadingStatusFilter::All && !books::matchesReadingStatus(statusFilter_,bookStatus(i)))return;
       if(!collectionFilter_.empty()) {
         const auto group=collections_.groups.find(collectionFilter_);
         if(group==collections_.groups.end() || !group->second.count(path))return;
@@ -4093,6 +4113,7 @@ class CardShelf {
       const int next=std::clamp(homeSelection_+direction,books_.empty()?1:0,2);
       if(next==homeSelection_)return false;
       homeSelection_=next;
+      recentFocus_=false;
       return true;
     }
     if(rowCount()==0)return false;
@@ -4131,13 +4152,17 @@ class CardShelf {
       return true;
     }
     if(!browsing_) {
-      if(y>=74 && y<149 && !recentIndices_.empty()) {
-        if(x<18 || x>=359)return false;
-        if(x>=287 && recentIndices_.size()>1) {
-          changeRecent(x<322?-1:1);
+      if(y>=HOME_CARD_TOP && y<HOME_CARD_BOTTOM && !books_.empty()) {
+        if(x<18 || x>=HOME_CARD_RIGHT)return false;
+        if(x>=HOME_NAV_X && recentIndices_.size()>1) {
+          homeSelection_=0;
+          recentFocus_=true;
+          changeRecent(x<HOME_NAV_MID?-1:1);
+          present();
           return false;
         }
         homeSelection_=0;
+        recentFocus_=false;
         return true;
       }
       if(x<12 || x>=362 || y<HOME_TOP_Y)return false;
@@ -4145,6 +4170,7 @@ class CardShelf {
       const int row=offset/HOME_ROW_STEP;
       if(row>2 || offset%HOME_ROW_STEP>=HOME_ROW_H || (row==0 && books_.empty()))return false;
       homeSelection_=row;
+      recentFocus_=false;
       return true;
     }
     if(y>=39 && y<74) {
@@ -4193,23 +4219,24 @@ class CardShelf {
     }
     return cachedDetails_[index];
   }
-  void drawBookCover(int x,int y,size_t index) {
+  void drawBookCover(int x,int y,size_t index,int width=books::ShelfCover::width,int height=books::ShelfCover::height) {
     if(displayedCoverIndex_!=index) {
       displayedColorCover_={};
       (void)books::loadFlowCover(books_[index].path,displayedColorCover_);
       displayedCoverIndex_=index;
     }
-    renderer_.drawLine(x-1,y-1,x+books::ShelfCover::width,y-1,true);
-    renderer_.drawLine(x-1,y-1,x-1,y+books::ShelfCover::height,true);
-    renderer_.drawLine(x+books::ShelfCover::width,y-1,
-                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
-    renderer_.drawLine(x-1,y+books::ShelfCover::height,
-                       x+books::ShelfCover::width,y+books::ShelfCover::height,true);
+    renderer_.drawLine(x-1,y-1,x+width,y-1,true);
+    renderer_.drawLine(x-1,y-1,x-1,y+height,true);
+    renderer_.drawLine(x+width,y-1,
+                       x+width,y+height,true);
+    renderer_.drawLine(x-1,y+height,
+                       x+width,y+height,true);
   }
   void markArtworkChecked(size_t index) {artworkChecked_[index]=true;}
   std::optional<size_t> featuredArtwork() const {
     if(browsing_ || optionsOpen_ || onlineMode_ || fontManager_ || books_.empty() ||
-       artworkChecked_[current_] || displayedColorCover_.valid())return std::nullopt;
+       artworkChecked_[current_] ||
+       (displayedCoverIndex_==current_ && displayedColorCover_.valid()))return std::nullopt;
     return current_;
   }
   void onIndexedBook(size_t index) {
@@ -4439,7 +4466,15 @@ class CardShelf {
                                     "Remove favorite":"Add favorite"));
           rows.push_back(books::tr("Collection membership"));
         }
+        rows.push_back(books::tr("Reading status"));
+        if(hasBookRow())rows.push_back(books::tr("Mark reading status"));
         rows.push_back(books::tr("Online"));
+        break;
+      case LibraryMenu::StatusFilter:
+        for(size_t i=0;i<4;++i)rows.push_back(std::string(static_cast<size_t>(statusFilter_)==i?"[x] ":"[ ] ")+books::tr(books::readingStatusLabel(static_cast<books::ReadingStatusFilter>(i)))+" ("+std::to_string(statusCounts_[i])+")");
+        break;
+      case LibraryMenu::StatusMark:
+        rows={books::tr("Mark unread"),books::tr("Mark completed"),books::tr("Automatic status")};
         break;
       case LibraryMenu::Collections:
         rows.push_back(books::tr("New collection"));
@@ -4605,11 +4640,22 @@ class CardShelf {
           (void)enterOnline();
           break;
         }
+        if(libraryChoice_==(hasBookRow()?7u:4u)) {
+          prepareStatusCounts();openLibraryMenu(LibraryMenu::StatusFilter);break;
+        }
+        if(hasBookRow() && libraryChoice_==8) {
+          openLibraryMenu(LibraryMenu::StatusMark);break;
+        }
         switch(libraryChoice_) {
           case 0:setLibraryFilter(!favoritesFilter_,collectionFilter_,seriesFilter_);break;
           case 1:openLibraryMenu(LibraryMenu::Collections);break;
           case 2:openLibraryMenu(LibraryMenu::Series);break;
-          case 3:setLibraryFilter(false);break;
+          case 3:
+            if(!books::saveReadingStatusFilter(books::ReadingStatusFilter::All)) {
+              notice_="Cannot save setting";break;
+            }
+            statusFilter_=books::ReadingStatusFilter::All;
+            setLibraryFilter(false);break;
           case 4:showLocalInfo();break;
           case 5: {
             auto next=collections_;
@@ -4624,6 +4670,27 @@ class CardShelf {
           case 6:openLibraryMenu(LibraryMenu::Membership);break;
         }
         break;
+      case LibraryMenu::StatusFilter: {
+        const auto filter=static_cast<books::ReadingStatusFilter>(libraryChoice_);
+        if(!books::saveReadingStatusFilter(filter)) {notice_="Cannot save setting";break;}
+        const std::string previous=hasBookRow()?bookPath():std::string();
+        statusFilter_=filter;
+        openLibraryMenu(LibraryMenu::None);
+        refreshVisible();selectVisiblePath(previous);
+        break;
+      }
+      case LibraryMenu::StatusMark: {
+        if(!hasBookRow()) {openLibraryMenu(LibraryMenu::None);break;}
+        const auto index=selected();
+        const auto path=bookPath();
+        const auto value=libraryChoice_==0?books::ReadingStatusOverride::Unread:
+            libraryChoice_==1?books::ReadingStatusOverride::Completed:books::ReadingStatusOverride::Automatic;
+        if(!books::saveReadingStatusOverride(path,value)) {notice_="Cannot save setting";break;}
+        statusCache_[index]=-1;
+        openLibraryMenu(LibraryMenu::None);
+        refreshVisible();selectVisiblePath(path);
+        break;
+      }
       case LibraryMenu::Collections:
         if(!libraryChoice_)startCollectionName(false);
         else {
@@ -4666,8 +4733,6 @@ class CardShelf {
         const auto key=seriesRows_[libraryChoice_]->first;
         const bool changed=seriesFilter_!=key;
         setLibraryFilter(favoritesFilter_,collectionFilter_,key);
-        // Entering a different series starts at its first visible volume.
-        // Other filter changes and view rebuilds retain the selected book.
         if(changed)selectVisiblePath({});
         break;
       }
@@ -4683,6 +4748,8 @@ class CardShelf {
       case LibraryMenu::Collection:heading=collectionName_.c_str();break;
       case LibraryMenu::Membership:heading="Collection membership";break;
       case LibraryMenu::Series:heading="Series";break;
+      case LibraryMenu::StatusFilter:heading="Reading status";break;
+      case LibraryMenu::StatusMark:heading="Mark reading status";break;
       case LibraryMenu::Name:heading=collectionRename_?"Rename collection":"New collection";break;
       default:break;
     }
@@ -4747,7 +4814,8 @@ class CardShelf {
     const auto page=(libraryChoice_/VISIBLE_ROWS)*VISIBLE_ROWS;
     for(size_t row=0;row<VISIBLE_ROWS && page+row<rows;++row) {
       const auto& label=series?seriesRows_[page+row]->second.label:labels[page+row];
-      drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,label,{},page+row==libraryChoice_);
+      const auto count=series?std::to_string(seriesRows_[page+row]->second.volumes.size()):std::string();
+      drawListRow(TOP_Y+static_cast<int>(row)*ROW_H,label,count,page+row==libraryChoice_);
     }
     if(!rows)drawRowLabel(20,106,32,libraryMenu_==LibraryMenu::Series?
         (seriesScan_<books_.size()?"Indexing series...":"No series"):"No collections");
@@ -4839,50 +4907,47 @@ class CardShelf {
       }
     } else if(!browsing_) {
       drawRowLabel(16,39,35,"Home");
-      constexpr int top=74,bottom=149,right=359;
-      constexpr int textX=82,lineHeight=21;
-      const int textWidth=(recentIndices_.size()>1?289:right)-textX;
-      renderer_.drawLine(15,top,right,top,true);
-      // The shelf only reads the cached thumbnail; the reader decodes the cover.
-      if(!books_.empty())drawBookCover(HOME_COVER_X,HOME_COVER_Y,current_);
-      else renderer_.drawRect(HOME_COVER_X-1,HOME_COVER_Y-1,
-                              books::ShelfCover::width+2,books::ShelfCover::height+2,true);
-
-      const auto* info=books_.empty()?nullptr:&details(current_);
-      const bool hasAuthor=info && !info->author.empty();
-      const int textY=(top+bottom+1-lineHeight*(hasAuthor?3:2))/2;
-      uint32_t ppm=0;
-      const bool haveProgress=info && books::loadShelfProgress(books_[current_].path,ppm);
-      drawCompactLabel(textX,textY+16,recentIndices_.empty()?"Current book":"Recently read",150);
-      if(haveProgress) {
-        const auto progress=std::to_string(ppm/10000)+"%";
-        drawCompactLabel(242,textY+16,progress.c_str(),145,285);
-      }
-      if(recentIndices_.size()>1) {
-        drawCompactLabel(298,textY+16,"<",165);
-        drawCompactLabel(340,textY+16,">",165);
-        const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
-        drawCompactLabel(295,textY+38,page.c_str(),138,355);
-        if(recentFocus_)books::paintSelection(display_,290,textY,68,lineHeight);
-      }
-      const int titleY=textY+lineHeight;
-      if(info) {
-        const auto& title=info->title.empty()?books_[current_].label:info->title;
+      constexpr int textX=88;
+      const bool multiple=recentIndices_.size()>1;
+      const int textRight=multiple?HOME_NAV_X-8:HOME_CARD_RIGHT-4;
+      const int textWidth=textRight-textX;
+      renderer_.drawLine(15,HOME_CARD_TOP,HOME_CARD_RIGHT,HOME_CARD_TOP,true);
+      if(!books_.empty()) {
+        drawBookCover(HOME_COVER_X,HOME_COVER_Y,current_,HOME_COVER_W,HOME_COVER_H);
+        const auto& info=details(current_);
+        const auto& title=info.title.empty()?books_[current_].label:info.title;
+        drawCompactLabel(textX,94,recentIndices_.empty()?"Current book":"Recently read",145,textRight);
         auto& ui=books::UiText::instance();
-        const int titlePx=shelfRowPx()-3;
-        if(ui.available() && ui.drawable(title)) {
-          ui.draw(display_,textX,titleY+(lineHeight-ui.lineHeight(titlePx))/2,
-                  fitWidth(title,textWidth,titlePx),titlePx,right);
-        } else if(!drawSmallLine(textX,titleY+19,title,textWidth,224)) {
-          drawRowLabel(textX,titleY,lineHeight,renderer_.truncatedText(1,title.c_str(),textWidth).c_str());
+        const auto line=[&](const std::string& value,int y,int px,int scale) {
+          if(value.empty())return;
+          if(ui.available() && ui.drawable(value))
+            uiDraw(textX,y,fitWidth(value,textWidth,px),px,textRight);
+          else if(!drawSmallLine(textX,y+px,value,textWidth,scale))
+            drawCompactLabel(textX,y+px,value.c_str(),scale,textRight);
+        };
+        line(title,98,19,192);
+        line(info.author,121,14,150);
+        uint32_t ppm=0;
+        if(books::loadShelfProgress(books_[current_].path,ppm)) {
+          const unsigned percent=std::min(ppm,1000000u)/10000u;
+          const auto label=std::to_string(percent)+"%";
+          drawCompactLabel(textX,155,label.c_str(),138,textX+48);
+          const int barX=textX+52,barW=textRight-barX;
+          renderer_.drawRect(barX,145,barW,9,true);
+          if(percent)renderer_.fillRect(barX+1,146,(barW-2)*percent/100,7,true);
         }
-        if(hasAuthor)
-          drawRowLabel(textX,titleY+lineHeight,lineHeight,
-                       renderer_.truncatedText(1,info->author.c_str(),textWidth).c_str());
+        if(multiple) {
+          renderer_.drawLine(HOME_NAV_X-3,82,HOME_NAV_X-3,158,true);
+          if(recentChoice_>0)drawCompactLabel(300,115,"<",176,HOME_NAV_MID);
+          if(recentChoice_+1<recentIndices_.size())drawCompactLabel(337,115,">",176,HOME_CARD_RIGHT);
+          const auto page=std::to_string(recentChoice_+1)+"/"+std::to_string(recentIndices_.size());
+          drawCompactLabel(298,145,page.c_str(),138,HOME_CARD_RIGHT);
+          if(recentFocus_)books::paintSelection(display_,HOME_NAV_X,83,HOME_CARD_RIGHT-HOME_NAV_X,75);
+        }
       } else {
-        drawRowLabel(textX,titleY,lineHeight,"No books yet");
+        drawRowLabel(20,90,50,"No books yet");
       }
-      renderer_.drawLine(15,bottom,right,bottom,true);
+      renderer_.drawLine(15,HOME_CARD_BOTTOM,HOME_CARD_RIGHT,HOME_CARD_BOTTOM,true);
       static constexpr const char* homeLabels[]={"Continue reading","Browse files","Options"};
       for(int row=books_.empty()?1:0;row<static_cast<int>(std::size(homeLabels));++row) {
         const int y=HOME_TOP_Y+row*HOME_ROW_STEP;
@@ -4970,6 +5035,10 @@ class CardShelf {
         if(!collectionFilter_.empty())filterLabel=collectionFilter_;
         else if(group!=series_.end())filterLabel=group->second.label;
         if(favoritesFilter_)filterLabel=filterLabel.empty()?books::tr("Favorites"):"* "+filterLabel;
+        if(statusFilter_!=books::ReadingStatusFilter::All) {
+          const std::string label=books::tr(books::readingStatusLabel(statusFilter_));
+          filterLabel=filterLabel.empty()?label:label+" / "+filterLabel;
+        }
         if(!filterLabel.empty())drawCompactLabel(16,61,filterLabel.c_str(),145,146);
         else drawCompactLabel(16,61,count,145,146);
       }
@@ -5036,7 +5105,7 @@ class CardShelf {
       :libraryMenu_==LibraryMenu::Info?books::tr(localInfoResume_?"Resume reading":"Open book")
       :browsing_ && !onlineMode_ && !searchEditing_ && !jumpOpen_ &&
        libraryMenu_==LibraryMenu::None && visible_.size()==1 &&
-       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty())?
+       (favoritesFilter_ || !collectionFilter_.empty() || !seriesFilter_.empty() || statusFilter_!=books::ReadingStatusFilter::All)?
        books::tr("No books yet"):std::string();
     if(!footer.empty()) {
       // Inset from the Q2's rounded bottom corners (MenuLayout::cornerX).
@@ -5239,8 +5308,8 @@ class CardShelf {
     if(!display_.composeColorFrame(flowFrame_.data(),flowFrame_.size()))return false;
     const int x=catalog?16:info?INFO_X:HOME_COVER_X;
     const int y=catalog?80:info?INFO_Y:HOME_COVER_Y;
-    const int width=catalog?books::OpdsCover::width:info?INFO_W:books::ShelfCover::width;
-    const int height=catalog?books::OpdsCover::height:info?INFO_H:books::ShelfCover::height;
+    const int width=catalog?books::OpdsCover::width:info?INFO_W:HOME_COVER_W;
+    const int height=catalog?books::OpdsCover::height:info?INFO_H:HOME_COVER_H;
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }
@@ -5461,7 +5530,7 @@ int runCardApp(const std::string& bookDir) {
       const auto featured=shelf?shelf->featuredArtwork():std::nullopt;
       if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() &&
          !shelf->libraryInputBusy() && (featured || indexCursor<books.size()) && now>=nextShelfIndexTick) {
-        if(seriesScan)indexCursor=std::max(indexCursor,nextShelfIndex);
+        if(seriesScan)while(indexCursor<books.size() && shelf->seriesIndexed(indexCursor))++indexCursor;
         if(featured || indexCursor<books.size()) {
           const size_t index=featured?*featured:indexCursor++;
           if(!seriesScan)shelf->markArtworkChecked(index);
@@ -5471,7 +5540,7 @@ int runCardApp(const std::string& bookDir) {
           if(result.updated)shelf->onIndexedBook(index);
           if(seriesAdded || (result.updated && !seriesScan))shelf->present();
         }
-        nextShelfIndexTick=ReaderClock::now()+std::chrono::milliseconds(seriesScan?30:800);
+        nextShelfIndexTick=ReaderClock::now()+std::chrono::milliseconds(seriesScan?100:800);
       }
       if(reader && reader->searchOpen() && reader->searchRunning()) {
         reader->searchTick(&input);
@@ -5525,7 +5594,7 @@ int runCardApp(const std::string& bookDir) {
       if(mapped.repeat>1){pendingAction=mapped.action;pendingRepeat=mapped.repeat-1;}
     }
     nextShelfIndexTick=std::chrono::steady_clock::now()+
-        std::chrono::milliseconds(shelf && shelf->scanningSeries()?30:800);
+        std::chrono::milliseconds(shelf && shelf->scanningSeries()?100:800);
     nextBuildTick=std::chrono::steady_clock::now()+
                   std::chrono::milliseconds(300);
     nextAutoTurn=ReaderClock::time_point::max();  // any input restarts the interval
@@ -6127,6 +6196,7 @@ int runCardApp(const std::string& bookDir) {
     const bool opened=next->open(true);
     if(interrupted)break;
     if(!opened) {
+      next.reset(); // release failed reader resources before repainting Home
       shelf->setNotice(userGuide?"Cannot read userguide":"Cannot read this EPUB");
       shelf->present();
     } else {
@@ -6200,8 +6270,16 @@ int main(int argc,char** argv) {
     const std::vector<ShelfEntry> shelfBooks={{argv[2],"First",0,0},{argv[3],"Second",0,0}};
     if(!books::recordRecentBook(argv[2]) || !books::recordRecentBook(argv[3]))return 1;
     CardShelf shelf(shelfBooks);
-    if(!shelf.open() || shelf.bookPath()!=argv[3] ||
-       !shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.open() || shelf.bookPath()!=argv[3])return 2;
+    // Home wheel navigation is independent until a carousel arrow or hold
+    // explicitly enters carousel focus.
+    if(shelf.recentInput(A::Next,{K::KeyUp,173}) || shelf.bookPath()!=argv[3])return 2;
+    if(shelf.tap(340,115) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.recentInput(A::Previous,{K::WheelStep,0}) || shelf.bookPath()!=argv[3])return 2;
+    if(!shelf.recentInput(A::Next,{K::WheelStep,0}) || shelf.bookPath()!=argv[2])return 2;
+    if(!shelf.recentInput(A::Back,{}) || shelf.recentInput(A::Next,{K::WheelStep,0}))return 2;
+    if(!shelf.tap(90,115) || shelf.bookPath()!=argv[2])return 2;
+    if(books::loadRecentBooks().front()!=argv[3])return 2;
     shelf.enterBrowser(true);
     if(!shelf.change(1) || shelf.bookPath()!=argv[2] ||
        !shelf.tap(310,61) || !shelf.libraryMenuOpen() || shelf.flowActive() || shelf.gridActive())return 3;

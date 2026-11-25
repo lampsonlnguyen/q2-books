@@ -21,7 +21,6 @@ Each minor release has one primary feature. Patch releases address fixes, compat
 
 | Release | Primary feature | Status |
 | --- | --- | --- |
-| v1.5.0 | Alphabetical navigation | Released |
 | v1.6.0 | Book information panel | In development |
 | v1.7.0 | Collections and favorites | In development |
 | v1.8.0 | Reading status filters | Planned |
@@ -30,11 +29,13 @@ Each minor release has one primary feature. Patch releases address fixes, compat
 | v1.11.0 | Cover Flow customization | Planned |
 | v1.12.0 | In-book search | In development |
 | v1.13.0 | Embedded EPUB fonts | In development |
-| v1.14.0 | Markdown support | Planned |
+| v1.14.0 | Markdown .md support | Planned |
 | v1.15.0 | HTML support | Planned |
 | v1.16.0 | Language-aware hyphenation | In development |
 | v1.17.0 | Reading statistics | Planned |
 | v1.18.0 | Reading streaks and goals | Planned |
+| v1.19.0 | Read DRM-free .mobi files | Low Priority |
+| v1.20.0 | Read DRM-free .prc files | Low Priority |
 
 ### v1.5.0 — Alphabetical navigation
 

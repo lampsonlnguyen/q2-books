@@ -42,9 +42,9 @@ uint32_t toLowerCyrillicImpl(const uint32_t cp) {
   if (cp >= 0x0410 && cp <= 0x042F) {
     return cp + 0x20;
   }
-  if (cp == 0x0401) {
-    return 0x0451;
-  }
+  // Includes Ukrainian Є, І, Ї and Ґ.
+  if (cp >= 0x0400 && cp <= 0x040f) return cp + 0x50;
+  if (cp == 0x0490) return 0x0491;
   return cp;
 }
 

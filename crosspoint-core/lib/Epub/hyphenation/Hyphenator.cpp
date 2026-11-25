@@ -44,7 +44,22 @@ const LanguageHyphenator* hyphenatorForLanguage(std::string_view langTag) {
     if (c < 'a' || c > 'z' || primary.size() == 3) return nullptr;
     primary.push_back(c);
   }
-  if (primary.empty()) return nullptr;
+  if (primary.size() < 2) return nullptr;
+  // Validate the rest of the tag; a malformed suffix must not accidentally
+  // enable an otherwise supported dictionary. Bound work on hostile metadata.
+  if (langTag.size() > 63) return nullptr;
+  size_t subtagLength = 0;
+  for (size_t i = primary.size(); i < langTag.size(); ++i) {
+    const char c = langTag[i];
+    if (c == '-' || c == '_') {
+      if (i != primary.size() && subtagLength == 0) return nullptr;
+      subtagLength = 0;
+    } else {
+      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9')) || ++subtagLength > 8) return nullptr;
+    }
+  }
+  if (langTag.size() > primary.size() && subtagLength == 0) return nullptr;
 
   // Normalize ISO 639-2 three-letter codes to two-letter equivalents.
   for (const auto& mapping : kIso639Mappings) {
@@ -63,7 +78,11 @@ const LanguageHyphenator* hyphenatorForLanguage(std::string_view langTag) {
 void appendFallbackIndexes(const std::vector<CodepointInfo>& cps, const size_t minPrefix, const size_t minSuffix,
                            std::vector<size_t>& out) {
   for (size_t idx = minPrefix; idx + minSuffix <= cps.size(); ++idx) {
-    if (idx == 0 || indic::syllableBreakAllowed(cps[idx - 1].value, cps[idx].value)) out.push_back(idx);
+    if (idx == 0 || idx >= cps.size()) continue;
+    const auto left = cps[idx - 1].value, right = cps[idx].value;
+    if (utf8IsCombiningMark(right) || isHebrewMark(right) || isArabicVowelMark(right) ||
+        left == 0x200d || right == 0x200d || right == 0x200c) continue;
+    if (indic::syllableBreakAllowed(left, right)) out.push_back(idx);
   }
 }
 
@@ -272,7 +291,11 @@ std::vector<Hyphenator::BreakInfo> Hyphenator::breakOffsets(const std::string& w
     // CJK characters can break without inserting a visible hyphen.
     // Check the codepoint at the break position: if it's a CJK character,
     // no hyphen is needed since CJK scripts don't use hyphenation.
-    bool needsHyphen = true;
+    // Emergency wrapping is not linguistic hyphenation: only a supported
+    // alphabetic language may insert a hyphen. Keep unsupported scripts
+    // and unknown language text free of artificial hyphens.
+    bool needsHyphen = hyphenator && idx > 0 && idx < cps.size() &&
+        isAlphabetic(cps[idx - 1].value) && isAlphabetic(cps[idx].value);
     if (idx < cps.size() && utf8IsCjkBreakable(cps[idx].value)) {
       needsHyphen = false;
     } else if (idx > 0 && utf8IsCjkBreakable(cps[idx - 1].value)) {

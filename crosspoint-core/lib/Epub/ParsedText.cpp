@@ -1344,7 +1344,10 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   // Hangul breaks come first so they win a tie against a hyphenated break at the same width.
   auto breakInfos = hangulLineEndBreaks(word);
   const size_t hangulCount = breakInfos.size();
-  const auto* rules = wordHyphenation_.empty() ? Hyphenator::documentRules() : wordHyphenation_[wordIndex];
+  // Respect the user's Off setting and heading suppression even when
+  // emergency wrapping is needed for a token wider than the viewport.
+  const auto* rules = !hyphenationEnabled ? nullptr :
+      (wordHyphenation_.empty() ? Hyphenator::documentRules() : wordHyphenation_[wordIndex]);
   const auto hyphenBreaks = Hyphenator::breakOffsets(word, allowFallbackBreaks, rules);
   breakInfos.insert(breakInfos.end(), hyphenBreaks.begin(), hyphenBreaks.end());
   if (breakInfos.empty()) {

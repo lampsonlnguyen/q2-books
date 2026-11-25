@@ -7,10 +7,11 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from test_markdown_reader import png
 
 
 def make_book(text, mobi=True, compression=1, encryption=0, encoding=65001,
-              version=6, payload=None, flags=0):
+              version=6, payload=None, flags=0, exth=(), cover=None):
     if payload is None:
         if compression == 1:
             payload = text
@@ -24,15 +25,29 @@ def make_book(text, mobi=True, compression=1, encryption=0, encoding=65001,
         struct.pack_into(">4sIIIII", mh, 0, b"MOBI", len(mh), 2, encoding, 1, version)
         struct.pack_into(">H", mh, 0xe2, flags)
         title = b"Fixture ebook"
-        struct.pack_into(">II", mh, 68, len(first) + len(mh), len(title))
-        first += mh + title
+        entries = list(exth)
+        if cover is not None:
+            entries.append((201, struct.pack(">I", 0)))
+            struct.pack_into(">I", mh, 92, 2)
+        extension = b""
+        if entries:
+            records = b"".join(struct.pack(">II", kind, len(value) + 8) + value
+                               for kind, value in entries)
+            extension = struct.pack(">4sII", b"EXTH", 12 + len(records), len(entries)) + records
+            struct.pack_into(">I", mh, 112, 0x40)
+        struct.pack_into(">II", mh, 68, len(first) + len(mh) + len(extension), len(title))
+        first += mh + extension + title
     pdb = bytearray(78)
     pdb[0:7] = b"Fixture"
     pdb[60:68] = b"BOOKMOBI" if mobi else b"TEXtREAd"
-    struct.pack_into(">H", pdb, 76, 2)
-    start = 78 + 16 + 2
-    return bytes(pdb) + struct.pack(">IB3sIB3s", start, 0, b"\0\0\1",
-        start + len(first), 0, b"\0\0\2") + b"\0\0" + first + payload
+    records = [first, payload] + ([cover] if cover is not None else [])
+    struct.pack_into(">H", pdb, 76, len(records))
+    start = 78 + 8 * len(records) + 2
+    table = b""
+    for i, record in enumerate(records, 1):
+        table += struct.pack(">IB3s", start, 0, i.to_bytes(3, "big"))
+        start += len(record)
+    return bytes(pdb) + table + b"\0\0" + b"".join(records)
 
 
 def test(executable):
@@ -55,7 +70,9 @@ def test(executable):
                 + "<p>Reading progress fixture.</p>" * 300
                 + "<p>Unique final sentence.</p></body></html>").encode()
         mobi = shelf / "Novel.MOBI"
-        mobi.write_bytes(make_book(html, compression=2))
+        mobi.write_bytes(make_book(html, compression=2, cover=png((200, 30, 10)),
+            exth=[(100, "Nguyễn Văn A".encode()), (101, b"Fixture Press"),
+                  (503, "Đà Lạt Novel".encode()), (524, b"vi")]))
         prc = shelf / "Legacy.prc"
         prc.write_bytes(make_book(b"PalmDOC legacy text. " * 300, mobi=False))
         cp = shelf / "Western.mobi"
@@ -68,6 +85,13 @@ def test(executable):
         extra_html = b"<p>Trailing record fixture.</p>"
         extra.write_bytes(make_book(extra_html, payload=extra_html+b"\x81", flags=2))
 
+        # Metadata and artwork must be available before the reader converts text.
+        indexed = run("--index-book", mobi)
+        assert "metadata=1 cover=1 updated=1" in indexed, indexed
+        assert "title=Đà Lạt Novel author=Nguyễn Văn A" in indexed, indexed
+        assert "Books color cover: ready" in indexed, indexed
+        assert not list((state / "cache").glob("mobi-v1-*.epub"))
+        assert "updated=0" in run("--index-book", mobi)
         listing = run("--list-books", shelf)
         assert all(str(p) in listing for p in (mobi, prc, cp, lz, extra))
         assert "matches=1" in run("--test-book-search", mobi, "Đà Lạt")

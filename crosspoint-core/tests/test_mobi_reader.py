@@ -67,8 +67,12 @@ def test(executable):
 
         html = ("<html><body><h1>Opening</h1><p>Đà Lạt and 中文.</p>"
                 "<p><b>Bold words</b> and <i>italic text</i>.</p>"
+                '<p><a filepos="0000000000">Jump to ending</a></p>'
+                '<p><img recindex="00001" alt="Illustration"/><img recindex="99999" alt="Missing art"/></p>'
                 + "<p>Reading progress fixture.</p>" * 300
-                + "<p>Unique final sentence.</p></body></html>").encode()
+                + '<mbp:pagebreak/><h2>Ending</h2><p>Unique final sentence.</p></body></html>').encode()
+        target = html.index(b"<h2>Ending")
+        html = html.replace(b"0000000000", f"{target:010d}".encode(), 1)
         mobi = shelf / "Novel.MOBI"
         mobi.write_bytes(make_book(html, compression=2, cover=png((200, 30, 10)),
             exth=[(100, "Nguyễn Văn A".encode()), (101, b"Fixture Press"),
@@ -100,6 +104,8 @@ def test(executable):
         assert "matches=1" in run("--test-book-search", lz, "abcabcabc")
         assert "matches=1" in run("--test-book-search", extra, "Trailing record fixture")
         run("--validate", prc)
+        assert "title=Ending" in run("--inspect-toc", mobi)
+        assert "Books rendered images: 1" in run("--render-images", mobi, root / "art.pgm")
         run("--test-reading-resume", mobi)
         run("--test-clippings", mobi)
         packages = list((state / "cache").glob("mobi-v1-*.epub"))
@@ -108,6 +114,13 @@ def test(executable):
             with zipfile.ZipFile(path) as z:
                 assert z.testzip() is None
                 assert "OEBPS/content.opf" in z.namelist()
+                if "OEBPS/image0.png" in z.namelist():
+                    assert z.read("OEBPS/image0.png") == png((200, 30, 10))
+                    chapters = [z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml")]
+                    assert len(chapters) >= 2
+                    assert any('href="h' in c and "#a" in c and "Jump to ending" in c for c in chapters)
+                    assert any("Missing art" in c for c in chapters)
+        assert any("OEBPS/image0.png" in zipfile.ZipFile(p).namelist() for p in packages)
 
         bad = shelf / "invalid.mobi"
         for data, diagnostic in [

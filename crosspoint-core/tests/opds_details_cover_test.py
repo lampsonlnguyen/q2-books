@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """M4: a catalog book's description (HTML content made plain) and its OPDS
-thumbnail, fetched from the catalog's origin, dithered to a 1-bit cover and
-kept on the card for the next time (served once, then the server is gone)."""
+color thumbnail, fetched from the catalog's origin and kept on the card
+for the next time (served once, then the server is gone)."""
 import os
 import struct
 import subprocess
@@ -15,12 +15,12 @@ READER = sys.argv[1]
 
 
 def png(w, h):
-    # A black left half and a white right half, 8-bit grey.
-    raw = b"".join(b"\0" + bytes(0 if x < w // 2 else 255 for x in range(w)) for _ in range(h))
+    row = b"\0" + b"\xff\x00\x00" * (w // 2) + b"\x00\x00\xff" * (w - w // 2)
+    raw = row * h
 
     def chunk(kind, data):
         return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)) +
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) +
             chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
 
 
@@ -57,11 +57,11 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 url = f"http://127.0.0.1:{server.server_port}/feed"
 state = tempfile.mkdtemp(prefix="books-covers-")
 env = dict(os.environ, BOOKS_STATE_DIR=state)
-out_pgm = os.path.join(state, "cover.pgm")
+out_ppm = os.path.join(state, "cover.ppm")
 
 
 def run():
-    p = subprocess.run([READER, "--opds-cover", url, out_pgm], capture_output=True, text=True, timeout=60, env=env)
+    p = subprocess.run([READER, "--opds-cover", url, out_ppm], capture_output=True, text=True, timeout=60, env=env)
     if p.returncode:
         sys.exit(f"FAIL rc={p.returncode}\n{p.stdout}{p.stderr}")
     return p.stdout
@@ -71,11 +71,11 @@ out = run()
 assert "summary: First & best second line …bold" in out, out
 assert "thumbnail: " + url.replace("/feed", "/thumb.png") in out, out  # the thumbnail, not the full image
 assert "/thumb.png" in hits and "/full.png" not in hits, hits
-data = open(out_pgm, "rb").read()
-assert data.startswith(b"P5\n96 128\n255\n"), data[:20]
-pix = data[len(b"P5\n96 128\n255\n"):]
-# 60x80 fits 96x128 exactly: black on the left half of the picture, white on the right.
-assert pix[64 * 96 + 30] == 0 and pix[64 * 96 + 70] == 255, (pix[64 * 96 + 30], pix[64 * 96 + 70])
+data = open(out_ppm, "rb").read()
+assert data.startswith(b"P6\n96 128\n255\n"), data[:20]
+pix = data[len(b"P6\n96 128\n255\n"):]
+assert pix[(64 * 96 + 30) * 3: (64 * 96 + 30) * 3 + 3] == b"\xff\x00\x00"
+assert pix[(64 * 96 + 70) * 3: (64 * 96 + 70) * 3 + 3] == b"\x00\x00\xff"
 covers = os.listdir(os.path.join(state, "opds-covers"))
 assert len(covers) == 1 and covers[0].endswith(".cover"), covers
 # Second time: the cover comes from the card (the feed from the offline copy).
@@ -84,4 +84,5 @@ server.server_close()
 before = len(hits)
 out = run()
 assert "cover: ok" in out and len(hits) == before, (out, hits)
+assert open(out_ppm, "rb").read() == data
 print("OPDS details and covers: PASS")

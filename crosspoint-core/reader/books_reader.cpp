@@ -1204,29 +1204,15 @@ class Reader {
   books::ShelfDetails shelfDetails() const {
     return {metadata().coreMetadata.title,metadata().coreMetadata.author};
   }
-  // Generate a tiny cover once, only after the user has already opened
-  // the EPUB. Never inflate cover JPEG/PNG for every bookshelf row or turn.
+  // Refresh old SD cards on return from a book, including those that only
+  // have a legacy black-and-white cover.
   bool cacheShelfCover() {
-    books::ShelfCover existing;
-    if(books::loadShelfCover(bookPath_,existing))return true;
-    const std::string& coverPath=metadata().coreMetadata.coverItemHref;
-    if(coverPath.empty()||coverPath.size()>1024 ||
-       coverPath.front()=='/' || coverPath.find("..")!=std::string::npos)
-      return false;
-    size_t size=0;
-    if(!archive_.getInflatedFileSize(coverPath.c_str(),&size) ||
-       size<8 || size>4u*1024u*1024u)return false;
-    std::unique_ptr<uint8_t,decltype(&std::free)> bytes(
-        archive_.readFileToMemory(coverPath.c_str(),&size,false),&std::free);
-    if(!bytes || size<8 || size>4u*1024u*1024u)return false;
+    if(books::isTxtFilename(bookPath_))return false;
+    books::FlowCover cover;
+    if(books::loadFlowCover(bookPath_,cover))return true;
     books::PngPreview decoded;
-    bool okay=books::decodePngPreview(bytes.get(),size,decoded);
-    if(!okay && bytes.get()[0]==0xff && bytes.get()[1]==0xd8)
-      okay=books::decodeJpegPreview(bytes.get(),size,decoded);
-    if(!okay)return false;
-    books::ShelfCover thumbnail;
-    return books::makeShelfCover(decoded,thumbnail) &&
-           books::saveShelfCover(bookPath_,thumbnail);
+    return books::readEpubCover(archive_,metadata().coreMetadata.coverItemHref,decoded) &&
+           books::makeColorCover(decoded,cover) && books::saveFlowCover(bookPath_,cover);
   }
 
   books::Typography typography() const {return typography_;}
@@ -3151,10 +3137,9 @@ class CardShelf {
   size_t recentChoice_=0;
   bool recentFocus_=false;
 
-  books::ShelfCover currentCover_{};
   size_t displayedCoverIndex_=size_t(-1);
   books::FlowCover displayedColorCover_;
-  bool currentCoverAvailable_=false;
+  std::vector<bool> artworkChecked_;
   bool browsing_ = false;
   enum class LibraryView {CoverFlow,List,Grid};
   LibraryView libraryView_=LibraryView::CoverFlow;
@@ -3235,7 +3220,6 @@ class CardShelf {
   bool detailsOpen_=false;
   books::OpdsEntry detailsEntry_;
   books::OpdsCover detailsCover_{};
-  bool detailsHasCover_=false;
   bool detailsOnCard_=false;
   std::vector<std::string> detailsLines_;
   size_t detailsScroll_=0;
@@ -3268,6 +3252,7 @@ class CardShelf {
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()) {
     sortMode_=sortMode;
     seriesChecked_.resize(books_.size());
+    artworkChecked_.resize(books_.size());
     collections_=books::loadCollections();
     (void)books::restoreMovedCollectionBooks(collections_,books_);
     for(const auto& path:books::loadRecentBooks()) {
@@ -3677,10 +3662,12 @@ class CardShelf {
   const books::OpdsEntry& detailsEntry() const {return detailsEntry_;}
   void openDetails(const books::OpdsEntry& entry,const std::string& bookDir) {
     detailsEntry_=entry;
-    detailsHasCover_=books::fetchOpdsCover(entry,server_,detailsCover_);
+    detailsCover_={};
     struct stat info{};
     const std::string file=books::opdsDestination(bookDir,entry);
     detailsOnCard_=!file.empty() && ::lstat(file.c_str(),&info)==0 && S_ISREG(info.st_mode);
+    if(!detailsOnCard_ || !books::loadFlowCover(file,detailsCover_.image))
+      (void)books::fetchOpdsCover(entry,server_,detailsCover_);
     detailsLines_=wrapSmall(entry.summary.empty()?books::tr("No description"):entry.summary,DETAILS_W);
     if(detailsLines_.size()>200)detailsLines_.resize(200);
     detailsScroll_=0;detailsOpen_=true;notice_.clear();
@@ -4176,7 +4163,6 @@ class CardShelf {
   }
   void drawBookCover(int x,int y,size_t index) {
     if(displayedCoverIndex_!=index) {
-      currentCoverAvailable_=books::loadShelfCover(books_[index].path,currentCover_);
       displayedColorCover_={};
       (void)books::loadFlowCover(books_[index].path,displayedColorCover_);
       displayedCoverIndex_=index;
@@ -4187,13 +4173,12 @@ class CardShelf {
                        x+books::ShelfCover::width,y+books::ShelfCover::height,true);
     renderer_.drawLine(x-1,y+books::ShelfCover::height,
                        x+books::ShelfCover::width,y+books::ShelfCover::height,true);
-    const auto& cover=currentCoverAvailable_?currentCover_:books::shelf_art::defaultThumbnail();
-    for(int py=0;py<books::ShelfCover::height;++py)
-      for(int px=0;px<books::ShelfCover::width;++px)
-        if(cover.ink[py*books::ShelfCover::stride+px/8] &
-           (0x80u>>(px&7)))
-          renderer_.drawPixel(x+px,y+py,true);
-    books::paintPicture(display_,x,y,books::ShelfCover::width,books::ShelfCover::height);
+  }
+  void markArtworkChecked(size_t index) {artworkChecked_[index]=true;}
+  std::optional<size_t> featuredArtwork() const {
+    if(browsing_ || optionsOpen_ || onlineMode_ || fontManager_ || books_.empty() ||
+       artworkChecked_[current_] || displayedColorCover_.valid())return std::nullopt;
+    return current_;
   }
   void onIndexedBook(size_t index) {
     for(auto& slot:flowSlots_)if(slot.used && slot.index==index)slot.used=false;
@@ -4928,15 +4913,6 @@ class CardShelf {
     renderer_.drawLine(15,74,359,74,true);
     constexpr int cx=16,cy=80,cw=books::OpdsCover::width,ch=books::OpdsCover::height;
     renderer_.drawRect(cx-1,cy-1,cw+2,ch+2,true);
-    if(detailsHasCover_) {
-      for(int y=0;y<ch;++y)
-        for(int x=0;x<cw;++x)
-          if(detailsCover_.inked(x,y))renderer_.drawPixel(cx+x,cy+y,true);
-      books::paintPicture(display_,cx,cy,cw,ch);
-    } else {
-      renderer_.drawLine(cx+14,cy+30,cx+cw-14,cy+30,true);
-      renderer_.drawLine(cx+14,cy+40,cx+cw-14,cy+40,true);
-    }
     // Title: up to two lines in font 1, then the author in the small face.
     std::string title=detailsEntry_.title;
     int y=78;
@@ -5112,23 +5088,30 @@ class CardShelf {
       books::grid::drawCover(flowFrame_.data(),cover.valid()?cover:books::shelf_art::defaultCover(),books::grid::tile(cell));
     }
   }
+  bool composeCoverFrame() {
+    const bool info=libraryMenu_==LibraryMenu::Info;
+    const bool home=!browsing_ && !optionsOpen_ && !onlineMode_ && !fontManager_ && !books_.empty();
+    const bool catalog=detailsOpen() && !searchEditing_;
+    if(!home && !info && !catalog)return false;
+    const auto& cached=catalog?detailsCover_.image:displayedColorCover_;
+    const auto& art=cached.valid()?cached:books::shelf_art::defaultCover();
+    flowFrame_.resize(HalDisplay::PIXELS);
+    if(!display_.composeColorFrame(flowFrame_.data(),flowFrame_.size()))return false;
+    const int x=catalog?16:info?20:HOME_COVER_X;
+    const int y=catalog?80:info?83:HOME_COVER_Y;
+    const int width=catalog?books::OpdsCover::width:books::ShelfCover::width;
+    const int height=catalog?books::OpdsCover::height:books::ShelfCover::height;
+    books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
+    return true;
+  }
   void present() {
     paint();
     if(!flowActive() && !gridActive()) {
       flowMoving_=false;flowTouch_=false;flowPosition_=float(selected_);
-      const bool info=libraryMenu_==LibraryMenu::Info;
-      const bool home=!browsing_ && !optionsOpen_ && !onlineMode_ && !fontManager_ && !books_.empty();
-      if((home || info) && displayedColorCover_.valid()) {
-        flowFrame_.resize(HalDisplay::PIXELS);
-        if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
-          const int x=info?20:HOME_COVER_X,y=info?83:HOME_COVER_Y;
-          books::grid::drawThumbnail(flowFrame_.data(),displayedColorCover_,x,y,books::ShelfCover::width,
-                                    books::ShelfCover::height);
-          if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
-        }
-      }
-      std::vector<uint32_t>().swap(flowFrame_);std::vector<uint8_t>().swap(flowAlpha_);
+      std::vector<uint8_t>().swap(flowAlpha_);
       for(auto& slot:flowSlots_)slot={};
+      if(composeCoverFrame() && display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+      std::vector<uint32_t>().swap(flowFrame_);
       display_.displayBuffer();return;
     }
     if(!flowMoving_ && !flowTouch_)flowPosition_=float(selected_);
@@ -5179,6 +5162,17 @@ class CardShelf {
   }
   bool savePgm(const std::string& out) {
     paint();
+    if(out.size()>4 && out.compare(out.size()-4,4,".ppm")==0) {
+      if(!composeCoverFrame())return false;
+      FILE* f=std::fopen(out.c_str(),"wb");
+      if(!f)return false;
+      bool ok=std::fprintf(f,"P6\n375 320\n255\n")>0;
+      for(const auto pixel:flowFrame_) {
+        const unsigned char channels[]={uint8_t(pixel>>16),uint8_t(pixel>>8),uint8_t(pixel)};
+        if(std::fwrite(channels,1,sizeof(channels),f)!=sizeof(channels)) {ok=false;break;}
+      }
+      return std::fclose(f)==0 && ok;
+    }
     const uint8_t* pixels=display_.getFrameBuffer();
     std::FILE* f=std::fopen(out.c_str(),"wb");
     if(!f)return false;
@@ -5324,11 +5318,13 @@ int runCardApp(const std::string& bookDir) {
       if(!reader && shelf && shelf->animating())shelf->animationTick();
       const bool seriesScan=shelf && shelf->scanningSeries();
       auto& indexCursor=seriesScan?nextSeriesIndex:nextShelfIndex;
+      const auto featured=shelf?shelf->featuredArtwork():std::nullopt;
       if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() &&
-         !shelf->libraryInputBusy() && indexCursor<books.size() && now>=nextShelfIndexTick) {
+         !shelf->libraryInputBusy() && (featured || indexCursor<books.size()) && now>=nextShelfIndexTick) {
         if(seriesScan)indexCursor=std::max(indexCursor,nextShelfIndex);
-        if(indexCursor<books.size()) {
-          const size_t index=indexCursor++;
+        if(featured || indexCursor<books.size()) {
+          const size_t index=featured?*featured:indexCursor++;
+          if(!seriesScan)shelf->markArtworkChecked(index);
           books::ShelfBookInfo info;
           const auto result=books::indexShelfBook(books[index].path,&info,!seriesScan);
           const bool seriesAdded=shelf->cacheSeries(index,info);
@@ -5368,7 +5364,7 @@ int runCardApp(const std::string& bookDir) {
       auto deadline=reader?reader->nextPositionFlush():ReaderClock::time_point::max();
       deadline=std::min(deadline,turnDue);
       if(!reader && shelf && shelf->animating())deadline=std::min(deadline,ReaderClock::now()+std::chrono::milliseconds(16));
-      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && !shelf->libraryInputBusy() && indexCursor<books.size())deadline=std::min(deadline,nextShelfIndexTick);
+      if(!reader && shelf && !shelf->animating() && !shelf->jumpOpen() && !shelf->libraryInputBusy() && (featured || indexCursor<books.size()))deadline=std::min(deadline,nextShelfIndexTick);
       if(canPrefetch && reader->needsPagePrefetch())deadline=std::min(deadline,nextBuildTick);
       if(waitForReaderInput(input,deadline)<0) {
         std::fputs("Books: input socket poll failed\n",stderr);
@@ -6397,7 +6393,7 @@ int main(int argc,char** argv) {
     return 0;
   }
   // M4: the first EPUB entry of a feed: its description and its cover
-  // (fetched, or the card's copy), written as a PGM.
+  // (fetched or cached), written as PPM color or a grayscale PGM.
   if(argc==4 && std::strcmp(argv[1],"--opds-cover")==0) {
     books::OpdsServer server;
     for(const auto& saved:books::loadConnectedConfig().servers)
@@ -6411,9 +6407,18 @@ int main(int argc,char** argv) {
       if(!books::fetchOpdsCover(entry,server,cover)){std::puts("cover: none");return 9;}
       FILE* out=std::fopen(argv[3],"wb");
       if(!out)return 9;
-      std::fprintf(out,"P5\n%d %d\n255\n",books::OpdsCover::width,books::OpdsCover::height);
-      for(int y=0;y<books::OpdsCover::height;++y)
-        for(int x=0;x<books::OpdsCover::width;++x)std::fputc(cover.inked(x,y)?0:255,out);
+      constexpr int w=books::OpdsCover::width,h=books::OpdsCover::height;
+      std::vector<uint32_t> frame(HalDisplay::PIXELS,0xffffffff);
+      books::grid::drawThumbnail(frame.data(),cover.image,0,0,w,h);
+      const std::string_view output(argv[3]);
+      const bool color=output.size()>4 && output.substr(output.size()-4)==".ppm";
+      std::fprintf(out,"%s\n%d %d\n255\n",color?"P6":"P5",w,h);
+      for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+        const auto pixel=frame[y*books::flow::width+x];
+        const unsigned r=(pixel>>16)&255,g=(pixel>>8)&255,b=pixel&255;
+        if(color) {std::fputc(r,out);std::fputc(g,out);std::fputc(b,out);}
+        else std::fputc((77*r+150*g+29*b+128)>>8,out);
+      }
       std::fclose(out);
       std::puts("cover: ok");
       return 0;
@@ -6485,6 +6490,7 @@ int main(int argc,char** argv) {
        haveMetadata,haveCover,result.updated,
        haveMetadata?details.title.c_str():"",
        haveMetadata?details.author.c_str():"");
+    std::printf("Books color cover: %s\n",result.flowCover?"ready":"unavailable");
     return haveMetadata && haveCover?0:5;
   }
   if(argc==3 && std::strcmp(argv[1],"--list-books")==0) {

@@ -33,11 +33,39 @@ inline bool makeFlowCover(const uint8_t* rgb,size_t bytes,unsigned w,unsigned h,
     next.width=std::max(1u,unsigned(uint64_t(w)*next.height/h));
   }
   next.pixels.resize(size_t(next.width)*next.height);
-  for(unsigned y=0;y<next.height;++y) for(unsigned x=0;x<next.width;++x) {
-    const auto* p=rgb+3*(size_t(uint64_t(y)*h/next.height)*w+uint64_t(x)*w/next.width);
-    next.pixels[size_t(y)*next.width+x]=uint16_t((p[0]&248u)<<8 | (p[1]&252u)<<3 | p[2]>>3);
+  for(unsigned y=0;y<next.height;++y)for(unsigned x=0;x<next.width;++x) {
+    const unsigned left=x*w/next.width,right=(x+1)*w/next.width;
+    const unsigned top=y*h/next.height,bottom=(y+1)*h/next.height;
+    unsigned r=0,g=0,b=0;
+    for(unsigned sy=top;sy<bottom;++sy)for(unsigned sx=left;sx<right;++sx) {
+      const auto* p=rgb+3*(size_t(sy)*w+sx);
+      r+=p[0];g+=p[1];b+=p[2];
+    }
+    const unsigned count=(right-left)*(bottom-top);
+    next.pixels[size_t(y)*next.width+x]=
+        uint16_t((r/count&248u)<<8 | (g/count&252u)<<3 | b/count>>3);
   }
   out=std::move(next);
+  return true;
+}
+// Shared bounded RGB565 payload used by local EPUB and OPDS caches.
+inline bool writeCoverPixels(FILE* file,const FlowCover& cover) {
+  if(!cover.valid() || std::fputc(cover.width,file)==EOF || std::fputc(cover.height,file)==EOF)return false;
+  for(auto pixel:cover.pixels)
+    if(std::fputc(pixel&255,file)==EOF || std::fputc(pixel>>8,file)==EOF)return false;
+  return true;
+}
+inline bool readCoverPixels(FILE* file,FlowCover& cover) {
+  const int w=std::fgetc(file),h=std::fgetc(file);
+  if(w<=0 || h<=0 || unsigned(w)>FlowCover::maxWidth || unsigned(h)>FlowCover::maxHeight)return false;
+  FlowCover next{unsigned(w),unsigned(h),std::vector<uint16_t>(size_t(w)*h)};
+  for(auto& pixel:next.pixels) {
+    const int low=std::fgetc(file),high=std::fgetc(file);
+    if(low==EOF || high==EOF)return false;
+    pixel=uint16_t(low|(high<<8));
+  }
+  if(std::fgetc(file)!=EOF || std::ferror(file))return false;
+  cover=std::move(next);
   return true;
 }
 inline std::string flowCoverFile(const std::string& book) {return positionFile(book)+".flowcover";}
@@ -49,11 +77,7 @@ inline bool saveFlowCover(const std::string& book,const FlowCover& cover) {
   if(!f)return false;
   bool ok=std::fprintf(f,"BOOKS-FLOW1 %llu %llu\n",
       static_cast<unsigned long long>(st.st_size),static_cast<unsigned long long>(st.st_mtime))>0;
-  if(ok)ok=std::fputc(cover.width,f)!=EOF && std::fputc(cover.height,f)!=EOF;
-  for(auto p:cover.pixels) {
-    if(!ok)break;
-    ok=std::fputc(p&255,f)!=EOF && std::fputc(p>>8,f)!=EOF;
-  }
+  ok=ok && writeCoverPixels(f,cover);
   if(std::fflush(f)!=0)ok=false;
   if(ok && fsync(fileno(f))!=0)ok=false;
   if(std::fclose(f)!=0)ok=false;
@@ -71,23 +95,8 @@ inline bool loadFlowCover(const std::string& book,FlowCover& out) {
       parseShelfIdentityHeader(header,"BOOKS-FLOW1",bytes,changed) &&
       bytes==static_cast<unsigned long long>(st.st_size) &&
       changed==static_cast<unsigned long long>(st.st_mtime);
-  FlowCover next;
-  if(ok) {
-    int w=std::fgetc(f),h=std::fgetc(f);
-    ok=w>0 && h>0 && unsigned(w)<=FlowCover::maxWidth && unsigned(h)<=FlowCover::maxHeight;
-    if(ok) {
-      next.width=unsigned(w);next.height=unsigned(h);
-      next.pixels.resize(size_t(w)*h);
-      for(auto& p:next.pixels) {
-        int lo=std::fgetc(f),hi=std::fgetc(f);
-        if(lo==EOF || hi==EOF){ok=false;break;}
-        p=uint16_t(lo|(hi<<8));
-      }
-      if(ok)ok=std::fgetc(f)==EOF && !std::ferror(f);
-    }
-  }
+  ok=ok && readCoverPixels(f,out);
   std::fclose(f);
-  if(ok)out=std::move(next);
   return ok;
 }
 } // namespace books

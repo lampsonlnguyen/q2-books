@@ -1613,8 +1613,8 @@ class Reader {
     }
     return highlights_;
   }
-#ifndef BOOKS_Q2_RUNTIME
   size_t searchMatchCount() const {return searchMatches_.size();}
+#ifndef BOOKS_Q2_RUNTIME
   bool publisherFontActive() const {
 #ifdef BOOKS_HAVE_FREETYPE
     return upstreamFontId_==publisherFontBase+fontIdForTypography(typography_);

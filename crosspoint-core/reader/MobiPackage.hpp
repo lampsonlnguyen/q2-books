@@ -204,6 +204,7 @@ inline std::string rewriteFilePositions(std::string_view input) {
     out.append(input.substr(at,pos-at));out+=extra;at=pos;
     if(out.size()>maxText)return {};
   }
+  if(input.size()-at>maxText-out.size())return {};
   out.append(input.substr(at));
   return out;
 }
@@ -340,8 +341,7 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
   if(metadataOnly)return true;
   if(firstImage<count && firstImage>records) {
     book.firstImage=firstImage;
-    book.imageOffsets=std::move(offsets);
-    offsets=book.imageOffsets;
+    book.imageOffsets=offsets;
   }
   book.text.reserve(expected);
   std::string decoded;

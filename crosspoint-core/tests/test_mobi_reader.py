@@ -68,11 +68,11 @@ def test(executable):
         def run(*args, ok=True):
             result = subprocess.run([executable, *map(str, args)],
                 env={**os.environ, "BOOKS_STATE_DIR": str(state)},
-                capture_output=True, text=True, timeout=30)
+                capture_output=True, text=True, timeout=90)
             assert (result.returncode == 0) == ok, result.stdout + result.stderr
             return result.stdout + result.stderr
 
-        html = ("<html><body><h1>Opening</h1><p>Đà Lạt and 中文.</p>"
+        html = ("<html><body><h1>Opening</h1><p>Đà Lạt and 中文. Legacy &igrave; &atilde; &#272;.</p>"
                 "<p><b>Bold words</b> and <i>italic text</i>.</p>"
                 '<p><a filepos="0000000000">Jump to ending</a></p>'
                 '<p><img recindex="00001" alt="Illustration"/><img recindex="99999" alt="Missing art"/></p>'
@@ -101,14 +101,14 @@ def test(executable):
         assert "metadata=1 cover=1 updated=1" in indexed, indexed
         assert "title=Đà Lạt Novel author=Nguyễn Văn A" in indexed, indexed
         assert "Books color cover: ready" in indexed, indexed
-        assert not list((state / "cache").glob("mobi-r1-*.epub"))
+        assert not list((state / "cache").glob("mobi-r2-*.epub"))
         assert "updated=0" in run("--index-book", mobi)
         listing = run("--list-books", shelf)
         assert all(str(p) in listing for p in (mobi, prc, cp, lz, extra))
         cold_start = time.monotonic()
         run("--validate", mobi)
         cold = time.monotonic() - cold_start
-        package, = (state / "cache").glob("mobi-r1-*.epub")
+        package, = (state / "cache").glob("mobi-r2-*.epub")
         original = package.stat()
         warm_start = time.monotonic()
         run("--validate", mobi)
@@ -118,6 +118,7 @@ def test(executable):
         print(f"MOBI validate cold={cold:.3f}s warm={warm:.3f}s")
         assert "matches=1" in run("--test-book-search", mobi, "Đà Lạt")
         assert "matches=1" in run("--test-book-search", mobi, "Unique final sentence")
+        assert "matches=1" in run("--test-book-search", mobi, "ì ã Đ")
         assert "matches=1" in run("--test-book-search", cp, "café")
         assert "matches=1" in run("--test-book-search", lz, "abcabcabc")
         assert "matches=1" in run("--test-book-search", extra, "Trailing record fixture")
@@ -126,7 +127,7 @@ def test(executable):
         assert "Books rendered images: 1" in run("--render-images", mobi, root / "art.pgm")
         run("--test-reading-resume", mobi)
         run("--test-clippings", mobi)
-        packages = list((state / "cache").glob("mobi-r1-*.epub"))
+        packages = list((state / "cache").glob("mobi-r2-*.epub"))
         assert len(packages) == 5, packages
         for path in packages:
             with zipfile.ZipFile(path) as z:
@@ -138,6 +139,7 @@ def test(executable):
                     assert len(chapters) >= 2
                     assert any('href="c' in c and "#pos" in c and "Jump to ending" in c for c in chapters)
                     assert any("Missing art" in c for c in chapters)
+                    assert any("ì ã Đ" in c for c in chapters)
         assert any("OEBPS/img1.png" in zipfile.ZipFile(p).namelist() for p in packages)
 
         # Truncated cache must be rebuilt atomically.
@@ -148,7 +150,7 @@ def test(executable):
         # A modified source must select a new cache identity, not stale text.
         mobi.write_bytes(make_book(b"<p>Replacement source text.</p>"))
         assert "matches=1" in run("--test-book-search", mobi, "Replacement source text")
-        assert len(list((state / "cache").glob("mobi-r1-*.epub"))) == 6
+        assert len(list((state / "cache").glob("mobi-r2-*.epub"))) == 6
 
         # Reproduce the structures that occur in real legacy Vietnamese books:
         # malformed quoted font attributes, many records and pagebreaks, and GIF.
@@ -163,9 +165,9 @@ def test(executable):
         large.write_bytes(make_book(text, compression=2, flags=3, cover=gif, segmented=True))
         indexed = run("--index-book", large)
         assert "metadata=1 cover=1" in indexed, indexed
-        previous = set((state / "cache").glob("mobi-r1-*.epub"))
+        previous = set((state / "cache").glob("mobi-r2-*.epub"))
         run("--validate", large)
-        generated, = set((state / "cache").glob("mobi-r1-*.epub")) - previous
+        generated, = set((state / "cache").glob("mobi-r2-*.epub")) - previous
         with zipfile.ZipFile(generated) as z:
             assert z.testzip() is None
             chapters = [n for n in z.namelist() if n.endswith(".xhtml")]

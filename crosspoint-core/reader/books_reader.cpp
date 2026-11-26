@@ -612,7 +612,6 @@ class Reader {
   std::string bookPath_;
   // The ZIP the engine opens: the book itself, or for a .txt its cached EPUB
   // package (TxtPackage.hpp). bookPath_ stays the book's identity.
-  std::string openError_;
   std::string packagePath_;
   ZipFile archive_;
   std::unique_ptr<TempCache> temporary_;
@@ -758,7 +757,7 @@ class Reader {
                            (cardMounted?"/mnt/mmc/.books":"/tmp");
     return base+"/cache";
   }
-  static std::string resolvePackage(const std::string& book,std::string& openError) {
+  static std::string resolvePackage(const std::string& book) {
     const bool html=books::isHtmlFilename(book);
     const bool markdown=books::isMarkdownFilename(book);
     const bool mobi=books::isMobiFilename(book);
@@ -769,7 +768,7 @@ class Reader {
                              markdown?books::packageMarkdownBook(book,stateCacheDir(),error):
                              mobi?books::packageMobiBook(book,stateCacheDir(),error):
                              books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty()) {openError=error.empty()?"Import failed":error;std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":mobi?"MOBI/PRC":"TXT",openError.c_str());}
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":mobi?"MOBI/PRC":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -1030,7 +1029,7 @@ class Reader {
   }
  public:
   explicit Reader(std::string path):
-      bookPath_(std::move(path)),packagePath_(resolvePackage(bookPath_,openError_)),archive_(packagePath_),
+      bookPath_(std::move(path)),packagePath_(resolvePackage(bookPath_)),archive_(packagePath_),
       renderer_(display_),
       bodyFont_(&notosans_12_regular),
       fontCache_(renderer_.getFontMap(),renderer_.getSdCardFonts(),renderer_.getTtfFonts()),
@@ -1046,10 +1045,7 @@ class Reader {
     flushPosition();
     ImageBlock::setExtractor(nullptr,nullptr);
   }
-  const std::string& openError() const {return openError_;}
   bool open(bool resumeOnOpen=false) {
-    if(packagePath_.empty())return false;
-    openError_="Reader initialization failed";
     (void)books::loadReaderPreferences(preferences_);
     // These are unmodified upstream CrossPoint layout/render sources.
     display_.begin();
@@ -1085,7 +1081,7 @@ class Reader {
       } else std::fprintf(stderr,
           "Books: original Section unavailable; using legacy collector\n");
     }
-    if(!upstreamEpub_ && !loadLegacyMetadata()){openError_="Cannot load EPUB index";std::fprintf(stderr,"Books: %s\n",openError_.c_str());return false;}
+    if(!upstreamEpub_ && !loadLegacyMetadata())return false;
     const auto& info=metadata().coreMetadata;
     std::printf("Books EPUB: %s — %s | %d spine entries\n",
         info.title.c_str(),info.author.c_str(),metadata().getSpineCount());
@@ -1098,8 +1094,7 @@ class Reader {
     const int firstSpine=hasSaved?saved.spine:0;
     bool loaded=loadSpine(firstSpine,1);
     if(!loaded && firstSpine!=0)loaded=loadSpine(0,1);
-    if(!loaded){openError_="No readable pages";std::fprintf(stderr,"Books: %s\n",openError_.c_str());return false;}
-    openError_.clear();
+    if(!loaded)return false;
     if(resumeOnOpen) {
       resumeEnabled_=true;
       if(hasSaved && currentSpine_==saved.spine && pageCount()>0)
@@ -5561,6 +5556,28 @@ class CardShelf {
     books::grid::drawThumbnail(flowFrame_.data(),art,x,y,width,height);
     return true;
   }
+  // Show a stable cover/title while a cold source import is being prepared.
+  // Do not create a second Reader or write reading progress for a preview.
+  void presentOpening(size_t index) {
+    if(index>=books_.size())return;
+    const auto& info=details(index);
+    const auto title=fitWidth(info.title.empty()?books_[index].label:info.title,335);
+    renderer_.clearScreen(0xff);
+    const auto label=books::tr("Opening book...");
+    drawRowLabel((375-renderer_.getTextWidth(1,label))/2,0,39,label);
+    books::paintBar(display_,0,0,375,39);
+    constexpr int w=126,h=174,x=(375-w)/2,y=51;
+    drawBookCover(x,y,index,w,h);
+    drawRowLabel((375-renderer_.getTextWidth(1,title.c_str()))/2,236,37,title.c_str());
+    drawRowLabel(22,274,34,"Preparing book...");
+    flowFrame_.resize(HalDisplay::PIXELS);
+    if(display_.composeColorFrame(flowFrame_.data(),flowFrame_.size())) {
+      const auto& art=displayedColorCover_.valid()?displayedColorCover_:books::shelf_art::defaultCover();
+      books::grid::drawThumbnail(flowFrame_.data(),art,x,y,w,h);
+      if(display_.presentColorFrame(flowFrame_.data(),flowFrame_.size()))return;
+    }
+    display_.displayBuffer();
+  }
   void present() {
     paint();
     if(!flowActive() && !gridActive()) {
@@ -6447,34 +6464,23 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":books::isMobiFilename(chosen)?"Opening MOBI/PRC...":"Opening book...");
-      shelf->present();
+      if(!books::isEpubFilename(chosen))shelf->presentOpening(selection);
+      else {
+        shelf->setNotice("Opening book...");
+        shelf->present();
+      }
     }
-    const bool importingMobi=books::isMobiFilename(chosen);
-    const bool wasBrowsing=shelf->browsing();
-    readingFromGrid=shelf->gridActive();
-    readingContext=shelf->browseContext();
-    // Unlike CLI tests, the on-device library holds decoded cover-flow
-    // artwork and font caches. Release them before a MOBI import allocates
-    // book text, XHTML and image buffers. Keep the previous screen painted.
-    if(importingMobi)shelf.reset();
     auto next=std::make_unique<Reader>(chosen);
     const bool opened=next->open(true);
     if(interrupted)break;
     if(!opened) {
-      const auto error=next->openError();
       next.reset(); // release failed reader resources before repainting Home
-      if(!shelf){
-        shelf=std::make_unique<CardShelf>(books,selection,selection,sortMode,bookDir);
-        nextShelfIndex=nextSeriesIndex=0;
-        if(!shelf->open())return 6;
-        shelf->restoreBrowseContext(readingContext);
-        if(wasBrowsing)shelf->enterBrowser();
-      }
       shelf->setNotice(userGuide?"Cannot read userguide":
-          books::isHtmlFilename(chosen)?"Cannot read this HTML file":importingMobi?(error.empty()?"MOBI open failed":error):"Cannot read this book");
+          books::isHtmlFilename(chosen)?"Cannot read this HTML file":books::isMobiFilename(chosen)?"Unsupported or invalid MOBI/PRC":"Cannot read this book");
       shelf->present();
     } else {
+      readingFromGrid=shelf->gridActive();
+      readingContext=shelf->browseContext();
       shelf.reset();
       reader=std::move(next);
       reader->present();

@@ -2,7 +2,6 @@
 #pragma once
 
 #include "ShelfDetails.hpp"
-#include "ShelfLibrary.hpp"
 #include "ShelfSeries.hpp"
 #include <array>
 #include <charconv>
@@ -18,8 +17,7 @@ struct ShelfBookInfo {
 };
 
 inline std::string shelfBookInfoFile(const std::string& path) {
-  // Reindex old MOBI/PRC metadata without touching bookmarks or reading progress.
-  return positionFile(path)+(isMobiFilename(path)?".mobi-r2.info":".info");
+  return positionFile(path)+".info";
 }
 
 inline bool parseShelfVolume(std::string_view text,std::optional<float>& volume) {

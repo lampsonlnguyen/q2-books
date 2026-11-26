@@ -5,7 +5,7 @@
 #include "ShelfBookInfo.hpp"
 #include "ShelfCover.hpp"
 #include "CoverImage.hpp"
-#include "MobiArtwork.hpp"
+#include "MobiPackage.hpp"
 #include <ContainerParser.h>
 #include <ContentOpfParser.h>
 #include <ZipFile.h>
@@ -76,7 +76,7 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
       result.updated=result.updated || result.metadata;
     }
     PngPreview decoded;
-    if(!indexArtwork || book.cover.empty() || !mobipkg::normalizeArtwork(book.cover) ||
+    if(!indexArtwork || book.cover.empty() ||
        !decodeCoverImage(reinterpret_cast<const uint8_t*>(book.cover.data()),book.cover.size(),decoded))return result;
     if(!coverReady && decoded.gray.empty()) {
       decoded.gray.resize(size_t(decoded.width)*decoded.height);

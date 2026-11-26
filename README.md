@@ -10,7 +10,7 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 
 ## Features in the source
 
-- EPUB, TXT, Markdown, PRC, MOBI, local HTML and supported DRM-free MOBI/PRC use CrossPoint pagination, illustrations, multilingual shaping and font fallback. Legacy MOBI/PRC has a dedicated bounded importer with basic formatting, page breaks, internal links and metadata.
+- EPUB, TXT, Markdown, local HTML and supported DRM-free MOBI/PRC use CrossPoint pagination, illustrations, multilingual shaping and font fallback. Legacy MOBI/PRC uses the v2.0.2 decoder and shared HTML-to-EPUB converter.
 - Cover Flow, Grid and List library views; alphabetical jump, search, metadata, favorites, collections, reading status and numeric series grouping.
 - Home recent-books carousel with color covers, progress and resume; wheel and touchscreen navigation.
 - Bookmarks, highlights, dictionary lookup, footnote/link navigation, reading progress and typography controls; installed reading font sizes 8–14 pt.
@@ -40,9 +40,9 @@ The following version assignments are planning targets, not release commitments.
 
 Acceptance: customization stays within safe geometry and memory limits without altering reader typography or system theme.
 
-### v2.0.6 target — DRM-free MOBI and PRC support
+### DRM-free MOBI and PRC support
 
-Rewrite status: bounded standalone decoder/importer, metadata and artwork, and reader integration are implemented on `feature/mobi-prc-v2`. Actual-file host import tests passed; full host/Q2 integration and physical-device performance remain to be validated before merge. The earlier v2.0.4 implementation is archived.
+Compatibility restoration: the exact v2.0.2 runtime and regression tests are restored after device failures in v2.0.6–v2.0.7. First-open performance remains unoptimized; physical-device confirmation of the new release is pending.
 
 - [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
 - [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.

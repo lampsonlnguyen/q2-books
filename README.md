@@ -10,7 +10,7 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 
 ## Features in the source
 
-- EPUB, TXT, Markdown, local HTML and supported DRM-free MOBI/PRC use CrossPoint pagination, illustrations, multilingual shaping and font fallback. Legacy MOBI/PRC has a dedicated bounded importer with basic formatting, page breaks, internal links and metadata.
+- EPUB, TXT, Markdown, PRC, MOBI, local HTML and supported DRM-free MOBI/PRC use CrossPoint pagination, illustrations, multilingual shaping and font fallback. Legacy MOBI/PRC has a dedicated bounded importer with basic formatting, page breaks, internal links and metadata.
 - Cover Flow, Grid and List library views; alphabetical jump, search, metadata, favorites, collections, reading status and numeric series grouping.
 - Home recent-books carousel with color covers, progress and resume; wheel and touchscreen navigation.
 - Bookmarks, highlights, dictionary lookup, footnote/link navigation, reading progress and typography controls; installed reading font sizes 8–14 pt.

@@ -17,9 +17,9 @@ The following version assignments are planning targets, not release commitments.
 
 Acceptance: customization stays within safe geometry and memory limits without altering reader typography or system theme.
 
-### DRM-free MOBI and PRC support
+### v2.0.6 target — DRM-free MOBI and PRC support
 
-Compatibility restoration: the exact v2.0.2 runtime and regression tests are restored after device failures in v2.0.6–v2.0.7. First-open performance remains unoptimized; physical-device confirmation of the new release is pending.
+Rewrite status: bounded standalone decoder/importer, metadata and artwork, and reader integration are implemented on `feature/mobi-prc-v2`. Actual-file host import tests passed; full host/Q2 integration and physical-device performance remain to be validated before merge. The earlier v2.0.4 implementation is archived.
 
 - [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
 - [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.

@@ -2,13 +2,14 @@
 
 ## Architecture and design constraints
 
-Books is a source-level CrossPoint EPUB/TXT/Markdown/HTML port, not Q2 Pod's stock flat-text EPUB reader. The independent Linux process uses the firmware only for launch, input/display handoff, system preferences and power lifecycle. Q2 has 128 MB physical RAM shared with Linux and audio; avoid treating this as the application's available heap. Prioritize EPUB fidelity, multilingual support, responsiveness, then bounded resource usage. No ESP32 firmware, Arduino runtime, browser engine or background power service is shipped.
+Books is a source-level CrossPoint EPUB/TXT/Markdown/HTML/MOBI/PRC port, not Q2 Pod's stock flat-text EPUB reader. The independent Linux process uses the firmware only for launch, input/display handoff, system preferences and power lifecycle. Q2 has 128 MB physical RAM shared with Linux and audio; avoid treating this as the application's available heap. Prioritize EPUB fidelity, multilingual support, responsiveness, then bounded resource usage. No ESP32 firmware, Arduino runtime, browser engine or background power service is shipped.
 
 | Layer | Source / responsibility |
 | --- | --- |
 | Application | `crosspoint-core/reader/books_reader.cpp`: Reader, CardShelf, event loop and menus |
 | EPUB | `crosspoint-core/lib/Epub/`: OPF/container, spine, CSS, ChapterHtmlSlimParser, ParsedText, Section, Page and disk-backed metadata/page caches |
 | Markdown | `reader/MarkdownPackage.cpp`: CommonMark conversion to a cached EPUB |
+| MOBI/PRC | `reader/MobiDecode.hpp`, `MobiArtwork.hpp`, `MobiPackage.hpp`: bounded legacy decoder, safe XHTML, atomic stored EPUB |
 | HTML | `reader/HtmlPackage.cpp`: bounded static HTML conversion to a cached EPUB |
 | TXT | `lib/Txt/` and `reader/TxtPackage.hpp`: conversion through existing layout pipeline |
 | Archive | `lib/ZipFile/`: named resources and streamed decompression |
@@ -93,7 +94,7 @@ Host GCC/Clang CTest, Q2 MIPS32r2 O32 FP64 hard-float NaN-2008/ABS-2008 build, E
 
 ## Known limitations
 
-Initial DRM-free legacy MOBI/PalmDOC PRC import supports uncompressed and PalmDOC-compressed records, UTF-8 and Windows-1252 text, basic HTML formatting, and a 4 MiB decoded-text limit. The importer reuses the cached EPUB reader and rejects DRM, KF8-only, Huffman/CDIC and unsupported Palm databases. EXTH metadata, declared cover thumbnails, bounded PNG/JPEG recindex illustrations, heading/page-break chapters and legacy filepos links are implemented in the development branch; source-identity cached EPUB reuse bypasses conversion on subsequent opens, with bounded ZIP signature checks and atomic replacement. Huffman/CDIC, KF8, broader format compatibility, and measured performance validation remain pending; publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
+Legacy MOBI/PalmDOC PRC import supports uncompressed and PalmDOC-compressed DRM-free text; KF8-only, HUFF/CDIC and DRM are not supported. Publisher CSS/font support is bounded; complex scripts and regional Han forms depend on font coverage. Full fidelity, hardware suspend and battery/long-session memory have not been comprehensively measured. Q2 Pod's App Store/name integration may still require upstream changes. No claim of complete Unicode grapheme segmentation.
 
 ## Attribution
 
@@ -127,3 +128,9 @@ Centre or tap its row to cycle through the available targets, including Off.
   An atomic replacement keeps the previous checkpoint if a write is
   interrupted. Statistics checkpoint once per minute while dirty and on clean
   exit. The reader never sends statistics or goal data over the network.
+
+## Rewritten MOBI/PRC import
+
+The standalone importer keeps original byte offsets for legacy filepos links, handles UTF-8 and CP1252 plus HTML4 named/numeric entities, tolerates malformed legacy attributes, and splits chapters at pagebreaks or approximately 48 KiB. It retains basic inline formatting, alignment, headings, synthesized navigation, and bounded PNG/JPEG artwork; bounded first-frame GIF decoding converts artwork to PNG using the existing zlib dependency. Images are optional and do not prevent text import. The importer writes ZIP entries directly to the SD cache, publishes by atomic rename, and uses a new source-identity cache namespace `mobi-r2` so archives from the previous importer cannot be reused. Only MOBI shelf-info cache identity changes; the original source path remains the reading-state identity. Earlier saved chapter coordinates may shift because the new importer splits text differently.
+
+Limits: 8 MiB decoded source text, 24 MiB sanitized markup, 2,048 chapters, 128 referenced image records, 1 MiB per input image, 12 MiB total normalized artwork, 1 megapixel GIF frame. Advanced legacy CSS, exact native TOC index reconstruction and full-format fidelity are not implemented. DRM and unsupported compression are rejected, not bypassed. The two privately supplied test files are not included in GitHub; the public regression suite uses synthetic fixtures reproducing the relevant markup, record, entity, link and GIF patterns. Local host imports of both actual files generated CRC-valid EPUBs with XML-valid chapters, no broken fragment references and valid images. Full CrossPoint and physical-device tests are separate acceptance gates.

@@ -789,12 +789,17 @@ class Reader {
     mix(static_cast<uint64_t>(scriptFonts_.coverageMask()));
     // RD-05: a user font slot's file can change between sessions; pages laid
     // out with another file under the same slot must not be reused.
-    for(int f=static_cast<int>(books::Typography::Family::User1);
-        f<static_cast<int>(books::Typography::Family::Count);++f)
-      for(int size=8;size<=14;++size)
-        for(unsigned char byte:books::typographyFontIdentity({static_cast<books::Typography::Family>(f),size})) {
-          hash^=byte;hash*=1099511628211ull;
-        }
+    // Enumerate user families once, not once for every slot and size.
+    const auto families=books::userFontFamilies();
+    for(const auto& family:families)
+      for(int size=8;size<=14;++size) {
+        const auto path=books::userFontsDir()+"/"+family+"-"+std::to_string(size)+".cpfont";
+        struct stat fontStat{};
+        if(!books::usableCpfont(path) || ::stat(path.c_str(),&fontStat)!=0)continue;
+        const auto identity=path+":"+std::to_string(static_cast<long long>(fontStat.st_size))+":"+
+            std::to_string(static_cast<long long>(fontStat.st_mtime));
+        for(unsigned char byte:identity){hash^=byte;hash*=1099511628211ull;}
+      }
     const char* state=std::getenv("BOOKS_STATE_DIR");
     struct stat cardDir{};
     const bool cardMounted=::stat("/mnt/mmc/.books",&cardDir)==0 &&
@@ -6470,8 +6475,14 @@ int runCardApp(const std::string& bookDir) {
         shelf->present();
       }
     }
+    const auto openingStart=ReaderClock::now();
     auto next=std::make_unique<Reader>(chosen);
+    const auto importedAt=ReaderClock::now();
     const bool opened=next->open(true);
+    const auto readyAt=ReaderClock::now();
+    std::fprintf(stderr,"Books open: import_ms=%lld reader_ms=%lld ok=%d\n",
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(importedAt-openingStart).count()),
+        static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(readyAt-importedAt).count()),int(opened));
     if(interrupted)break;
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home

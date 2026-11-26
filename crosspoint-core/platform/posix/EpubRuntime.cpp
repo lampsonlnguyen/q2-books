@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <memory>
 #include <sys/stat.h>
+#include <unistd.h>
 
 Epub::Epub(std::string path,const std::string& cacheDir)
   : filepath(std::move(path)),archive(std::make_unique<ZipFile>(filepath)),cachePath(cacheDir),
@@ -59,6 +60,38 @@ bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
     return false;
   const size_t slash=opf.find_last_of('/');
   contentBasePath=slash==std::string::npos?"":opf.substr(0,slash+1);
+  // Cache directory is already keyed by the source and layout identity.
+  // A completion marker is written only after successful metadata and CSS
+  // builds. Older caches, interrupted builds and changed sources rebuild.
+  const auto marker=cachePath+"/runtime-ready-v1";
+  const auto bookBin=cachePath+"/book.bin";
+  struct stat sourceStat{},binStat{};
+  const bool sourceOk=::stat(filepath.c_str(),&sourceStat)==0;
+  const auto identity=sourceOk?std::to_string(static_cast<long long>(sourceStat.st_size))+":"+
+      std::to_string(static_cast<long long>(sourceStat.st_mtime))+":"+
+      std::to_string(sourceStat.st_mtim.tv_nsec)+":"+
+      std::to_string(static_cast<long long>(sourceStat.st_ctime))+":"+
+      std::to_string(sourceStat.st_ctim.tv_nsec):std::string{};
+  bool ready=false;
+  if(sourceOk && ::stat(bookBin.c_str(),&binStat)==0 && binStat.st_size>0) {
+    if(FILE* f=std::fopen(marker.c_str(),"rb")) {
+      char buf[256]{};
+      const auto count=std::fread(buf,1,sizeof(buf),f);
+      std::fclose(f);
+      ready=std::string(buf,count)==identity+":"+std::to_string(static_cast<long long>(binStat.st_size));
+    }
+  }
+  if(ready && (skipLoadingCss || (cssParser &&
+      cssParser->inspectCache()==CssParser::CacheStatus::Complete &&
+      cssParser->loadFromCache()==CssParser::CacheLoadResult::Complete)) &&
+      bookMetadataCache->load() && bookMetadataCache->getSpineCount()>0) {
+    std::printf("Books EPUB metadata cache: hit\n");
+    return true;
+  }
+  // A failed fast path must not retain open book.bin handles or partial CSS.
+  bookMetadataCache=std::make_unique<BookMetadataCache>(cachePath);
+  if(cssParser)cssParser->clear();
+  ::unlink(marker.c_str());
   auto& cache=*bookMetadataCache;
   if(!cache.beginWrite()||!cache.beginContentOpfPass())return false;
   BookMetadataCache::BookMetadata info;
@@ -104,7 +137,9 @@ bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
   if(!cache.endTocPass() || !cache.endWrite() ||
      !cache.buildBookBin(filepath,info) || !cache.load() ||
      cache.getSpineCount()==0)return false;
+  bool cssComplete=false;
   if(!skipLoadingCss && cssParser) {
+    bool allParsed=true;
     size_t count=0;
     zip.enumerateFilePaths([&](std::string_view name){
       if(count>=32||name.size()<4||name.substr(name.size()-4)!=".css")return;
@@ -115,13 +150,23 @@ bool Epub::load(bool buildIfMissing,bool skipLoadingCss) {
          bytes==0||bytes>256*1024)return;
       std::unique_ptr<uint8_t,decltype(&std::free)> data(
         zip.readFileToMemory(path.c_str(),&bytes,false),&std::free);
-      if(!data)return;
+      if(!data){allParsed=false;return;}
       HalFile temp(std::tmpfile());
-      if(temp && temp.write(data.get(),bytes)==bytes && temp.seek(0))
-        (void)cssParser->loadFromStream(temp);
+      if(!temp || temp.write(data.get(),bytes)!=bytes || !temp.seek(0) ||
+         cssParser->loadFromStream(temp)!=CssParser::ParseResult::Complete)allParsed=false;
     });
-    (void)cssParser->saveToCache(true);
+    cssComplete=cssParser->saveToCache(allParsed) && allParsed;
   }
+  if(sourceOk && cssComplete && ::stat(bookBin.c_str(),&binStat)==0 && binStat.st_size>0) {
+    const auto value=identity+":"+std::to_string(static_cast<long long>(binStat.st_size));
+    const auto temp=marker+".tmp";
+    if(FILE* f=std::fopen(temp.c_str(),"wb")) {
+      const bool wrote=std::fwrite(value.data(),1,value.size(),f)==value.size();
+      const bool closed=std::fclose(f)==0;
+      if(!wrote || !closed || std::rename(temp.c_str(),marker.c_str())!=0)::unlink(temp.c_str());
+    }
+  }
+  std::printf("Books EPUB metadata cache: rebuilt\n");
   return true;
 }
 

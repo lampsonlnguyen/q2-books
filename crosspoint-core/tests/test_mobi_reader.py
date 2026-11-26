@@ -105,7 +105,8 @@ def test(executable):
         package, = (state / "cache").glob("mobi-v2-*.epub")
         original = package.stat()
         warm_start = time.monotonic()
-        run("--validate", mobi)
+        warm_log = run("--validate", mobi)
+        assert "Books EPUB metadata cache: hit" in warm_log, warm_log
         warm = time.monotonic() - warm_start
         assert package.stat().st_mtime_ns == original.st_mtime_ns
         assert package.stat().st_ino == original.st_ino

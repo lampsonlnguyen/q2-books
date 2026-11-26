@@ -2,6 +2,8 @@
 #pragma once
 #include "MobiArtwork.hpp"
 #include <charconv>
+#include <cerrno>
+#include <cstring>
 #include <map>
 #include <set>
 #include <cstdlib>
@@ -204,9 +206,9 @@ struct Import {
     const auto cover=image(book.coverIndex);std::string().swap(book.text);
     std::string manifest,spine,nav,coverMeta;
     const auto title=escape(book.title);
-    for(size_t i=0;i<chapters.size();++i){const auto& c=chapters[i];const auto file=chapterName(i),id="c"+std::to_string(i);std::string x="<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>"+title+"</title></head><body>";size_t from=0;
+    for(size_t i=0;i<chapters.size();++i){auto& c=chapters[i];const auto file=chapterName(i),id="c"+std::to_string(i);std::string x="<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>"+title+"</title></head><body>";size_t from=0;
       for(const auto& link:c.links){const auto a=anchors.find(link.target);if(a==anchors.end())continue;x.append(c.body,from,link.at-from);x+=" href=\""+chapterName(a->second)+"#pos"+std::to_string(link.target)+"\"";from=link.at;}
-      x.append(c.body,from,std::string::npos);x+="</body></html>";zip.add("OEBPS/"+file,x);
+      x.append(c.body,from,std::string::npos);x+="</body></html>";zip.add("OEBPS/"+file,x);std::string().swap(c.body);std::vector<Link>().swap(c.links);
       manifest+="<item id=\""+id+"\" href=\""+file+"\" media-type=\"application/xhtml+xml\"/>";spine+="<itemref idref=\""+id+"\"/>";
       nav+="<navPoint id=\"n"+id+"\" playOrder=\""+std::to_string(i+1)+"\"><navLabel><text>"+(c.label.empty()?"Part "+std::to_string(i+1):escape(c.label))+"</text></navLabel><content src=\""+file+"\"/></navPoint>";
     }
@@ -219,21 +221,40 @@ struct Import {
 inline std::string cachePath(const std::string& path,const std::string& dir){
   struct stat st{};if(::lstat(path.c_str(),&st)!=0||!S_ISREG(st.st_mode)||st.st_size<78)return {};
   uint64_t hash=14695981039346656037ull;const auto mix=[&](uint64_t v){for(int i=0;i<8;++i){hash^=(v>>(i*8))&255u;hash*=1099511628211ull;}};
-  for(unsigned char c:path){hash^=c;hash*=1099511628211ull;}mix(st.st_size);mix(st.st_mtime);mix(st.st_ctime);mix(st.st_mtim.tv_nsec);mix(st.st_ctim.tv_nsec);
-  char name[48];std::snprintf(name,sizeof name,"/mobi-r2-%016llx.epub",static_cast<unsigned long long>(hash));return dir+name;
+  for(unsigned char c:path){hash^=c;hash*=1099511628211ull;}mix(st.st_size);mix(st.st_mtime);mix(st.st_mtim.tv_nsec);
+  char name[48];std::snprintf(name,sizeof name,"/mobi-r3-%016llx.epub",static_cast<unsigned long long>(hash));return dir+name;
 }
 inline bool validCache(const std::string& path){auto f=openSource(path);struct stat st{};std::string start,end;return f&&::fstat(::fileno(f.get()),&st)==0&&S_ISREG(st.st_mode)&&st.st_size>=26&&st.st_size<=64ll*1024*1024&&readAt(f.get(),0,4,start)&&start=="PK\x03\x04"&&readAt(f.get(),static_cast<size_t>(st.st_size)-22,22,end)&&end.starts_with("PK\x05\x06")&&end[20]==0&&end[21]==0;}
 } // namespace books::mobipkg
 namespace books {
 inline std::string packageMobiBook(const std::string& path,const std::string& dir,std::string& error){
-  using namespace mobipkg;const auto target=cachePath(path,dir);if(target.empty()){error="Invalid MOBI/PRC source";return {};}
-  if(validCache(target))return target;
-  Book book;if(!readBook(path,book,error,false,false))return {};
-  auto source=openSource(path);if(!source){error="Source could not be reopened";return {};}
-  ::mkdir(dir.c_str(),0755);std::string temp=target+".partXXXXXX";const int fd=::mkstemp(temp.data());if(fd<0){error="Cache not writable";return {};}
-  FILE* f=::fdopen(fd,"wb");if(!f){::close(fd);::unlink(temp.c_str());error="Cache not writable";return {};}
-  Zip zip(f);Import importer(book,source.get(),zip);const bool built=importer.package();const bool closed=std::fclose(f)==0;
-  if(!built||!closed||cachePath(path,dir)!=target||::rename(temp.c_str(),target.c_str())!=0){::unlink(temp.c_str());error=built?"Cache write failed or source changed":"MOBI markup or package exceeded limits";return {};}
+  using namespace mobipkg;
+  const auto fail=[&](const char* stage,int code=0)->std::string {
+    error=stage;
+    std::fprintf(stderr,"Books MOBI: %s%s%s\n",stage,code?": ":"",code?std::strerror(code):"");
+    return {};
+  };
+  const auto target=cachePath(path,dir);
+  if(target.empty())return fail("Invalid MOBI/PRC source",errno);
+  if(validCache(target)){std::fprintf(stderr,"Books MOBI: cached EPUB ready\n");return target;}
+  if(::mkdir(dir.c_str(),0755)!=0 && errno!=EEXIST)return fail("Cannot create cache",errno);
+  // Open first and compare source size/mtime, not ctime: FAT-like media
+  // can expose unstable inode/change-time metadata during access.
+  auto source=openSource(path);struct stat before{},after{};
+  if(!source || ::fstat(::fileno(source.get()),&before)!=0)return fail("Cannot open source",errno);
+  Book book;if(!readBook(path,book,error,false,false)){std::fprintf(stderr,"Books MOBI: decode failed: %s\n",error.c_str());return {};}
+  std::fprintf(stderr,"Books MOBI: decoded %zu bytes\n",book.text.size());
+  std::string temp=target+".partXXXXXX";const int fd=::mkstemp(temp.data());
+  if(fd<0)return fail("Cannot create EPUB cache",errno);
+  FILE* f=::fdopen(fd,"wb");if(!f){const int e=errno;::close(fd);::unlink(temp.c_str());return fail("Cannot open EPUB cache",e);}
+  Zip zip(f);Import importer(book,source.get(),zip);
+  const bool built=importer.package();const int writeError=zip.ok?0:errno;
+  const bool closed=std::fclose(f)==0;const int closeError=closed?0:errno;
+  if(!built||!closed){::unlink(temp.c_str());return fail(!zip.ok||!closed?"Cannot write EPUB cache":"MOBI conversion failed",writeError?writeError:closeError);}
+  if(::fstat(::fileno(source.get()),&after)!=0||before.st_size!=after.st_size||before.st_mtime!=after.st_mtime||before.st_mtim.tv_nsec!=after.st_mtim.tv_nsec||cachePath(path,dir)!=target){::unlink(temp.c_str());return fail("Source changed during import");}
+  if(!validCache(temp)){::unlink(temp.c_str());return fail("Invalid generated EPUB");}
+  if(::rename(temp.c_str(),target.c_str())!=0){const int e=errno;::unlink(temp.c_str());return fail("Cannot publish EPUB cache",e);}
+  std::fprintf(stderr,"Books MOBI: EPUB ready (%u bytes, %zu chapters)\n",zip.offset,importer.chapters.size());
   return target;
 }
 } // namespace books

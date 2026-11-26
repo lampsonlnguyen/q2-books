@@ -5,12 +5,12 @@ CrossPod (Q2 Books) is a standalone ebook reader card app for [Q2 Pod](https://g
 ## Install
 
 1. Download an installable `books-q2-v*.zip` from [GitHub Releases](https://github.com/lampsonlnguyen/q2-books/releases) and verify its accompanying SHA-256 checksum.
-2. Extract to the microSD root, preserving the hidden `.books` folder and existing reading data. Place EPUB, TXT, Markdown (`.md`), or local HTML (`.html` / `.htm`) files under `Books/`.
+2. Extract to the microSD root, preserving the hidden `.books` folder and existing reading data. Place EPUB, TXT, Markdown (`.md`), local HTML (`.html` / `.htm`), or supported DRM-free MOBI/PRC files under `Books/`.
 3. Open **Library → Books** in Q2 Pod (older firmware may list card apps under Games). No firmware flashing is required.
 
 ## Features in the source
 
-- EPUB, TXT, Markdown, and local HTML reader using CrossPoint pagination, CSS, illustrations, multilingual shaping and font fallback.
+- EPUB, TXT, Markdown, local HTML and supported DRM-free MOBI/PRC use CrossPoint pagination, illustrations, multilingual shaping and font fallback. Legacy MOBI/PRC has a dedicated bounded importer with basic formatting, page breaks, internal links and metadata.
 - Cover Flow, Grid and List library views; alphabetical jump, search, metadata, favorites, collections, reading status and numeric series grouping.
 - Home recent-books carousel with color covers, progress and resume; wheel and touchscreen navigation.
 - Bookmarks, highlights, dictionary lookup, footnote/link navigation, reading progress and typography controls; installed reading font sizes 8–14 pt.
@@ -40,7 +40,9 @@ The following version assignments are planning targets, not release commitments.
 
 Acceptance: customization stays within safe geometry and memory limits without altering reader typography or system theme.
 
-### v2.1.0 — DRM-free MOBI and PRC support
+### v2.0.6 target — DRM-free MOBI and PRC support
+
+Rewrite status: bounded standalone decoder/importer, metadata and artwork, and reader integration are implemented on `feature/mobi-prc-v2`. Actual-file host import tests passed; full host/Q2 integration and physical-device performance remain to be validated before merge. The earlier v2.0.4 implementation is archived.
 
 - [ ] 2.1-M1 — Evaluate a lightweight, license-compatible PalmDB/PalmDOC/MOBI parser and establish supported MOBI/PRC variants, compression and resource limits.
 - [ ] 2.1-M2 — Add file discovery, metadata, author/title and cover extraction for supported DRM-free .mobi and .prc ebooks; distinguish ebooks from unrelated PRC files.

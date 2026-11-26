@@ -5,7 +5,6 @@
 #include "ShelfBookInfo.hpp"
 #include "ShelfCover.hpp"
 #include "CoverImage.hpp"
-#include "MobiPackage.hpp"
 #include <ContainerParser.h>
 #include <ContentOpfParser.h>
 #include <ZipFile.h>
@@ -41,7 +40,7 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
                                       bool indexArtwork=true) {
   ShelfIndexResult result{};
   if(bookPath.empty() || bookPath.size()>1000)return result;
-  if(!isEpubFilename(bookPath) && !isMobiFilename(bookPath))return result;  // source documents have no EPUB cover
+  if(!isEpubFilename(bookPath))return result;  // source documents have no EPUB cover
   struct stat st{};
   if(::lstat(bookPath.c_str(),&st)!=0 || !S_ISREG(st.st_mode) ||
      st.st_size<=0 || st.st_size>128ll*1024*1024)return result;
@@ -60,41 +59,6 @@ inline ShelfIndexResult indexShelfBook(const std::string& bookPath,ShelfBookInfo
   result.cover=coverReady;
   if(infoReady && metadataReady && (!indexArtwork || info.cover.empty() ||
       (coverReady && flowReady)))return result;
-
-  if(isMobiFilename(bookPath)) {
-    mobipkg::Book book;
-    std::string error;
-    if(!mobipkg::readBook(bookPath,book,error,true,indexArtwork && (!coverReady || !flowReady)))return result;
-    if(!infoReady) {
-      info={book.title,book.author,book.publisher,book.language,book.description,
-            {},book.isbn,book.asin,{},book.hasCover?"mobi:cover":"",{}};
-      if(requested)*requested=info;
-      result.updated=saveShelfBookInfo(bookPath,info);
-    }
-    if(!metadataReady) {
-      result.metadata=saveShelfDetails(bookPath,{book.title,book.author});
-      result.updated=result.updated || result.metadata;
-    }
-    PngPreview decoded;
-    if(!indexArtwork || book.cover.empty() ||
-       !decodeCoverImage(reinterpret_cast<const uint8_t*>(book.cover.data()),book.cover.size(),decoded))return result;
-    if(!coverReady && decoded.gray.empty()) {
-      decoded.gray.resize(size_t(decoded.width)*decoded.height);
-      for(size_t i=0;i<decoded.gray.size();++i)
-        decoded.gray[i]=uint8_t((77u*decoded.rgb[3*i]+150u*decoded.rgb[3*i+1]+29u*decoded.rgb[3*i+2]+128u)>>8);
-    }
-    ShelfCover thumb{};
-    if(!coverReady && makeShelfCover(decoded,thumb)) {
-      result.cover=saveShelfCover(bookPath,thumb);
-      result.updated=result.updated || result.cover;
-    }
-    FlowCover flow;
-    if(!flowReady && !decoded.rgb.empty() && makeColorCover(decoded,flow)) {
-      result.flowCover=saveFlowCover(bookPath,flow);
-      result.updated=result.updated || result.flowCover;
-    }
-    return result;
-  }
 
   // Keep only ZIP metadata and at most one bounded image in memory.
   // ZipFile retains a const reference to bookPath for its entire lifetime.

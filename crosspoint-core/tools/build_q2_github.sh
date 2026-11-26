@@ -205,7 +205,6 @@ cat > "$work/reader-qemu" <<EOF
 exec qemu-mipsel -L "$root" "$elf" "\$@"
 EOF
 chmod +x "$work/reader-qemu"
-python3 crosspoint-core/tests/test_mobi_reader.py "$work/reader-qemu"
 python3 crosspoint-core/tests/xhtml_streaming_test.py \
   "$work/reader-qemu" "$work/reader/illustrated.epub"
 timeout 60s qemu-mipsel -L "$root" "$elf" --render "$work/reader/vietnamese-prose.epub" "$work/vietnamese.pgm"

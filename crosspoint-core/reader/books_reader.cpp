@@ -31,7 +31,6 @@
 #include "TxtPackage.hpp"
 #include "HtmlPackage.hpp"
 #include "MarkdownPackage.hpp"
-#include "MobiPackage.hpp"
 #include "T9Keypad.hpp"
 #include "LegacyStateMigration.hpp"
 #include "About.hpp"
@@ -760,15 +759,13 @@ class Reader {
   static std::string resolvePackage(const std::string& book) {
     const bool html=books::isHtmlFilename(book);
     const bool markdown=books::isMarkdownFilename(book);
-    const bool mobi=books::isMobiFilename(book);
-    if(!html && !markdown && !mobi && !books::isTxtFilename(book))return book;
+    if(!html && !markdown && !books::isTxtFilename(book))return book;
     ::mkdir(stateCacheDir().c_str(),0755);
     std::string error;
     std::string package=html?books::packageHtmlBook(book,stateCacheDir(),error):
                              markdown?books::packageMarkdownBook(book,stateCacheDir(),error):
-                             mobi?books::packageMobiBook(book,stateCacheDir(),error):
                              books::packageTxtBook(book,stateCacheDir(),error);
-    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":mobi?"MOBI/PRC":"TXT",error.c_str());
+    if(package.empty())std::fprintf(stderr,"Books: %s: %s\n",html?"HTML":markdown?"Markdown":"TXT",error.c_str());
     return package;
   }
   std::string upstreamCachePath() const {
@@ -781,7 +778,7 @@ class Reader {
     for(unsigned char byte:bookPath_){hash^=byte;hash*=1099511628211ull;}
     mix(static_cast<uint64_t>(st.st_size));
     mix(static_cast<uint64_t>(st.st_mtime));
-    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_) || books::isMobiFilename(bookPath_))
+    if(books::isHtmlFilename(bookPath_) || books::isMarkdownFilename(bookPath_))
       for(unsigned char byte:packagePath_) {hash^=byte;hash*=1099511628211ull;}
     // CJK font coverage changes line measurement and pagination. Never reuse
     // Section layout cache from a Latin-only build after enabling CJK.
@@ -1613,8 +1610,8 @@ class Reader {
     }
     return highlights_;
   }
-  size_t searchMatchCount() const {return searchMatches_.size();}
 #ifndef BOOKS_Q2_RUNTIME
+  size_t searchMatchCount() const {return searchMatches_.size();}
   bool publisherFontActive() const {
 #ifdef BOOKS_HAVE_FREETYPE
     return upstreamFontId_==publisherFontBase+fontIdForTypography(typography_);
@@ -6442,7 +6439,7 @@ int runCardApp(const std::string& bookDir) {
     } else {
       selection=shelf->selected();
       chosen=shelf->bookPath();
-      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":books::isMobiFilename(chosen)?"Opening MOBI/PRC...":"Opening book...");
+      shelf->setNotice(books::isHtmlFilename(chosen)?"Opening HTML...":books::isMarkdownFilename(chosen)?"Opening Markdown...":"Opening book...");
       shelf->present();
     }
     auto next=std::make_unique<Reader>(chosen);
@@ -6451,7 +6448,7 @@ int runCardApp(const std::string& bookDir) {
     if(!opened) {
       next.reset(); // release failed reader resources before repainting Home
       shelf->setNotice(userGuide?"Cannot read userguide":
-          books::isHtmlFilename(chosen)?"Cannot read this HTML file":books::isMobiFilename(chosen)?"Unsupported or invalid MOBI/PRC":"Cannot read this book");
+          books::isHtmlFilename(chosen)?"Cannot read this HTML file":"Cannot read this book");
       shelf->present();
     } else {
       readingFromGrid=shelf->gridActive();
@@ -6613,8 +6610,6 @@ int main(int argc,char** argv) {
         static_cast<double>(info.volume.value_or(-1.f)));
     return 0;
   }
-#endif
-  // Keep import search and resume regressions available to the Q2 MIPS/QEMU suite.
   if(argc==3 && std::strcmp(argv[1],"--test-reading-resume")==0) {
     books::ReadingPosition expected;
     {
@@ -6645,7 +6640,6 @@ int main(int argc,char** argv) {
     std::printf("matches=%zu\n",count);
     return 0;
   }
-#ifndef BOOKS_Q2_RUNTIME
   if(argc==4 && std::strcmp(argv[1],"--test-book-font")==0) {
     Reader reader(argv[2]);
     if(!reader.open() || !reader.savePgm(argv[3]))return 1;
@@ -7258,7 +7252,7 @@ int main(int argc,char** argv) {
     path=argv[1];
   } else { usage();return 2; }
   if (!books::isBookFilename(path)) {
-    std::fputs("Books: open an .epub, .txt, .md, .html, .htm, .mobi or .prc book\n",stderr);
+    std::fputs("Books: open an .epub, .txt, .md, .html or .htm book\n",stderr);
     return 2;
   }
   if(!dry && onCard)(void)books::migrateLegacyState();

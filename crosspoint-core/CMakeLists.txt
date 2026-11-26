@@ -196,6 +196,10 @@ target_include_directories(crosspoint_txt PUBLIC
 add_executable(crosspoint_txt_tests tests/txt_to_html_test.cpp)
 target_link_libraries(crosspoint_txt_tests PRIVATE crosspoint_txt)
 add_test(NAME crosspoint_vietnamese_txt COMMAND crosspoint_txt_tests)
+add_executable(books_mobi_escape_equivalence tests/mobi_escape_equivalence_test.cpp)
+target_include_directories(books_mobi_escape_equivalence PRIVATE reader)
+target_link_libraries(books_mobi_escape_equivalence PRIVATE crosspoint_txt)
+add_test(NAME books_mobi_escape_equivalence COMMAND books_mobi_escape_equivalence)
 
 # The original CrossPoint EPUB container.xml parser. The XML parser itself is
 # Expat (system library on Linux), not the ESP32 toolchain or Q2 Pod EPUB code.

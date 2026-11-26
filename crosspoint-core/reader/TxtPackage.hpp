@@ -89,11 +89,26 @@ struct StringPrint final : Print {
   }
 };
 inline std::string xmlEscape(std::string_view s) {
+  // Same bytes as appendEscapedHtml followed by quote escaping, but copy
+  // ordinary UTF-8 spans in bulk instead of allocating two output strings.
   std::string out;
-  TxtToHtml::appendEscapedHtml(out,s);
-  std::string quoted;
-  for(char c:out) quoted+= c=='"'?std::string("&quot;"):std::string(1,c);
-  return quoted;
+  out.reserve(s.size());
+  size_t start=0;
+  for(size_t i=0;i<s.size();++i) {
+    const char* escaped=nullptr;
+    switch(s[i]) {
+      case '&': escaped="&amp;";break;
+      case '<': escaped="&lt;";break;
+      case '>': escaped="&gt;";break;
+      case '"': escaped="&quot;";break;
+      default: continue;
+    }
+    out.append(s.substr(start,i-start));
+    out+=escaped;
+    start=i+1;
+  }
+  out.append(s.substr(start));
+  return out;
 }
 struct ZipWriter {
   struct Entry {std::string name;uint32_t crc,size,offset;};

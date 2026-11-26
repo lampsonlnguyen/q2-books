@@ -101,14 +101,16 @@ inline bool imageRecord(std::string_view s) {
 // Translate legacy filepos links into synthetic fragment anchors. Targets
 // are accepted only at markup boundaries or in text (not inside attributes).
 // Scan quoted tags, comments and raw-text elements without interpreting scripts.
-inline std::string rewriteFilePositions(std::string_view input) {
+inline bool hasFilePositions(std::string_view input) {
   // Most files have no legacy byte links. A case-insensitive linear probe
   // avoids building a tag index or copying text for the common case.
   constexpr std::string_view key="filepos";
   const auto found=std::search(input.begin(),input.end(),key.begin(),key.end(),[](char a,char b){
     return (a>='A' && a<='Z'?a+32:a)==b;
   });
-  if(found==input.end())return std::string(input);
+  return found!=input.end();
+}
+inline std::string rewriteFilePositions(std::string_view input) {
   struct Tag {size_t start,end;std::string name;size_t filepos=size_t(-1);};
   std::vector<Tag> tags;
   std::set<size_t> targets;
@@ -374,7 +376,7 @@ inline bool readBook(const std::string& path,Book& book,std::string& error,bool 
     book.text.append(data.substr(0,remaining));
   }
   if(book.text.size()!=expected)return fail("Truncated ebook text");
-  if(book.html) {
+  if(book.html && hasFilePositions(book.text)) {
     // Legacy filepos refers to byte offsets in the original decompressed stream,
     // before Windows-1252 conversion. Resolve before changing encoding.
     book.text=rewriteFilePositions(book.text);

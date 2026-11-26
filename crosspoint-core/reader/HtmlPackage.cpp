@@ -554,7 +554,7 @@ struct Html {
       manifest+="<item id=\"css\" href=\"book.css\" media-type=\"text/css\"/>";
     }
     for(size_t i=0;i<chapters.size();++i) {
-      const auto& chapter=chapters[i];
+      auto& chapter=chapters[i];
       const auto file=chapterFile(i),id="h"+std::to_string(i);
       std::string xhtml="<html xmlns=\"http://www.w3.org/1999/xhtml\"><head><title>"+
           txtpkg::xmlEscape(title)+"</title>";
@@ -574,6 +574,9 @@ struct Html {
       }
       xhtml.append(chapter.body,offset,std::string::npos);
       zip.add("OEBPS/"+file,xhtml+"</body></html>");
+      // No later chapter needs the emitted body or its link list.
+      std::string().swap(chapter.body);
+      std::vector<Link>().swap(chapter.links);
       manifest+="<item id=\""+id+"\" href=\""+file+"\" media-type=\"application/xhtml+xml\"/>";
       spine+="<itemref idref=\""+id+"\"/>";
       if(nextHeading==headings.size() || headings[nextHeading].anchor.chapter!=i)

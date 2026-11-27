@@ -595,6 +595,70 @@ done
 find "$card/.books" -mindepth 1 -maxdepth 1 ! -name books-engine ! -name q2-books \
   ! -name q2app ! -name README.txt ! -name NotoSans-OFL.txt ! -name dictionary-starter.tsv \
   ! -name connected.conf.example ! -name ca-bundle.pem ! -name fonts ! -name lang -exec rm -rf -- {} +
+# Q2 Pod 1.9.6 Home shortcut preview and legacy list icons.
+# Generate at packaging time using only Python's standard library.
+python3 - "$card/.books" <<'PYICONS'
+from pathlib import Path
+import struct
+import sys
+import zlib
+
+root = Path(sys.argv[1])
+S = 8
+
+def book(x, y):
+    # Open book: two white pages, a transparent central spine and text rules.
+    x = abs(x - 48)
+    if not 3 <= x <= 45:
+        return False
+    top = 13 - 5 * (x - 3) / 42
+    bottom = 84 - 7 * (x - 3) / 42
+    if not top <= y <= bottom:
+        return False
+    for line in (29, 42, 55):
+        if 10 <= x <= 36 and line - 3 <= y + 5 * (x - 3) / 42 <= line + 1:
+            return False
+    return True
+
+def rounded(x, y):
+    dx = max(12 - x, 0, x - 84)
+    dy = max(12 - y, 0, y - 84)
+    return dx * dx + dy * dy <= 144
+
+def pixel(x, y, pane):
+    if pane:
+        return (255, 255, 255, 255 if book(x, y) else 0)
+    if not rounded(x, y):
+        return (52, 105, 139, 0)
+    if book((x - 12) / .75, (y - 12) / .75):
+        return (255, 255, 255, 255)
+    return (52, 105, 139, 255)
+
+def chunk(kind, data):
+    return (struct.pack(">I", len(data)) + kind + data +
+            struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff))
+
+def write_icon(name, size, pane=False):
+    raw = bytearray()
+    for y in range(size):
+        raw.append(0)
+        for x in range(size):
+            samples = [pixel((x + (i + .5) / S) * 96 / size,
+                             (y + (j + .5) / S) * 96 / size, pane)
+                       for j in range(S) for i in range(S)]
+            alpha = sum(p[3] for p in samples)
+            rgb = [round(sum(p[c] * p[3] for p in samples) / alpha)
+                   if alpha else 255 for c in range(3)]
+            raw.extend((*rgb, round(alpha / (S * S))))
+    png = (b"\x89PNG\r\n\x1a\n" +
+           chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)) +
+           chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+    (root / name).write_bytes(png)
+
+write_icon("icon.png", 52)
+write_icon("icon-40.png", 40)
+write_icon("pane.png", 96, True)
+PYICONS
 chmod +x "$card/.books/q2-books" "$card/.books/books-engine"
 # The test books in $card/Books were only for the checks above: the release
 # carries the app alone, never books in the user's Books folder.
@@ -608,9 +672,10 @@ names_all=sys.stdin.read().split()
 bad=[n for n in names_all if not re.fullmatch(
   r"(\.books/|\.books/fonts/|\.books/fonts/[^/]+\.(cpfont|txt)|\.books/fonts/ttf/|\.books/fonts/ttf/[a-z]+-(regular|bold|italic|bolditalic)\.ttf|\.books/fonts/ttf/books-ttf\.txt|\.books/lang/|\.books/lang/[A-Za-z_]{2,11}\.tsv|"
   r"\.books/(books-engine|q2-books|q2app|README\.txt|NotoSans-OFL\.txt|dictionary-starter\.tsv|"
-  r"connected\.conf\.example|ca-bundle\.pem))",n)]
+  r"connected\.conf\.example|ca-bundle\.pem|icon\.png|icon-40\.png|pane\.png))",n)]
 assert not bad, f"release ZIP carries state or unexpected files: {bad}"
 names=set(n for n in names_all)
+assert {".books/icon.png", ".books/icon-40.png", ".books/pane.png"} <= names, "Q2 app icons missing"
 assert ".books/fonts/ttf/sans-regular.ttf" in names, "Noto Sans TrueType missing"
 assert {n for n in names if n.endswith(".cpfont")} == {
   f".books/fonts/sans-{size}.cpfont" for size in range(8,15)}, "unexpected or missing bitmap fonts"

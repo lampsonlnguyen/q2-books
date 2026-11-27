@@ -3,10 +3,12 @@ name: Build, test and publish Books for Q2
 on:
   push:
     tags: ['v*']
+    branches: [main]
+    paths: ['crosspoint-core/VERSION', '.github/workflows/release.yml']
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing tag to build and publish, such as v1.2.2'
+        description: 'Release tag to build and publish, such as v2.0.9'
         required: true
         type: string
 
@@ -23,30 +25,47 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     outputs:
       sha: ${{ steps.validate.outputs.sha }}
+      tag: ${{ steps.validate.outputs.tag }}
+      release: ${{ steps.validate.outputs.release }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ github.event_name == 'push' && github.ref || 'refs/heads/main' }}
           fetch-depth: 0
-          persist-credentials: false
       - name: Validate version tag and history
         id: validate
         shell: bash
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
+          if [[ "$GITHUB_REF" == refs/heads/main && "$GITHUB_EVENT_NAME" == push ]]; then
+            tag="v$(head -n 1 crosspoint-core/VERSION | tr -d '\r')"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)(\.[0-9]+)?)?$ ]] || { echo "::error::Invalid tag"; exit 1; }
-          git fetch -q origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "refs/tags/$tag")"
-          git merge-base --is-ancestor HEAD origin/main || { echo "::error::Release tag must be on main"; exit 1; }
+          git fetch -q origin main --tags
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git checkout --detach "refs/tags/$tag"
+          else
+            test "$GITHUB_REF" = refs/heads/main
+          fi
+          git merge-base --is-ancestor HEAD origin/main || { echo "::error::Release must be on main"; exit 1; }
           version="$(head -n 1 crosspoint-core/VERSION | tr -d '\r')"
           [[ "$tag" == "v$version" || "$tag" == "v$version-"* ]] || { echo "::error::Tag $tag disagrees with version $version"; exit 1; }
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release=true" >> "$GITHUB_OUTPUT"
 
   host-tests:
     needs: validate
+    if: needs.validate.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -71,6 +90,7 @@ jobs:
 
   build-q2:
     needs: validate
+    if: needs.validate.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -120,6 +140,9 @@ jobs:
 
   publish:
     needs: [validate, host-tests, build-q2]
+    if: needs.validate.outputs.release == 'true'
+    env:
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -163,6 +186,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_SHA: ${{ needs.validate.outputs.sha }}
         run: |
           set -euo pipefail
           tag="$RELEASE_TAG"
@@ -174,6 +198,10 @@ jobs:
             cp "$legacy_notes" "$notes"
           else
             printf '# Books %s (Shanling Q2)\n\nInstall the ZIP at the SD card root and preserve existing reading data. Verify the accompanying SHA-256 checksum. See the repository README and technical documentation for features and limitations.\n' "$tag" > "$notes"
+          fi
+          # Create the tag only after all tests pass; never move an existing tag.
+          if ! gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$RELEASE_SHA" >/dev/null
           fi
           title="Books $tag (Shanling Q2)"
           prerelease=false
